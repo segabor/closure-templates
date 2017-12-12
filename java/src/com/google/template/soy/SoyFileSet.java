@@ -1114,6 +1114,18 @@ public final class SoyFileSet {
     reportWarnings();
   }
 
+  public void compileToSwiftSrcFiles() {
+    resetErrorReporter();
+    requireStrictAutoescaping();
+    ParseResult result = parse(SyntaxVersion.V2_0);
+    throwIfErrorsPresent();
+
+    // TODO
+    
+    throwIfErrorsPresent();
+    reportWarnings();
+  }
+  
   // Parse the current file set with the given default syntax version.
   private ParseResult parse() {
     return parse(passManagerBuilder());
