@@ -83,6 +83,8 @@ import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.Visibility;
+import com.google.template.soy.swiftsrc.SoySwiftSrcOptions;
+import com.google.template.soy.swiftsrc.internal.SwiftSrcMain;
 import com.google.template.soy.tofu.SoyTofu;
 import com.google.template.soy.tofu.internal.BaseTofu;
 import com.google.template.soy.types.SoyTypeRegistry;
@@ -100,7 +102,6 @@ import javax.annotation.Nullable;
  * each other but should not have dependencies outside of the set.
  *
  * <p>Note: Soy file (or resource) contents must be encoded in UTF-8.
- *
  */
 public final class SoyFileSet {
   private static final Logger logger = Logger.getLogger(SoyFileSet.class.getName());
@@ -1114,18 +1115,26 @@ public final class SoyFileSet {
     reportWarnings();
   }
 
-  public void compileToSwiftSrcFiles() {
+  public void compileToSwiftSrcFiles(
+      String outputPathFormat, String inputFilePathPrefix, SoySwiftSrcOptions swiftSrcOptions)
+      throws IOException {
     resetErrorReporter();
     requireStrictAutoescaping();
     ParseResult result = parse(SyntaxVersion.V2_0);
     throwIfErrorsPresent();
 
-    // TODO
-    
+    new SwiftSrcMain(apiCallScopeProvider)
+        .genSwiftFiles(
+            result.fileSet(),
+            swiftSrcOptions,
+            outputPathFormat,
+            inputFilePathPrefix,
+            errorReporter);
+
     throwIfErrorsPresent();
     reportWarnings();
   }
-  
+
   // Parse the current file set with the given default syntax version.
   private ParseResult parse() {
     return parse(passManagerBuilder());

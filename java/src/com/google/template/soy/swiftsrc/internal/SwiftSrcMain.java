@@ -1,5 +1,7 @@
 package com.google.template.soy.swiftsrc.internal;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.Writer;
@@ -9,6 +11,7 @@ import java.util.List;
 import java.util.Properties;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
@@ -23,6 +26,7 @@ import com.google.template.soy.shared.internal.MainEntryPointUtils;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.swiftsrc.SoySwiftSrcOptions;
+import com.google.template.soy.swiftsrc.internal.GenSwiftExprsVisitor.GenSwiftExprsVisitorFactory;
 
 public class SwiftSrcMain {
 
@@ -35,7 +39,7 @@ public class SwiftSrcMain {
 
   public void generateSwiftFiles(
       SoyFileSetNode soyTree,
-      SoySwiftSrcOptions pySrcOptions,
+      SoySwiftSrcOptions swiftSrcOptions,
       String outputPathFormat,
       String inputPathsPrefix,
       ErrorReporter errorReporter)
@@ -55,28 +59,28 @@ public class SwiftSrcMain {
     ImmutableMap<String, String> manifest = generateManifest(soyNamespaces, outputs);
 
     // Generate the Swift source.
-    List<String> pyFileContents = genSwiftSource(soyTree, pySrcOptions, manifest, errorReporter);
+    List<String> swiftFileContents = genSwiftSource(soyTree, swiftSrcOptions, manifest, errorReporter);
 
-    if (srcsToCompile.size() != pyFileContents.size()) {
+    if (srcsToCompile.size() != swiftFileContents.size()) {
       throw new AssertionError(
           String.format(
               "Expected to generate %d code chunk(s), got %d",
-              srcsToCompile.size(), pyFileContents.size()));
+              srcsToCompile.size(), swiftFileContents.size()));
     }
 
     // Write out the Python outputs.
-    /* for (String outputFilePath : outputs.keySet()) {
+    for (String outputFilePath : outputs.keySet()) {
       try (Writer out = Files.newWriter(new File(outputFilePath), StandardCharsets.UTF_8)) {
         for (int inputFileIndex : outputs.get(outputFilePath)) {
-          out.write(pyFileContents.get(inputFileIndex));
+          out.write(swiftFileContents.get(inputFileIndex));
         }
       }
-    } */
+    }
 
     // Write out the manifest file.
-    if (pySrcOptions.namespaceManifestFile() != null) {
+    if (swiftSrcOptions.namespaceManifestFile() != null) {
       try (Writer out =
-          Files.newWriter(new File(pySrcOptions.namespaceManifestFile()), StandardCharsets.UTF_8)) {
+          Files.newWriter(new File(swiftSrcOptions.namespaceManifestFile()), StandardCharsets.UTF_8)) {
         Properties prop = new Properties();
         for (String namespace : manifest.keySet()) {
           prop.put(namespace, manifest.get(namespace));
@@ -113,6 +117,72 @@ public class SwiftSrcMain {
     }
   }
 
+  /**
+   * Generates Python source files given a Soy parse tree, an options object, and information on
+   * where to put the output files.
+   *
+   * @param soyTree The Soy parse tree to generate Python source code for.
+   * @param swiftSrcOptions The compilation options relevant to this backend.
+   * @param outputPathFormat The format string defining how to build the output file path
+   *     corresponding to an input file path.
+   * @param inputPathsPrefix The input path prefix, or empty string if none.
+   * @param errorReporter The Soy error reporter that collects errors during code generation.
+   * @throws SoySyntaxException If a syntax error is found.
+   * @throws IOException If there is an error in opening/writing an output Python file.
+   */
+  public void genSwiftFiles(
+      SoyFileSetNode soyTree,
+      SoySwiftSrcOptions swiftSrcOptions,
+      String outputPathFormat,
+      String inputPathsPrefix,
+      ErrorReporter errorReporter)
+      throws IOException {
+
+    ImmutableList<SoyFileNode> srcsToCompile =
+        ImmutableList.copyOf(
+            Iterables.filter(soyTree.getChildren(), SoyFileNode.MATCH_SRC_FILENODE));
+
+    // Determine the output paths.
+    List<String> soyNamespaces = getSoyNamespaces(soyTree);
+    Multimap<String, Integer> outputs =
+        MainEntryPointUtils.mapOutputsToSrcs(
+            null, outputPathFormat, inputPathsPrefix, srcsToCompile);
+
+    // Generate the manifest and add it to the current manifest.
+    ImmutableMap<String, String> manifest = generateManifest(soyNamespaces, outputs);
+
+    // Generate the Python source.
+    List<String> pyFileContents = genSwiftSource(soyTree, swiftSrcOptions, manifest, errorReporter);
+
+    if (srcsToCompile.size() != pyFileContents.size()) {
+      throw new AssertionError(
+          String.format(
+              "Expected to generate %d code chunk(s), got %d",
+              srcsToCompile.size(), pyFileContents.size()));
+    }
+
+    // Write out the Python outputs.
+    for (String outputFilePath : outputs.keySet()) {
+      try (Writer out = Files.newWriter(new File(outputFilePath), StandardCharsets.UTF_8)) {
+        for (int inputFileIndex : outputs.get(outputFilePath)) {
+          out.write(pyFileContents.get(inputFileIndex));
+        }
+      }
+    }
+
+    // Write out the manifest file.
+    if (swiftSrcOptions.namespaceManifestFile() != null) {
+      try (Writer out =
+          Files.newWriter(new File(swiftSrcOptions.namespaceManifestFile()), StandardCharsets.UTF_8)) {
+        Properties prop = new Properties();
+        for (String namespace : manifest.keySet()) {
+          prop.put(namespace, manifest.get(namespace));
+        }
+        prop.store(out, null);
+      }
+    }
+  }
+
   private List<String> getSoyNamespaces(SoyFileSetNode soyTree) {
     List<String> namespaces = new ArrayList<>();
     for (SoyFileNode soyFile : soyTree.getChildren()) {
@@ -141,9 +211,24 @@ public class SwiftSrcMain {
 
   @VisibleForTesting
   static GenSwiftCodeVisitor createVisitor(
-      SoySwiftSrcOptions pySrcOptions, ImmutableMap<String, String> currentManifest) {
+      SoySwiftSrcOptions swiftSrcOptions, ImmutableMap<String, String> currentManifest) {
+    final IsComputableAsSwiftExprVisitor isComputableAsSwiftExprsVisitor =
+        new IsComputableAsSwiftExprVisitor();
     // TODO
+    class SwiftCallExprVisitorSupplier implements Supplier<GenSwiftCallExprVisitor> {
+      GenSwiftExprsVisitorFactory factory;
 
-    return new GenSwiftCodeVisitor();
+      @Override
+      public GenSwiftCallExprVisitor get() {
+        return new GenSwiftCallExprVisitor(isComputableAsSwiftExprsVisitor, checkNotNull(factory));
+      }
+    }
+    SwiftCallExprVisitorSupplier provider = new SwiftCallExprVisitorSupplier();
+    GenSwiftExprsVisitorFactory genSwiftExprsFactory =
+        new GenSwiftExprsVisitorFactory(isComputableAsSwiftExprsVisitor, provider);
+    provider.factory = genSwiftExprsFactory;
+
+    return new GenSwiftCodeVisitor(
+        swiftSrcOptions, currentManifest, isComputableAsSwiftExprsVisitor, genSwiftExprsFactory, provider.get());
   }
 }
