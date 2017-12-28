@@ -58,7 +58,7 @@ public final class SwiftExprUtils {
   /**
    * Builds one Python expression that computes the concatenation of the given Python expressions.
    *
-   * <p>Python doesn't allow arbitrary concatentation between types, so to ensure type safety and
+   * <p>Python doesn't allow arbitrary concatenation between types, so to ensure type safety and
    * consistent behavior, coerce all expressions to Strings before joining them. Python's array
    * joining mechanism is used in place of traditional concatenation to improve performance.
    *
@@ -87,7 +87,7 @@ public final class SwiftExprUtils {
       if (isFirst) {
         isFirst = false;
       } else {
-        resultSb.append(',');
+        resultSb.append(", ");
       }
 
       resultSb.append(pyExpr.toSwiftString().getText());

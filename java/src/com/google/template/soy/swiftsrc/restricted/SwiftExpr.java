@@ -14,7 +14,6 @@ public class SwiftExpr extends TargetExpr {
    * @return A SwiftStringExpr representing this expression as a String.
    */
   public SwiftStringExpr toSwiftString() {
-    // FIXME
-    return new SwiftStringExpr("str(" + getText() + ")", Integer.MAX_VALUE);
+    return new SwiftStringExpr(getText() + ".description", Integer.MAX_VALUE);
   }
 }

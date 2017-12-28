@@ -72,7 +72,7 @@ public final class SwiftFunctionExprBuilder {
 
     Joiner joiner = Joiner.on(", ").skipNulls();
 
-    // Join args and kwargs into simple strings.
+    // Join args into simple strings.
     String args = joiner.join(Iterables.transform(argList, LIST_ARG_MAPPER));
 
     // Strip empty strings.
