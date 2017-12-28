@@ -8,17 +8,16 @@ public final class InternalSwiftExprUtils {
 
   /**
    * Wraps an expression with the proper SanitizedContent constructor.
+   * 
+   * TODO: complete implementation for Swift
+   *
+   * @see NodeContentKinds#toPySanitizedContentOrdainer(SanitizedContentKind)
    *
    * @param contentKind The kind of sanitized content.
-   * @param pyExpr The expression to wrap.
+   * @param swiftExpr The expression to wrap.
    */
-  static SwiftExpr wrapAsSanitizedContent(SanitizedContentKind contentKind, SwiftExpr pyExpr) {
-    String sanitizer = NodeContentKinds.toPySanitizedContentOrdainer(contentKind);
-    String approval =
-        "sanitize.IActuallyUnderstandSoyTypeSafetyAndHaveSecurityApproval("
-            + "'Internally created Sanitization.')";
-    return new SwiftExpr(
-        sanitizer + "(" + pyExpr.getText() + ", approval=" + approval + ")", Integer.MAX_VALUE);
+  static SwiftExpr wrapAsSanitizedContent(SanitizedContentKind contentKind, SwiftExpr swiftExpr) {
+	return swiftExpr;
   }
 
   private InternalSwiftExprUtils() {}
