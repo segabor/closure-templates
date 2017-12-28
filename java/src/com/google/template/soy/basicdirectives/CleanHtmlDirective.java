@@ -41,7 +41,9 @@ import com.google.template.soy.shared.internal.Sanitizers;
 import com.google.template.soy.shared.internal.TagWhitelist.OptionalSafeTag;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.google.template.soy.shared.restricted.SoyPurePrintDirective;
-import com.google.template.soy.types.SanitizedType;
+import com.google.template.soy.shared.restricted.TagWhitelist.OptionalSafeTag;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcPrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -65,6 +67,7 @@ final class CleanHtmlDirective
     implements SoyJavaPrintDirective,
         SoyLibraryAssistedJsSrcPrintDirective,
         SoyPySrcPrintDirective,
+        SoySwiftSrcPrintDirective,
         SoyJbcSrcPrintDirective.Streamable {
 
   private static final Joiner ARG_JOINER = Joiner.on(", ");
@@ -161,6 +164,13 @@ final class CleanHtmlDirective
     String optionalSafeTagsArg = generateOptionalSafeTagsArg(args);
     return new PyExpr(
         "sanitize.clean_html(" + value.getText() + optionalSafeTagsArg + ")", Integer.MAX_VALUE);
+  }
+
+  @Override
+  public SwiftExpr applyForSwiftSrc(SwiftExpr value, List<SwiftExpr> args) {
+    String optionalSafeTagsArg = generateOptionalSafeTagsArg(args);
+    return new SwiftExpr(
+            "soy.cleanHtml(" + value.getText() + optionalSafeTagsArg + ")", Integer.MAX_VALUE);
   }
 
   /**

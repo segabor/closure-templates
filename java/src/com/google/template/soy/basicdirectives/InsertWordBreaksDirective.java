@@ -38,6 +38,8 @@ import com.google.template.soy.shared.restricted.SoyPurePrintDirective;
 import com.google.template.soy.types.SanitizedType.HtmlType;
 import com.google.template.soy.types.StringType;
 import com.google.template.soy.types.UnionType;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcPrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.util.List;
 import java.util.Set;
 import javax.annotation.Nonnull;
@@ -59,6 +61,7 @@ final class InsertWordBreaksDirective
         SoyJavaPrintDirective,
         SoyLibraryAssistedJsSrcPrintDirective,
         SoyPySrcPrintDirective,
+        SoySwiftSrcPrintDirective,
         SoyJbcSrcPrintDirective.Streamable {
 
   @Inject
@@ -147,5 +150,11 @@ final class InsertWordBreaksDirective
   @Override
   public PyExpr applyForPySrc(PyExpr value, List<PyExpr> args) {
     return new PyExpr("runtime.unsupported('|insertWordBreaks')", Integer.MAX_VALUE);
+  }
+
+  // FIXME
+  @Override
+  public SwiftExpr applyForSwiftSrc(SwiftExpr value, List<SwiftExpr> args) {
+    return new SwiftExpr("runtime.unsupported('|insertWordBreaks')", Integer.MAX_VALUE);
   }
 }

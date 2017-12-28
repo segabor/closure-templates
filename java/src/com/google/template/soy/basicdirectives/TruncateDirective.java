@@ -35,6 +35,10 @@ import com.google.template.soy.pysrc.restricted.PyFunctionExprBuilder;
 import com.google.template.soy.pysrc.restricted.SoyPySrcPrintDirective;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.google.template.soy.shared.restricted.SoyPurePrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcPrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
+import com.google.template.soy.swiftsrc.restricted.SwiftFunctionExprBuilder;
+
 import java.util.List;
 import java.util.Set;
 import javax.inject.Inject;
@@ -52,6 +56,7 @@ final class TruncateDirective
     implements SoyJavaPrintDirective,
         SoyLibraryAssistedJsSrcPrintDirective,
         SoyPySrcPrintDirective,
+        SoySwiftSrcPrintDirective,
         SoyJbcSrcPrintDirective.Streamable {
 
   @Inject
@@ -166,5 +171,17 @@ final class TruncateDirective
     PyFunctionExprBuilder fnBuilder = new PyFunctionExprBuilder("directives.truncate");
     fnBuilder.addArg(input).addArg(maxLen).addArg(doAddEllipsis);
     return fnBuilder.asPyStringExpr();
+  }
+
+  @Override
+  public SwiftExpr applyForSwiftSrc(SwiftExpr value, List<SwiftExpr> args) {
+    SwiftExpr input = value.toSwiftString();
+    SwiftExpr maxLen = args.get(0);
+    SwiftExpr doAddEllipsis =
+        (args.size() == 2) ? args.get(1) : new SwiftExpr("true", Integer.MAX_VALUE);
+
+    SwiftFunctionExprBuilder fnBuilder = new SwiftFunctionExprBuilder("directives.truncate");
+    fnBuilder.addArg(input).addArg(maxLen).addArg(doAddEllipsis);
+    return fnBuilder.asSwiftStringExpr();
   }
 }

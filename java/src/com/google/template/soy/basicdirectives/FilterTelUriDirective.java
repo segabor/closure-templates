@@ -30,6 +30,8 @@ import com.google.template.soy.shared.internal.Sanitizers;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.google.template.soy.shared.restricted.SoyPurePrintDirective;
 import com.google.template.soy.types.SanitizedType;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcPrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.util.List;
 import java.util.Set;
 import javax.inject.Inject;
@@ -47,6 +49,7 @@ final class FilterTelUriDirective
     implements SoyJavaPrintDirective,
         SoyLibraryAssistedJsSrcPrintDirective,
         SoyPySrcPrintDirective,
+        SoySwiftSrcPrintDirective,
         SoyJbcSrcPrintDirective {
 
   private static final ImmutableSet<Integer> VALID_ARGS_SIZES = ImmutableSet.of(0);
@@ -93,5 +96,10 @@ final class FilterTelUriDirective
 
   @Override public PyExpr applyForPySrc(PyExpr value, List<PyExpr> args) {
     return new PyExpr("sanitize.filter_tel_uri(" + value.getText() + ")", Integer.MAX_VALUE);
+  }
+
+  @Override
+  public SwiftExpr applyForSwiftSrc(SwiftExpr value, List<SwiftExpr> args) {
+    return new SwiftExpr("soy.filterTelURI(" + value.getText() + ")", Integer.MAX_VALUE);
   }
 }

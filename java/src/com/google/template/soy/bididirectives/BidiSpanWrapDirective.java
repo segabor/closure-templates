@@ -33,6 +33,9 @@ import com.google.template.soy.jssrc.restricted.SoyLibraryAssistedJsSrcPrintDire
 import com.google.template.soy.pysrc.restricted.PyExpr;
 import com.google.template.soy.pysrc.restricted.SoyPySrcPrintDirective;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcPrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
+
 import java.util.List;
 import java.util.Set;
 import javax.annotation.Nonnull;
@@ -52,6 +55,7 @@ final class BidiSpanWrapDirective
         SoyJavaPrintDirective,
         SoyLibraryAssistedJsSrcPrintDirective,
         SoyPySrcPrintDirective,
+        SoySwiftSrcPrintDirective,
         SoyJbcSrcPrintDirective.Streamable {
 
   /** Provider for the current bidi global directionality. */
@@ -137,5 +141,11 @@ final class BidiSpanWrapDirective
     String codeSnippet = bidiGlobalDirProvider.get().getCodeSnippet();
     return new PyExpr(
         "bidi.span_wrap(" + codeSnippet + ", " + value.getText() + ")", Integer.MAX_VALUE);
+  }
+
+  @Override
+  public SwiftExpr applyForSwiftSrc(SwiftExpr value, List<SwiftExpr> args) {
+    // TODO Auto-generated method stub
+    return null;
   }
 }

@@ -31,6 +31,9 @@ import com.google.template.soy.pysrc.restricted.SoyPySrcPrintDirective;
 import com.google.template.soy.shared.internal.Sanitizers;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.google.template.soy.shared.restricted.SoyPurePrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcPrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
+
 import java.util.List;
 import java.util.Set;
 import javax.inject.Inject;
@@ -49,6 +52,7 @@ public final class BlessStringAsTrustedResourceUrlForLegacyDirective
     implements SoyJavaPrintDirective,
         SoyLibraryAssistedJsSrcPrintDirective,
         SoyPySrcPrintDirective,
+        SoySwiftSrcPrintDirective,
         SoyJbcSrcPrintDirective.Streamable {
 
   public static final String NAME = "|blessStringAsTrustedResourceUrlForLegacy";
@@ -125,6 +129,14 @@ public final class BlessStringAsTrustedResourceUrlForLegacyDirective
   public PyExpr applyForPySrc(PyExpr value, List<PyExpr> args) {
     return new PyExpr(
         "sanitize.bless_string_as_trusted_resource_url_for_legacy(" + value.getText() + ")",
+        Integer.MAX_VALUE);
+  }
+
+  // FIXME
+  @Override
+  public SwiftExpr applyForSwiftSrc(SwiftExpr value, List<SwiftExpr> args) {
+    return new SwiftExpr(
+        "sanitize.blessStringAsTrustedResourceUrlForLegacy(" + value.getText() + ")",
         Integer.MAX_VALUE);
   }
 }

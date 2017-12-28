@@ -32,6 +32,9 @@ import com.google.template.soy.pysrc.restricted.PyExpr;
 import com.google.template.soy.pysrc.restricted.SoyPySrcPrintDirective;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.google.template.soy.shared.restricted.SoyPurePrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcPrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
+
 import java.util.List;
 import java.util.Set;
 import javax.inject.Inject;
@@ -50,6 +53,7 @@ final class TextDirective
     implements SoyJavaPrintDirective,
         SoyJsSrcPrintDirective,
         SoyPySrcPrintDirective,
+        SoySwiftSrcPrintDirective,
         SoyJbcSrcPrintDirective.Streamable {
 
   @Inject
@@ -111,4 +115,8 @@ final class TextDirective
     return value.toPyString();
   }
 
+  @Override
+  public SwiftExpr applyForSwiftSrc(SwiftExpr value, List<SwiftExpr> args) {
+    return value.toSwiftString();
+  }
 }

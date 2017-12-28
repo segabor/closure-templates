@@ -35,6 +35,8 @@ import com.google.template.soy.pysrc.restricted.PyExprUtils;
 import com.google.template.soy.pysrc.restricted.PyFunctionExprBuilder;
 import com.google.template.soy.pysrc.restricted.SoyPySrcPrintDirective;
 import com.google.template.soy.shared.restricted.ApiCallScopeBindingAnnotations.LocaleString;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcPrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.ibm.icu.util.ULocale;
 import java.util.List;
@@ -72,6 +74,7 @@ class FormatNumDirective
     implements SoyJavaPrintDirective,
         SoyLibraryAssistedJsSrcPrintDirective,
         SoyPySrcPrintDirective,
+        SoySwiftSrcPrintDirective,
         SoyJbcSrcPrintDirective {
 
   // Map of format arguments to the Closure Format enum.
@@ -198,6 +201,13 @@ class FormatNumDirective
     return builder.asPyStringExpr();
   }
 
+  // FIXME
+  @Override
+  public SwiftExpr applyForSwiftSrc(SwiftExpr value, List<SwiftExpr> args) {
+    // TODO Auto-generated method stub
+    return null;
+  }
+  
   @Override
   public ImmutableSet<String> getRequiredJsLibNames() {
     return REQUIRED_JS_LIBS;

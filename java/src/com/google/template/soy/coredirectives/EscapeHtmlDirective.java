@@ -34,6 +34,8 @@ import com.google.template.soy.shared.internal.ShortCircuitable;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.google.template.soy.shared.restricted.SoyPurePrintDirective;
 import com.google.template.soy.types.SanitizedType;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcPrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.util.List;
 import java.util.Set;
 import javax.inject.Inject;
@@ -49,6 +51,7 @@ public class EscapeHtmlDirective
     implements SoyJavaPrintDirective,
         SoyLibraryAssistedJsSrcPrintDirective,
         SoyPySrcPrintDirective,
+        SoySwiftSrcPrintDirective,
         SoyJbcSrcPrintDirective.Streamable,
         ShortCircuitable {
 
@@ -118,5 +121,10 @@ public class EscapeHtmlDirective
   @Override
   public PyExpr applyForPySrc(PyExpr value, List<PyExpr> args) {
     return new PyExpr("sanitize.escape_html(" + value.getText() + ")", Integer.MAX_VALUE);
+  }
+
+  @Override
+  public SwiftExpr applyForSwiftSrc(SwiftExpr value, List<SwiftExpr> args) {
+    return new SwiftExpr("soy.escapeHtml(" + value.getText() + ")", Integer.MAX_VALUE);
   }
 }

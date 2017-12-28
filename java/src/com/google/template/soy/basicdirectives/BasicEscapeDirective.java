@@ -16,6 +16,11 @@
 
 package com.google.template.soy.basicdirectives;
 
+import java.util.List;
+import java.util.Set;
+
+import javax.inject.Singleton;
+
 import com.google.common.base.CaseFormat;
 import com.google.common.collect.ImmutableSet;
 import com.google.errorprone.annotations.concurrent.LazyInit;
@@ -38,9 +43,8 @@ import com.google.template.soy.shared.internal.Sanitizers;
 import com.google.template.soy.shared.internal.ShortCircuitable;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.google.template.soy.shared.restricted.SoyPurePrintDirective;
-import java.util.List;
-import java.util.Set;
-import javax.inject.Singleton;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcPrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 
 /**
  * An escaping directive that is backed by {@link Sanitizers} in java, {@code soyutils.js} or the
@@ -56,6 +60,7 @@ public abstract class BasicEscapeDirective
     implements SoyJavaPrintDirective,
         SoyLibraryAssistedJsSrcPrintDirective,
         SoyPySrcPrintDirective,
+        SoySwiftSrcPrintDirective,
         SoyJbcSrcPrintDirective {
 
   private static final ImmutableSet<Integer> VALID_ARGS_SIZES = ImmutableSet.of(0);
@@ -119,6 +124,13 @@ public abstract class BasicEscapeDirective
   public PyExpr applyForPySrc(PyExpr value, List<PyExpr> args) {
     String pyFnName = CaseFormat.LOWER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, name.substring(1));
     return new PyExpr("sanitize." + pyFnName + "(" + value.getText() + ")", Integer.MAX_VALUE);
+  }
+
+  // FIXME
+  @Override
+  public SwiftExpr applyForSwiftSrc(SwiftExpr value, List<SwiftExpr> args) {
+    String swiftFnName = CaseFormat.LOWER_CAMEL.to(CaseFormat.LOWER_UNDERSCORE, name.substring(1));
+    return new SwiftExpr("soy." + swiftFnName + "(" + value.getText() + ")", Integer.MAX_VALUE);
   }
 
   @Override

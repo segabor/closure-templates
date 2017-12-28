@@ -36,6 +36,8 @@ import com.google.template.soy.shared.restricted.SoyPurePrintDirective;
 import com.google.template.soy.types.SanitizedType.HtmlType;
 import com.google.template.soy.types.StringType;
 import com.google.template.soy.types.UnionType;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcPrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.util.List;
 import java.util.Set;
 import javax.annotation.Nonnull;
@@ -53,6 +55,7 @@ final class ChangeNewlineToBrDirective
         SoyJavaPrintDirective,
         SoyLibraryAssistedJsSrcPrintDirective,
         SoyPySrcPrintDirective,
+        SoySwiftSrcPrintDirective,
         SoyJbcSrcPrintDirective.Streamable {
 
   @Inject
@@ -126,5 +129,10 @@ final class ChangeNewlineToBrDirective
   @Override
   public PyExpr applyForPySrc(PyExpr value, List<PyExpr> args) {
     return new PyExpr("sanitize.change_newline_to_br(" + value.getText() + ")", Integer.MAX_VALUE);
+  }
+  
+  @Override
+  public SwiftExpr applyForSwiftSrc(SwiftExpr value, List<SwiftExpr> args) {
+    return new SwiftExpr("soy.changeNewlineToBr(" + value.getText() + ")", Integer.MAX_VALUE);
   }
 }
