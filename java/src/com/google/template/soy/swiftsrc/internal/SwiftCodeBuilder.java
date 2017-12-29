@@ -26,7 +26,7 @@ public final class SwiftCodeBuilder {
 	  }
 
 	  /** The size of a single indent level. */
-	  private static final int INDENT_SIZE = 2;
+	  private static final int INDENT_SIZE = 4;
 	  /** A buffer to accumulate the generated code. */
 	  private final StringBuilder code;
 	  /** The current indent (some even number of spaces). */
@@ -52,8 +52,8 @@ public final class SwiftCodeBuilder {
 	      return;
 	    }
 
-	    // output = ''
-	    appendLine(getOutputVarName(), " = []");
+	    // var output = ""
+	    appendLine("var " + getOutputVarName(), " = \"\"");
 
 	    setOutputVarInited();
 	  }

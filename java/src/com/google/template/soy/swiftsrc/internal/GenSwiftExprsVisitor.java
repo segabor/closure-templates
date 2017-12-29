@@ -268,19 +268,23 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
         // <conditional> ? <true> : <false> to
         // <true> if <conditional> else <false>
         SwiftExpr condBlock = SwiftExprUtils.concatSwiftExprs(genSwiftExprsVisitor.exec(icn)).toSwiftString();
-        condBlock =
-            SwiftExprUtils.maybeProtect(
-                condBlock, SwiftExprUtils.swiftPrecedenceForOperator(Operator.CONDITIONAL));
-        swiftExprTextSb.append(condBlock.getText());
-
-        // Append the conditional and if/else syntax.
         SwiftExpr condPyExpr = translator.exec(icn.getExpr());
-        swiftExprTextSb.append(" if ").append(condPyExpr.getText()).append(" else ");
+//            SwiftExprUtils.maybeProtect(
+//                condBlock, SwiftExprUtils.swiftPrecedenceForOperator(Operator.CONDITIONAL));
+        // swiftExprTextSb.append(condBlock.getText());
+
+        swiftExprTextSb.append("(" + condPyExpr.getText() + ") ? ");
+        
+        // Append the conditional and if/else syntax.
+        // swiftExprTextSb.append(" if ").append(condPyExpr.getText()).append(" else ");
+        swiftExprTextSb.append(condBlock.getText());
 
       } else if (child instanceof IfElseNode) {
         hasElse = true;
         IfElseNode ien = (IfElseNode) child;
 
+        swiftExprTextSb.append(" : ");
+        
         SwiftExpr elseBlock = SwiftExprUtils.concatSwiftExprs(genSwiftExprsVisitor.exec(ien)).toSwiftString();
         swiftExprTextSb.append(elseBlock.getText());
       } else {
@@ -289,7 +293,7 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
     }
 
     if (!hasElse) {
-      swiftExprTextSb.append("\"\"");
+    	  swiftExprTextSb.append("\"\"");
     }
 
     // By their nature, inline'd conditionals can only contain output strings, so they can be

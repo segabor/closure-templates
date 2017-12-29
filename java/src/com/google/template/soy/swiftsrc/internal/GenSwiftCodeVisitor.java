@@ -197,29 +197,26 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
       // Encode all source files in utf-8 to allow for special unicode characters in the generated
       // literals.
-      swiftCodeBuilder.appendLine("# coding=utf-8");
 
       swiftCodeBuilder.appendLine(
-          "\"\"\" This file was automatically generated from ", node.getFileName(), ".");
-      swiftCodeBuilder.appendLine("Please don't edit this file by hand.");
-      swiftCodeBuilder.appendLine();
-      swiftCodeBuilder.appendLine("SOY_NAMESPACE: '" + node.getNamespace() + "'.");
+          "//This file was automatically generated from ", node.getFileName(), ".");
+      swiftCodeBuilder.appendLine("//Please don't edit this file by hand.");
+      swiftCodeBuilder.appendLine("//");
+      swiftCodeBuilder.appendLine("// SOY_NAMESPACE: '" + node.getNamespace() + "'.");
 
       // Output a section containing optionally-parsed compiler directives in comments.
-      swiftCodeBuilder.appendLine();
+      swiftCodeBuilder.appendLine("//");
       if (node.getNamespace() != null) {
-        swiftCodeBuilder.appendLine("Templates in namespace ", node.getNamespace(), ".");
+        swiftCodeBuilder.appendLine("//Templates in namespace ", node.getNamespace(), ".");
       }
-      swiftCodeBuilder.appendLine("\"\"\"");
 
       // Add code to define Python namespaces and add import calls for libraries.
       swiftCodeBuilder.appendLine();
       addCodeToRequireGeneralDeps();
       addCodeToRequireSoyNamespaces(node);
-      addCodeToFixUnicodeStrings();
-      if (SoyTreeUtils.hasNodesOfType(node, DebuggerNode.class)) {
+      /* if (SoyTreeUtils.hasNodesOfType(node, DebuggerNode.class)) {
         swiftCodeBuilder.appendLine("import pdb");
-      }
+      } */
 
       // Add code for each template.
       for (TemplateNode template : node.getChildren()) {
@@ -251,17 +248,19 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
       // Generate function definition up to colon.
       swiftCodeBuilder.appendLine(
-          "def ",
+          "public func ",
           GenSwiftCallExprVisitor.getLocalTemplateName(node),
           // These defaults are safe because soy only ever reads from these parameters.  If that
           // changes, bad things could happen.
-          "(data={}, ijData={}):");
+          "(_ data: [String:String] = [], _ ijData: [String] = []) -> String {");
       swiftCodeBuilder.increaseIndent();
 
       generateFunctionBody(node);
 
       // Dedent to end the function.
       swiftCodeBuilder.decreaseIndent();
+      
+      swiftCodeBuilder.appendLine("}");
     }
 
     /**
@@ -732,36 +731,11 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
     /** Helper for visitSoyFileNode(SoyFileNode) to add code to require general dependencies. */
     private void addCodeToRequireGeneralDeps() {
-      swiftCodeBuilder.appendLine("from __future__ import unicode_literals");
-      // In python 2, division always return integers. Using python 3 behaviors is better aligned
-      // with other backends.
-      swiftCodeBuilder.appendLine("from __future__ import division");
-
-      swiftCodeBuilder.appendLine("import collections");
-      swiftCodeBuilder.appendLine("import math");
-      swiftCodeBuilder.appendLine("import random");
-      swiftCodeBuilder.appendLine("import sys");
-
-      // TODO(dcphillips): limit this based on usage?
-//      swiftCodeBuilder.appendLine("from ", swiftSrcOptions.getRuntimePath(), " import bidi");
-//      swiftCodeBuilder.appendLine("from ", swiftSrcOptions.getRuntimePath(), " import directives");
-//      swiftCodeBuilder.appendLine("from ", swiftSrcOptions.getRuntimePath(), " import runtime");
-//      swiftCodeBuilder.appendLine("from ", swiftSrcOptions.getRuntimePath(), " import sanitize");
+      swiftCodeBuilder.appendLine("import Foundation");
       swiftCodeBuilder.appendLine();
 
-      /** if (!swiftSrcOptions.getBidiIsRtlFn().isEmpty()) {
-        int dotIndex = swiftSrcOptions.getBidiIsRtlFn().lastIndexOf('.');
-        // When importing the module, we'll use the constant name to avoid potential conflicts.
-        String bidiModulePath = swiftSrcOptions.getBidiIsRtlFn().substring(0, dotIndex);
-        NamespaceAndName namespaceAndName = NamespaceAndName.fromModule(bidiModulePath);
-        swiftCodeBuilder.appendLine(
-            "from ",
-            namespaceAndName.namespace(),
-            " import ",
-            namespaceAndName.name(),
-            " as ",
-            SoyBidiUtils.IS_RTL_MODULE_ALIAS);
-      } **/
+      swiftCodeBuilder.appendLine("import Soy");
+      swiftCodeBuilder.appendLine();
 
       // Add import and instantiate statements for translator module
       // TODO(steveyang): remember the check when implementing MsgNode
@@ -797,50 +771,17 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
       for (String calleeModule : calleeModules) {
         NamespaceAndName namespaceAndName = NamespaceAndName.fromModule(calleeModule);
-        if (namespaceManifest.containsKey(calleeModule)) {
-          swiftCodeBuilder.appendLine(
-              "import ", namespaceManifest.get(calleeModule), " as ", namespaceAndName.name());
-        } else {
-          swiftCodeBuilder.appendLineStart(
-              namespaceAndName.name(),
-              " = runtime.namespaced_import('",
-              namespaceAndName.name(),
-              "', namespace='",
-              namespaceAndName.namespace(),
-              "'");
-          /** if (!swiftSrcOptions.getEnvironmentModulePath().isEmpty()) {
-            swiftCodeBuilder
-                .append(", environment_path='")
-                .append(swiftSrcOptions.getEnvironmentModulePath(), "'");
-          } **/
-          swiftCodeBuilder.appendLineEnd(")");
-        }
+        // FIXME
       }
 
       // Store the entire manifest for use at runtime.
-      swiftCodeBuilder.appendLine("NAMESPACE_MANIFEST = {");
+      swiftCodeBuilder.appendLine("let NAMESPACE_MANIFEST : [String:String] = [");
       swiftCodeBuilder.increaseIndentTwice();
       for (Map.Entry<String, String> entry : namespaceManifest.entrySet()) {
-        swiftCodeBuilder.appendLine("'", entry.getKey(), "': '", entry.getValue(), "',");
+        swiftCodeBuilder.appendLine("\"", entry.getKey(), "\": \"", entry.getValue(), "\",");
       }
       swiftCodeBuilder.decreaseIndentTwice();
-      swiftCodeBuilder.appendLine("}");
-      swiftCodeBuilder.appendLine();
-    }
-
-    /**
-     * Helper for visitSoyFileNode(SoyFileNode) to add code to turn byte strings into unicode
-     * strings for Python 2.
-     */
-    private void addCodeToFixUnicodeStrings() {
-      swiftCodeBuilder.appendLine("try:");
-      swiftCodeBuilder.increaseIndent();
-      swiftCodeBuilder.appendLine("str = unicode");
-      swiftCodeBuilder.decreaseIndent();
-      swiftCodeBuilder.appendLine("except NameError:");
-      swiftCodeBuilder.increaseIndent();
-      swiftCodeBuilder.appendLine("pass");
-      swiftCodeBuilder.decreaseIndent();
+      swiftCodeBuilder.appendLine("]");
       swiftCodeBuilder.appendLine();
     }
 
@@ -853,7 +794,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
       visitChildren(node);
 
-      SwiftExpr resultPyExpr = swiftCodeBuilder.getOutputAsString();
+      SwiftExpr resultSwiftExpr = swiftCodeBuilder.getOutputAsString();
       swiftCodeBuilder.popOutputVar();
 
       // Templates with autoescape="strict" return the SanitizedContent wrapper for its kind:
@@ -861,10 +802,10 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       // - The topmost call into Soy returns a SanitizedContent. This will make it easy to take
       // the result of one template and feed it to another, and also to confidently assign sanitized
       // HTML content to innerHTML. This does not use the internal-blocks variant.
-      resultPyExpr =
-          InternalSwiftExprUtils.wrapAsSanitizedContent(node.getContentKind(), resultPyExpr);
+      resultSwiftExpr =
+          InternalSwiftExprUtils.wrapAsSanitizedContent(node.getContentKind(), resultSwiftExpr);
 
-      swiftCodeBuilder.appendLine("return ", resultPyExpr.getText());
+      swiftCodeBuilder.appendLine("return ", resultSwiftExpr.getText());
 
       localVarExprs.popFrame();
     }
