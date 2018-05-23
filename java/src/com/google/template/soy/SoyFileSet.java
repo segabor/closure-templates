@@ -1116,19 +1116,17 @@ public final class SoyFileSet {
   }
 
   public void compileToSwiftSrcFiles(
-      String outputPathFormat, String inputFilePathPrefix, SoySwiftSrcOptions swiftSrcOptions)
+      String outputPathFormat, SoySwiftSrcOptions swiftSrcOptions)
       throws IOException {
     resetErrorReporter();
     requireStrictAutoescaping();
-    ParseResult result = parse(SyntaxVersion.V2_0);
+    ParseResult result = parse();
     throwIfErrorsPresent();
-
     new SwiftSrcMain(apiCallScopeProvider)
         .genSwiftFiles(
             result.fileSet(),
             swiftSrcOptions,
             outputPathFormat,
-            inputFilePathPrefix,
             errorReporter);
 
     throwIfErrorsPresent();

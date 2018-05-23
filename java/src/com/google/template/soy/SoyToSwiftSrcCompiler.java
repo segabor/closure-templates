@@ -47,33 +47,30 @@ public class SoyToSwiftSrcCompiler extends AbstractSoyCompiler {
 
   @Override
   void compile(SoyFileSet.Builder sfsBuilder) throws IOException {
-    if (syntaxVersion.length() > 0) {
-      SyntaxVersion parsedVersion = SyntaxVersion.forName(syntaxVersion);
-      if (parsedVersion.num < SyntaxVersion.V2_0.num) {
-        exitWithError("Declared syntax version must be 2.0 or greater.");
-      }
-      sfsBuilder.setDeclaredSyntaxVersionName(syntaxVersion);
-    }
-    // Allow external call entirely in Swift.
-    sfsBuilder.setAllowExternalCalls(true);
-    // Require strict templates in Python.
+    // Disallow external call entirely in Swift.
+    sfsBuilder.setAllowExternalCalls(false);
+    // Require strict templates in Swift.
     sfsBuilder.setStrictAutoescapingRequired(true);
     SoyFileSet sfs = sfsBuilder.build();
     // Load the manifest if available.
     // TODO
-    
+
+    /* ImmutableMap<String, String> manifest = loadNamespaceManifest(namespaceManifestPaths);
+    if (!manifest.isEmpty() && outputNamespaceManifest == null) {
+      exitWithError("Namespace manifests provided without outputting a new manifest.");
+    } */
+
     // Create SoyPySrcOptions.
     SoySwiftSrcOptions pySrcOptions =
-            new SoySwiftSrcOptions(
-                // runtimePath,
-                // environmentModulePath,
-                // bidiIsRtlFn,
-                // translationClass,
-            		ImmutableMap.<String, String>of(),
-                "outputNamespaceManifest");
+        new SoySwiftSrcOptions(
+            // runtimePath,
+            // environmentModulePath,
+            // bidiIsRtlFn,
+            // translationClass,
+            ImmutableMap.<String, String>of(), "outputNamespaceManifest");
 
     // Compile.
-    sfs.compileToSwiftSrcFiles(outputPathFormat, "", pySrcOptions);
+    sfs.compileToSwiftSrcFiles(outputPathFormat, pySrcOptions);
   }
 
 }

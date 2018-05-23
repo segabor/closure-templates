@@ -159,7 +159,7 @@ public final class MsgFuncGenerator {
     Map<SwiftExpr, SwiftExpr> nodeSwiftVarToPyExprMap = collectVarNameListAndToPyExprMap();
 
     ImmutableList<SoyMsgPart> msgPartsInIcuSyntax =
-        IcuSyntaxUtils.convertMsgPartsToEmbeddedIcuSyntax(msgParts, true);
+        IcuSyntaxUtils.convertMsgPartsToEmbeddedIcuSyntax(msgParts);
     String swiftMsgText = processMsgPartsHelper(msgPartsInIcuSyntax, nullEscaper);
 
     prepareFunc

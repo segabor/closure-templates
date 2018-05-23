@@ -8,7 +8,7 @@ import com.google.template.soy.soytree.CallNode;
 import com.google.template.soy.soytree.CallParamContentNode;
 import com.google.template.soy.soytree.CallParamValueNode;
 import com.google.template.soy.soytree.DebuggerNode;
-import com.google.template.soy.soytree.ForeachNode;
+import com.google.template.soy.soytree.ForNode;
 import com.google.template.soy.soytree.IfCondNode;
 import com.google.template.soy.soytree.IfElseNode;
 import com.google.template.soy.soytree.IfNode;
@@ -102,7 +102,7 @@ public class IsComputableAsSwiftExprVisitor extends AbstractReturningSoyNodeVisi
   }
 
   @Override
-  protected Boolean visitForeachNode(ForeachNode node) {
+  protected Boolean visitForNode(ForNode node) {
     // TODO(dcphillips): Consider using list comprehensions to generate the output of a foreach.
     return false;
   }

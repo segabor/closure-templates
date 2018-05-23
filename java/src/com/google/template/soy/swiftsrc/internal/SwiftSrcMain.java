@@ -17,7 +17,6 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Multimap;
 import com.google.common.io.Files;
-import com.google.template.soy.base.SoySyntaxException;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
 import com.google.template.soy.shared.internal.ApiCallScopeUtils;
@@ -52,8 +51,7 @@ public class SwiftSrcMain {
     // Determine the output paths.
     List<String> soyNamespaces = getSoyNamespaces(soyTree);
     Multimap<String, Integer> outputs =
-        MainEntryPointUtils.mapOutputsToSrcs(
-            null, outputPathFormat, inputPathsPrefix, srcsToCompile);
+        MainEntryPointUtils.mapOutputsToSrcs(null, outputPathFormat, srcsToCompile);
 
     // Generate the manifest and add it to the current manifest.
     ImmutableMap<String, String> manifest = generateManifest(soyNamespaces, outputs);
@@ -125,7 +123,6 @@ public class SwiftSrcMain {
    * @param swiftSrcOptions The compilation options relevant to this backend.
    * @param outputPathFormat The format string defining how to build the output file path
    *     corresponding to an input file path.
-   * @param inputPathsPrefix The input path prefix, or empty string if none.
    * @param errorReporter The Soy error reporter that collects errors during code generation.
    * @throws SoySyntaxException If a syntax error is found.
    * @throws IOException If there is an error in opening/writing an output Python file.
@@ -134,7 +131,6 @@ public class SwiftSrcMain {
       SoyFileSetNode soyTree,
       SoySwiftSrcOptions swiftSrcOptions,
       String outputPathFormat,
-      String inputPathsPrefix,
       ErrorReporter errorReporter)
       throws IOException {
 
@@ -145,8 +141,7 @@ public class SwiftSrcMain {
     // Determine the output paths.
     List<String> soyNamespaces = getSoyNamespaces(soyTree);
     Multimap<String, Integer> outputs =
-        MainEntryPointUtils.mapOutputsToSrcs(
-            null, outputPathFormat, inputPathsPrefix, srcsToCompile);
+        MainEntryPointUtils.mapOutputsToSrcs(null, outputPathFormat, srcsToCompile);
 
     // Generate the manifest and add it to the current manifest.
     ImmutableMap<String, String> manifest = generateManifest(soyNamespaces, outputs);
