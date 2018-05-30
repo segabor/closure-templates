@@ -17,8 +17,8 @@
 package com.google.template.soy.passes;
 
 import static com.google.common.base.Preconditions.checkState;
-import static com.google.template.soy.exprtree.ExprNode.Kind.LEGACY_OBJECT_MAP_LITERAL_NODE;
 import static com.google.template.soy.exprtree.ExprNode.Kind.MAP_LITERAL_NODE;
+import static com.google.template.soy.exprtree.ExprNode.Kind.RECORD_LITERAL_NODE;
 
 import com.google.common.base.Equivalence.Wrapper;
 import com.google.common.base.Preconditions;
@@ -26,6 +26,8 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Maps;
 import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.base.internal.BaseUtils;
+import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.basicfunctions.ConcatListsFunction;
 import com.google.template.soy.basicfunctions.LegacyObjectMapToMapFunction;
 import com.google.template.soy.basicfunctions.MapKeysFunction;
@@ -48,7 +50,6 @@ import com.google.template.soy.exprtree.FieldAccessNode;
 import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
-import com.google.template.soy.exprtree.LegacyObjectMapLiteralNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
 import com.google.template.soy.exprtree.OperatorNodes.AndOpNode;
@@ -69,6 +70,7 @@ import com.google.template.soy.exprtree.OperatorNodes.OrOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.PlusOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.TimesOpNode;
 import com.google.template.soy.exprtree.ProtoInitNode;
+import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.shared.internal.BuiltinFunction;
@@ -86,6 +88,7 @@ import com.google.template.soy.soytree.IfNode;
 import com.google.template.soy.soytree.LetContentNode;
 import com.google.template.soy.soytree.LetValueNode;
 import com.google.template.soy.soytree.PrintNode;
+import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyNode.ExprHolderNode;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
@@ -122,7 +125,7 @@ import javax.annotation.Nullable;
  * Visitor which resolves all expression types.
  *
  */
-final class ResolveExpressionTypesVisitor extends AbstractSoyNodeVisitor<Void> {
+final class ResolveExpressionTypesPass extends CompilerFilePass {
 
   // Keep in alphabetical order.
   private static final SoyErrorKind BAD_FOREACH_TYPE =
@@ -147,6 +150,10 @@ final class ResolveExpressionTypesVisitor extends AbstractSoyNodeVisitor<Void> {
       SoyErrorKind.of(
           "A map''s keys must all be the same type. This map has keys of multiple types "
               + "(''{0}'').");
+  private static final SoyErrorKind ILLEGAL_RECORD_KEY_NAME =
+      SoyErrorKind.of("Record key ''{0}'' must be a valid Soy identifier.");
+  private static final SoyErrorKind ILLEGAL_RECORD_KEY_TYPE =
+      SoyErrorKind.of("Record key ''{0}'' must be a string literal. Did you mean to use a map?");
   private static final SoyErrorKind EMPTY_LIST_ACCESS =
       SoyErrorKind.of("Accessing item in empty list.");
   private static final SoyErrorKind EMPTY_LIST_FOREACH =
@@ -197,78 +204,107 @@ final class ResolveExpressionTypesVisitor extends AbstractSoyNodeVisitor<Void> {
   /** Current set of type substitutions. */
   private TypeSubstitution substitutions;
 
-  ResolveExpressionTypesVisitor(
-      SoyTypeRegistry typeRegistry,
-      ErrorReporter errorReporter) {
+  ResolveExpressionTypesPass(SoyTypeRegistry typeRegistry, ErrorReporter errorReporter) {
     this.errorReporter = errorReporter;
     this.typeRegistry = typeRegistry;
   }
 
   @Override
-  protected void visitTemplateNode(TemplateNode node) {
-    visitSoyNode(node);
+  public void run(SoyFileNode file, IdGenerator nodeIdGen) {
+    substitutions = null; // make sure substitutions don't leak across files
+    new TypeAssignmentSoyVisitor().exec(file);
   }
 
-  @Override
-  protected void visitPrintNode(PrintNode node) {
-    visitSoyNode(node);
-  }
+  private final class TypeAssignmentSoyVisitor extends AbstractSoyNodeVisitor<Void> {
 
-  @Override
-  protected void visitLetValueNode(LetValueNode node) {
-    visitSoyNode(node);
-    node.getVar().setType(node.getExpr().getType());
-  }
+    @Override
+    protected void visitTemplateNode(TemplateNode node) {
+      visitSoyNode(node);
+    }
 
-  @Override
-  protected void visitLetContentNode(LetContentNode node) {
-    visitSoyNode(node);
-    node.getVar()
-        .setType(
-            node.getContentKind() != null
-                ? SanitizedType.getTypeForContentKind(node.getContentKind())
-                : StringType.getInstance());
-  }
+    @Override
+    protected void visitPrintNode(PrintNode node) {
+      visitSoyNode(node);
+    }
 
-  @Override
-  protected void visitIfNode(IfNode node) {
-    // TODO(user): Also support switch / case.
-    TypeSubstitution savedSubstitutionState = substitutions;
-    for (SoyNode child : node.getChildren()) {
-      if (child instanceof IfCondNode) {
-        IfCondNode icn = (IfCondNode) child;
-        visitExpressions(icn);
+    @Override
+    protected void visitLetValueNode(LetValueNode node) {
+      visitSoyNode(node);
+      node.getVar().setType(node.getExpr().getType());
+    }
 
-        // Visit the conditional expression to compute which types can be narrowed.
-        TypeNarrowingConditionVisitor visitor = new TypeNarrowingConditionVisitor();
-        visitor.exec(icn.getExpr());
+    @Override
+    protected void visitLetContentNode(LetContentNode node) {
+      visitSoyNode(node);
+      node.getVar()
+          .setType(
+              node.getContentKind() != null
+                  ? SanitizedType.getTypeForContentKind(node.getContentKind())
+                  : StringType.getInstance());
+    }
 
-        // Save the state of substitutions from the previous if block.
-        TypeSubstitution previousSubstitutionState = substitutions;
+    @Override
+    protected void visitIfNode(IfNode node) {
+      // TODO(user): Also support switch / case.
+      TypeSubstitution savedSubstitutionState = substitutions;
+      for (SoyNode child : node.getChildren()) {
+        if (child instanceof IfCondNode) {
+          IfCondNode icn = (IfCondNode) child;
+          visitExpressions(icn);
 
-        // Modify the current set of type substitutions for the 'true' branch
-        // of the if statement.
-        addTypeSubstitutions(visitor.positiveTypeConstraints);
-        visitChildren(icn);
+          // Visit the conditional expression to compute which types can be narrowed.
+          TypeNarrowingConditionVisitor visitor = new TypeNarrowingConditionVisitor();
+          visitor.exec(icn.getExpr());
 
-        // Rewind the substitutions back to the state before the if-condition.
-        // Add in the negative substitutions, which will affect subsequent blocks
-        // of the if statement.
-        // So for example if we have a variable whose type is (A|B|C) and the
-        // first if-block tests whether that variable is type A, then in the
-        // 'else' block it must be of type (B|C); If a subsequent 'elseif'
-        // statement tests whether it's type B, then in the following else block
-        // it can only be of type C.
-        substitutions = previousSubstitutionState;
-        addTypeSubstitutions(visitor.negativeTypeConstraints);
-      } else if (child instanceof IfElseNode) {
-        // For the else node, we simply inherit the previous set of subsitutions.
-        IfElseNode ien = (IfElseNode) child;
-        visitChildren(ien);
+          // Save the state of substitutions from the previous if block.
+          TypeSubstitution previousSubstitutionState = substitutions;
+
+          // Modify the current set of type substitutions for the 'true' branch
+          // of the if statement.
+          addTypeSubstitutions(visitor.positiveTypeConstraints);
+          visitChildren(icn);
+
+          // Rewind the substitutions back to the state before the if-condition.
+          // Add in the negative substitutions, which will affect subsequent blocks
+          // of the if statement.
+          // So for example if we have a variable whose type is (A|B|C) and the
+          // first if-block tests whether that variable is type A, then in the
+          // 'else' block it must be of type (B|C); If a subsequent 'elseif'
+          // statement tests whether it's type B, then in the following else block
+          // it can only be of type C.
+          substitutions = previousSubstitutionState;
+          addTypeSubstitutions(visitor.negativeTypeConstraints);
+        } else if (child instanceof IfElseNode) {
+          // For the else node, we simply inherit the previous set of subsitutions.
+          IfElseNode ien = (IfElseNode) child;
+          visitChildren(ien);
+        }
+      }
+      substitutions = savedSubstitutionState;
+    }
+
+    @Override
+    protected void visitForNonemptyNode(ForNonemptyNode node) {
+      // Visit the foreach iterator expression
+      visitExpressions(node.getParent());
+      // Set the inferred type of the loop variable.
+      node.getVar().setType(getElementType(node.getExpr().getType(), node));
+      // Visit the node body
+      visitChildren(node);
+    }
+
+    @Override
+    protected void visitSoyNode(SoyNode node) {
+      if (node instanceof ExprHolderNode) {
+        visitExpressions((ExprHolderNode) node);
+      }
+
+      if (node instanceof ParentSoyNode<?>) {
+        visitChildren((ParentSoyNode<?>) node);
       }
     }
-    substitutions = savedSubstitutionState;
   }
+
 
   // Given a map of type subsitutions, add all the entries to the current set of
   // active substitutions.
@@ -288,27 +324,6 @@ final class ResolveExpressionTypesVisitor extends AbstractSoyNodeVisitor<Void> {
       if (!entry.getValue().equals(previousType)) {
         substitutions = new TypeSubstitution(substitutions, expr, entry.getValue());
       }
-    }
-  }
-
-  @Override
-  protected void visitForNonemptyNode(ForNonemptyNode node) {
-    // Visit the foreach iterator expression
-    visitExpressions(node.getParent());
-    // Set the inferred type of the loop variable.
-    node.getVar().setType(getElementType(node.getExpr().getType(), node));
-    // Visit the node body
-    visitChildren(node);
-  }
-
-  @Override
-  protected void visitSoyNode(SoyNode node) {
-    if (node instanceof ExprHolderNode) {
-      visitExpressions((ExprHolderNode) node);
-    }
-
-    if (node instanceof ParentSoyNode<?>) {
-      visitChildren((ParentSoyNode<?>) node);
     }
   }
 
@@ -429,7 +444,7 @@ final class ResolveExpressionTypesVisitor extends AbstractSoyNodeVisitor<Void> {
     }
 
     @Override
-    protected void visitLegacyObjectMapLiteralNode(LegacyObjectMapLiteralNode node) {
+    protected void visitRecordLiteralNode(RecordLiteralNode node) {
       visitChildren(node);
       setMapLiteralNodeType(node);
       tryApplySubstitution(node);
@@ -442,14 +457,16 @@ final class ResolveExpressionTypesVisitor extends AbstractSoyNodeVisitor<Void> {
       tryApplySubstitution(node);
     }
 
+    // TODO(b/79368576): consider splitting this into separate methods for maps and records, if that
+    // makes it easier to understand.
     private void setMapLiteralNodeType(AbstractParentExprNode node) {
       Kind nodeKind = node.getKind();
-      checkState(nodeKind == MAP_LITERAL_NODE || nodeKind == LEGACY_OBJECT_MAP_LITERAL_NODE);
+      checkState(nodeKind == MAP_LITERAL_NODE || nodeKind == RECORD_LITERAL_NODE);
       int numChildren = node.numChildren();
       checkState(numChildren % 2 == 0);
       if (numChildren == 0) {
-        node.setType(
-            nodeKind == MAP_LITERAL_NODE ? MapType.EMPTY_MAP : LegacyObjectMapType.EMPTY_MAP);
+        // TODO(b/79869432): Remove support for the empty record.
+        node.setType(nodeKind == MAP_LITERAL_NODE ? MapType.EMPTY_MAP : RecordType.EMPTY_RECORD);
         return;
       }
 
@@ -461,7 +478,7 @@ final class ResolveExpressionTypesVisitor extends AbstractSoyNodeVisitor<Void> {
       for (int i = 0; i < numChildren; i += 2) {
         ExprNode key = node.getChild(i);
         ExprNode value = node.getChild(i + 1);
-        // TODO: consider using ExprEquivalence to detect duplicate keys
+        // TODO: consider using ExprEquivalence to detect duplicate map keys
         if (key.getKind() == ExprNode.Kind.STRING_NODE) {
           String fieldName = ((StringNode) key).getValue();
           SoyType prev = recordFieldTypes.put(fieldName, value.getType());
@@ -469,13 +486,17 @@ final class ResolveExpressionTypesVisitor extends AbstractSoyNodeVisitor<Void> {
             errorReporter.report(
                 key.getSourceLocation(),
                 DUPLICATE_KEY_IN_MAP_OR_RECORD_LITERAL,
-                nodeKind == MAP_LITERAL_NODE
-                    ? "Map"
-                    // TODO: because LegacyObjectMapLiteralNodes are also used to represent record
-                    // literals, this message incorrectly says "Record" for legacy object maps.
-                    : "Record",
+                nodeKind == MAP_LITERAL_NODE ? "Map" : "Record",
                 fieldName);
           }
+          if (nodeKind == RECORD_LITERAL_NODE && !BaseUtils.isIdentifier(fieldName)) {
+            errorReporter.report(key.getSourceLocation(), ILLEGAL_RECORD_KEY_NAME, fieldName);
+            node.setType(ErrorType.getInstance());
+          }
+        } else if (nodeKind == RECORD_LITERAL_NODE) {
+          errorReporter.report(
+              key.getSourceLocation(), ILLEGAL_RECORD_KEY_TYPE, key.toSourceString());
+          node.setType(ErrorType.getInstance());
         }
         keyTypes.add(key.getType());
         if (nodeKind == MAP_LITERAL_NODE && !MapType.isAllowedKeyType(key.getType())) {
@@ -492,28 +513,20 @@ final class ResolveExpressionTypesVisitor extends AbstractSoyNodeVisitor<Void> {
       }
       SoyType commonValueType = SoyTypes.computeLowestCommonType(typeRegistry, valueTypes);
 
-      // The legacy literal syntax [k1:v1, k2:v2, ...] creates either a legacy object map (a value
-      // of type LegacyObjectMapType) or a record (a value of type RecordType).
-      // A heuristic is used to decide which one: if all the keys are typed as strings,
-      // the literal creates a record; otherwise, it creates map.
-      if (nodeKind == LEGACY_OBJECT_MAP_LITERAL_NODE
-          && StringType.getInstance().isAssignableFrom(commonKeyType)
-          && recordFieldTypes.size() == numChildren / 2) {
-        Map<String, SoyType> leastCommonFieldTypes =
-            Maps.newHashMapWithExpectedSize(recordFieldTypes.size());
-        for (String fieldName : recordFieldTypes.keySet()) {
-          leastCommonFieldTypes.put(fieldName, recordFieldTypes.get(fieldName));
+      if (nodeKind == RECORD_LITERAL_NODE) {
+        if (!duplicateKeyErrors.isEmpty()) {
+          node.setType(ErrorType.getInstance());
+        } else {
+          Map<String, SoyType> leastCommonFieldTypes =
+              Maps.newHashMapWithExpectedSize(recordFieldTypes.size());
+          for (String fieldName : recordFieldTypes.keySet()) {
+            leastCommonFieldTypes.put(fieldName, recordFieldTypes.get(fieldName));
+          }
+          node.setType(typeRegistry.getOrCreateRecordType(leastCommonFieldTypes));
         }
-        node.setType(typeRegistry.getOrCreateRecordType(leastCommonFieldTypes));
       } else {
-        node.setType(
-            nodeKind == MAP_LITERAL_NODE
-                // The new literal syntax map(k1: v1, k2: v2, ...) always creates a value of type
-                // MapType.
-                ? typeRegistry.getOrCreateMapType(commonKeyType, commonValueType)
-                // The legacy literal syntax [k1:v1, k2:v2, ...] creates a value of type
-                // LegacyObjectMapType when not all the keys are strings. (See comment above.)
-                : typeRegistry.getOrCreateLegacyObjectMapType(commonKeyType, commonValueType));
+        Preconditions.checkState(nodeKind == MAP_LITERAL_NODE);
+        node.setType(typeRegistry.getOrCreateMapType(commonKeyType, commonValueType));
       }
     }
 
@@ -838,27 +851,25 @@ final class ResolveExpressionTypesVisitor extends AbstractSoyNodeVisitor<Void> {
 
     private void visitLegacyObjectMapToMapFunction(FunctionNode node) {
       SoyType argType = node.getChild(0).getType();
-      // Allow the type of the arg to be unknown.
-      // This is mostly for integration tests: legacy_object_map literals will string-literal keys
-      // are interpreted as *record* literals, unless surrounded by quoteKeysIfJs. But quoteKeysIfJs
-      // hard-codes its return type to be unknown. So allow unknown type arg for now.
-      // The only good thing about this situation is that quoteKeysIfJs is rarely used and should
-      // go away.
-      if (argType.isAssignableFrom(UnknownType.getInstance())) {
+      if (argType.equals(LegacyObjectMapType.EMPTY_MAP)) {
+        node.setType(MapType.EMPTY_MAP);
+      } else if (argType.isAssignableFrom(UnknownType.getInstance())) {
+        // Allow the type of the arg to be unknown as legacy_object_map functionality on unknown
+        // types is allowed (i.e. bracket access on a variable with an unknown type).
         node.setType(
             typeRegistry.getOrCreateMapType(StringType.getInstance(), UnknownType.getInstance()));
-        return;
+      } else {
+        LegacyObjectMapType actualArgType = (LegacyObjectMapType) argType;
+        node.setType(
+            typeRegistry.getOrCreateMapType(
+                // Converting a legacy_object_map<K,V> to a map creates a value of type
+                // map<string, V>, not map<K, V>. legacy_object_map<K, ...> is misleading:
+                // although Soy will type check K consistently, the runtime implementation of
+                // legacy_object_map just coerces the key to a string.
+                // b/69051605 will change many Soy params to have a type of map<string, ...>,
+                // so legacyObjectMapToMap() needs to have this return type too.
+                StringType.getInstance(), actualArgType.getValueType()));
       }
-      LegacyObjectMapType actualArgType = (LegacyObjectMapType) argType;
-      node.setType(
-          typeRegistry.getOrCreateMapType(
-              // Converting a legacy_object_map<K,V> to a map creates a value of type
-              // map<string, V>, not map<K, V>. legacy_object_map<K, ...> is misleading:
-              // although Soy will type check K consistently, the runtime implementation of
-              // legacy_object_map just coerces the key to a string.
-              // b/69051605 will change many Soy params to have a type of map<string, ...>,
-              // so legacyObjectMapToMap() needs to have this return type too.
-              StringType.getInstance(), actualArgType.getValueType()));
     }
 
     private void visitMapToLegacyObjectMapFunction(FunctionNode node) {
@@ -993,7 +1004,7 @@ final class ResolveExpressionTypesVisitor extends AbstractSoyNodeVisitor<Void> {
             } else {
               String extraErrorMessage =
                   SoyErrors.getDidYouMeanMessageForProtoFields(
-                      protoType.getFieldNames(), fieldName);
+                      protoType.getFieldNames(), protoType.getDescriptor(), fieldName);
               errorReporter.report(
                   sourceLocation,
                   UNDEFINED_FIELD_FOR_PROTO_TYPE,
@@ -1221,20 +1232,6 @@ final class ResolveExpressionTypesVisitor extends AbstractSoyNodeVisitor<Void> {
           requireLoopVariableInScope(node, arg1);
           node.setType(IntType.getInstance());
           break;
-        case QUOTE_KEYS_IF_JS:
-          if (!(arg1 instanceof LegacyObjectMapLiteralNode)) {
-            errorReporter.report(
-                arg1.getSourceLocation(),
-                INCORRECT_ARG_TYPE,
-                "quoteKeysIfJs",
-                arg1.getType(),
-                "map literal");
-          }
-          // TODO(b/70946095): it would be easy to add type information here, but doing so would
-          // introduce compile errors into user templates.  So doing so will require a global
-          // cleanup of all broken templates.
-          node.setType(UnknownType.getInstance());
-          break;
         case IS_PRIMARY_MSG_IN_USE:
           // don't bother checking the args, they are only ever set by the MsgIdFunctionPass
           node.setType(BoolType.getInstance());
@@ -1257,7 +1254,7 @@ final class ResolveExpressionTypesVisitor extends AbstractSoyNodeVisitor<Void> {
           node.setType(UnknownType.getInstance());
           break;
         case REMAINDER:
-        case MSG_ID: // should have already been removed from the tree
+        case MSG_WITH_ID: // should have already been removed from the tree
           throw new AssertionError();
       }
     }

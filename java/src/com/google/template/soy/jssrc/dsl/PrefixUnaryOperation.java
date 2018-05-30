@@ -30,9 +30,9 @@ import com.google.template.soy.exprtree.Operator.Associativity;
 abstract class PrefixUnaryOperation extends Operation {
   abstract String operator();
 
-  abstract CodeChunk.WithValue arg();
+  abstract Expression arg();
 
-  static PrefixUnaryOperation create(Operator operator, WithValue arg) {
+  static PrefixUnaryOperation create(Operator operator, Expression arg) {
     // Operator.NOT is the only unary Soy operator whose text differs from its JS counterpart.
     // Patch things up here.
     String operatorString = (operator == Operator.NOT ? "!" : operator.getTokenString());
@@ -61,7 +61,7 @@ abstract class PrefixUnaryOperation extends Operation {
   }
 
   @Override
-  public ImmutableList<CodeChunk> initialStatements() {
+  public ImmutableList<Statement> initialStatements() {
     return arg().initialStatements();
   }
 }

@@ -29,7 +29,6 @@ import static com.google.template.soy.shared.internal.SharedRuntime.times;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Lists;
 import com.google.template.soy.basicfunctions.DebugSoyTemplateInfoFunction;
 import com.google.template.soy.data.LoggingAdvisingAppendable;
 import com.google.template.soy.data.SoyAbstractValue;
@@ -49,7 +48,6 @@ import com.google.template.soy.data.restricted.IntegerData;
 import com.google.template.soy.data.restricted.NullData;
 import com.google.template.soy.data.restricted.StringData;
 import com.google.template.soy.data.restricted.UndefinedData;
-import com.google.template.soy.exprtree.AbstractParentExprNode;
 import com.google.template.soy.exprtree.AbstractReturningExprNodeVisitor;
 import com.google.template.soy.exprtree.BooleanNode;
 import com.google.template.soy.exprtree.DataAccessNode;
@@ -61,7 +59,6 @@ import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.exprtree.IntegerNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
-import com.google.template.soy.exprtree.LegacyObjectMapLiteralNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
 import com.google.template.soy.exprtree.NullNode;
@@ -83,6 +80,7 @@ import com.google.template.soy.exprtree.OperatorNodes.OrOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.PlusOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.TimesOpNode;
 import com.google.template.soy.exprtree.ProtoInitNode;
+import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.logging.LoggingFunction;
@@ -225,63 +223,33 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
   }
 
   @Override
-  protected SoyValue visitLegacyObjectMapLiteralNode(LegacyObjectMapLiteralNode node) {
-    return visitLegacyObjectMapLiteralOrMapLiteralNode(node);
+  protected SoyValue visitRecordLiteralNode(RecordLiteralNode node) {
+    int numItems = node.numChildren() / 2;
+
+    // Not an ImmutableMap, because record literals allow null values.
+    Map<String, SoyValue> map = new LinkedHashMap<>();
+    for (int i = 0; i < numItems; i++) {
+      SoyValue key = visit(node.getChild(2 * i));
+      checkState(key instanceof StringData);
+      map.put(key.stringValue(), visit(node.getChild(2 * i + 1)));
+    }
+    return DictImpl.forProviderMap(map, RuntimeMapTypeTracker.Type.LEGACY_OBJECT_MAP_OR_RECORD);
   }
 
   @Override
   protected SoyValue visitMapLiteralNode(MapLiteralNode node) {
-    return visitLegacyObjectMapLiteralOrMapLiteralNode(node);
-  }
-
-  private SoyValue visitLegacyObjectMapLiteralOrMapLiteralNode(AbstractParentExprNode node) {
-    checkState(
-        node.getKind() == ExprNode.Kind.LEGACY_OBJECT_MAP_LITERAL_NODE
-            || node.getKind() == ExprNode.Kind.MAP_LITERAL_NODE);
-
     int numItems = node.numChildren() / 2;
 
-    boolean isStringKeyed = true;
-    ExprNode firstNonstringKeyNode = null;
-    List<SoyValue> keys = Lists.newArrayListWithCapacity(numItems);
-    List<SoyValue> values = Lists.newArrayListWithCapacity(numItems);
-
+    Map<SoyValue, SoyValue> map = new HashMap<>();
     for (int i = 0; i < numItems; i++) {
       SoyValue key = visit(node.getChild(2 * i));
-      if (isStringKeyed && !(key instanceof StringData)) {
-        isStringKeyed = false;
-        firstNonstringKeyNode = node.getChild(2 * i); // temporary until we support nonstring key
+      SoyValue value = visit(node.getChild(2 * i + 1));
+      if (isNullOrUndefinedBase(key)) {
+        throw RenderException.create(String.format("null key in entry: null=%s", value));
       }
-      keys.add(key);
-      values.add(visit(node.getChild(2 * i + 1)));
+      map.put(key, value);
     }
-
-    if (node.getKind() == ExprNode.Kind.LEGACY_OBJECT_MAP_LITERAL_NODE) {
-      if (!isStringKeyed) {
-        throw RenderException.create(
-            String.format(
-                "legacy_object_map literals must have string keys (key \"%s\" in map %s does not "
-                    + "evaluate to a string).",
-                firstNonstringKeyNode.toSourceString(), node.toSourceString()));
-      }
-      // Not an ImmutableMap, because map literals allow duplicate keys (last one wins).
-      Map<String, SoyValue> map = new LinkedHashMap<>();
-      for (int i = 0; i < numItems; i++) {
-        map.put(keys.get(i).stringValue(), values.get(i));
-      }
-      return DictImpl.forProviderMap(map, RuntimeMapTypeTracker.Type.LEGACY_OBJECT_MAP_OR_RECORD);
-    } else {
-      Map<SoyValue, SoyValue> map = new HashMap<>();
-      for (int i = 0; i < numItems; ++i) {
-        SoyValue key = keys.get(i);
-        SoyValue value = values.get(i);
-        if (isNullOrUndefinedBase(key)) {
-          throw RenderException.create(String.format("null key in entry: null=%s", value));
-        }
-        map.put(key, value);
-      }
-      return SoyMapImpl.forProviderMap(map);
-    }
+    return SoyMapImpl.forProviderMap(map);
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -639,8 +607,6 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
           return visitIsLastFunction(node);
         case INDEX:
           return visitIndexFunction(node);
-        case QUOTE_KEYS_IF_JS:
-          return visitLegacyObjectMapLiteralNode((LegacyObjectMapLiteralNode) node.getChild(0));
         case CHECK_NOT_NULL:
           return visitCheckNotNullFunction(node.getChild(0));
         case CSS:
@@ -652,7 +618,7 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
         case V1_EXPRESSION:
           throw new UnsupportedOperationException(
               "the v1Expression function can't be used in templates compiled to Java");
-        case MSG_ID:
+        case MSG_WITH_ID:
         case REMAINDER:
           // should have been removed earlier in the compiler
           throw new AssertionError();

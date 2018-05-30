@@ -19,15 +19,14 @@ package com.google.template.soy.jssrc.internal;
 import static com.google.template.soy.exprtree.Operator.CONDITIONAL;
 import static com.google.template.soy.exprtree.Operator.OR;
 import static com.google.template.soy.exprtree.Operator.PLUS;
-import static com.google.template.soy.jssrc.dsl.CodeChunk.id;
-import static com.google.template.soy.jssrc.dsl.CodeChunk.number;
+import static com.google.template.soy.jssrc.dsl.Expression.id;
+import static com.google.template.soy.jssrc.dsl.Expression.number;
 import static com.google.template.soy.jssrc.internal.JsSrcSubject.assertThatSoyExpr;
 import static com.google.template.soy.jssrc.internal.JsSrcSubject.assertThatSoyFile;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.template.soy.basetree.SyntaxVersion;
-import com.google.template.soy.jssrc.SoyJsSrcOptions;
-import com.google.template.soy.jssrc.dsl.CodeChunk;
+import com.google.template.soy.jssrc.dsl.Expression;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -40,8 +39,8 @@ import org.junit.runners.JUnit4;
 public final class TranslateExprNodeVisitorTest {
 
   // Let 'goo' simulate a local variable from a 'foreach' loop.
-  private static final ImmutableMap<String, CodeChunk.WithValue> LOCAL_VAR_TRANSLATIONS =
-      ImmutableMap.<String, CodeChunk.WithValue>builder()
+  private static final ImmutableMap<String, Expression> LOCAL_VAR_TRANSLATIONS =
+      ImmutableMap.<String, Expression>builder()
           .put("goo", id("gooData8"))
           .put("goo__isFirst", id("gooIndex8").doubleEquals(number(0)))
           .put("goo__isLast", id("gooIndex8").doubleEquals(id("gooListLen8").minus(number(1))))
@@ -63,8 +62,7 @@ public final class TranslateExprNodeVisitorTest {
   }
 
   @Test
-  public void testMapLiteral() {
-    // ------ Unquoted keys. ------
+  public void testRecordLiteral() {
     assertThatSoyExpr("[:]").generatesCode("{};");
 
     assertThatSoyExpr("['aaa': 123, 'bbb': 'blah']").generatesCode("{aaa: 123, bbb: 'blah'};");
@@ -72,62 +70,6 @@ public final class TranslateExprNodeVisitorTest {
         .generatesCode("{aaa: opt_data.foo, bbb: 'blah'};");
 
     assertThatSoyExpr("['aaa': ['bbb': 'blah']]").generatesCode("{aaa: {bbb: 'blah'}};");
-
-    // ------ Quoted keys. ------
-    assertThatSoyExpr("quoteKeysIfJs([:])").generatesCode("{};");
-    assertThatSoyExpr("quoteKeysIfJs( ['aaa': $foo, 'bbb': 'blah'] )")
-        .generatesCode("{'aaa': opt_data.foo, 'bbb': 'blah'};");
-
-    assertThatSoyExpr("quoteKeysIfJs(['aaa': 123, $boo: $foo])")
-        .generatesCode(
-            "var $tmp = {'aaa': 123};",
-            "$tmp[soy.$$checkLegacyObjectMapLiteralKey(opt_data.boo)] = opt_data.foo;");
-
-    assertThatSoyExpr("quoteKeysIfJs([$boo: $foo, $goo[0]: 123])")
-        .withInitialLocalVarTranslations(LOCAL_VAR_TRANSLATIONS)
-        .generatesCode(
-            "var $tmp = {};",
-            "$tmp[soy.$$checkLegacyObjectMapLiteralKey(opt_data.boo)] = opt_data.foo;",
-            "$tmp[soy.$$checkLegacyObjectMapLiteralKey(gooData8[0])] = 123;");
-
-    assertThatSoyExpr("quoteKeysIfJs(['aaa': ['bbb': 'blah']])")
-        .generatesCode("{'aaa': {bbb: 'blah'}};");
-
-    // ------ Errors. ------
-
-    // Non-string key is error.
-    assertThatSoyExpr("[0: 123, 1: 'oops']")
-        .causesErrors(
-            "Keys in map literals cannot be constants (found constant '0').",
-            "Keys in map literals cannot be constants (found constant '1').");
-
-    SoyJsSrcOptions noCompiler = new SoyJsSrcOptions();
-    SoyJsSrcOptions withCompiler = new SoyJsSrcOptions();
-    withCompiler.setShouldProvideRequireSoyNamespaces(true);
-
-    assertThatSoyExpr("quoteKeysIfJs(['0': 123, '1': $foo])")
-        .withJsSrcOptions(noCompiler)
-        .generatesCode("{'0': 123, '1': opt_data.foo};");
-
-    // Non-identifier key without quoteKeysIfJs() is an error
-    assertThatSoyExpr("['0': 123, '1': '123']")
-        .withJsSrcOptions(withCompiler)
-        .causesErrors(
-            "Map literal with non-identifier key '0' must be wrapped in quoteKeysIfJs().",
-            "Map literal with non-identifier key '1' must be wrapped in quoteKeysIfJs().");
-
-    assertThatSoyExpr("quoteKeysIfJs(['aaa': 123, $boo: $foo])")
-        .withJsSrcOptions(noCompiler)
-        .generatesCode(
-            "var $tmp = {'aaa': 123};",
-            "$tmp[soy.$$checkLegacyObjectMapLiteralKey(opt_data.boo)] = opt_data.foo;");
-
-    // Expression key without quoteKeysIfJs() is an error.
-    assertThatSoyExpr("['aaa': 123, $boo: $foo, $moo: $goo]")
-        .withJsSrcOptions(withCompiler)
-        .causesErrors(
-            "Expression key '$boo' in map literal must be wrapped in quoteKeysIfJs().",
-            "Expression key '$moo' in map literal must be wrapped in quoteKeysIfJs().");
   }
 
   @Test
@@ -255,13 +197,6 @@ public final class TranslateExprNodeVisitorTest {
         .withInitialLocalVarTranslations(LOCAL_VAR_TRANSLATIONS)
         .generatesCode("gooIndex8 + 1;")
         .withPrecedence(PLUS);
-  }
-
-  @Test
-  public void testQuoteKeysIfJs() {
-    assertThatSoyExpr("quoteKeysIfJs(['abc': $goo])")
-        .withInitialLocalVarTranslations(LOCAL_VAR_TRANSLATIONS)
-        .generatesCode("{'abc': gooData8};");
   }
 
   @Test

@@ -25,14 +25,14 @@ import com.google.template.soy.jssrc.restricted.JsExpr;
 /** Represents an expression preceded by one or more initial statements. */
 @AutoValue
 @Immutable
-abstract class Composite extends CodeChunk.WithValue {
+abstract class Composite extends Expression {
 
-  abstract CodeChunk.WithValue value();
+  abstract Expression value();
 
-  static Composite create(ImmutableList<CodeChunk> initialStatements, CodeChunk.WithValue value) {
+  static Composite create(ImmutableList<Statement> initialStatements, Expression value) {
     Preconditions.checkState(!initialStatements.isEmpty());
     return new AutoValue_Composite(
-        ImmutableList.<CodeChunk>builder()
+        ImmutableList.<Statement>builder()
             .addAll(initialStatements)
             .addAll(value.initialStatements())
             .build(),
@@ -69,7 +69,7 @@ abstract class Composite extends CodeChunk.WithValue {
 
   @Override
   public void collectRequires(RequiresCollector collector) {
-    for (CodeChunk stmt : initialStatements()) {
+    for (Statement stmt : initialStatements()) {
       stmt.collectRequires(collector);
     }
     value().collectRequires(collector);

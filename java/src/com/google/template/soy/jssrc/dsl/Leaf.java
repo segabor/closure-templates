@@ -28,8 +28,8 @@ import com.google.template.soy.jssrc.restricted.JsExpr;
  */
 @AutoValue
 @Immutable
-abstract class Leaf extends CodeChunk.WithValue {
-  static WithValue create(String text, boolean isCheap, Iterable<GoogRequire> require) {
+abstract class Leaf extends Expression {
+  static Expression create(String text, boolean isCheap, Iterable<GoogRequire> require) {
     return create(new JsExpr(text, Integer.MAX_VALUE), isCheap, ImmutableSet.copyOf(require));
   }
 
@@ -39,7 +39,7 @@ abstract class Leaf extends CodeChunk.WithValue {
 
   static Leaf create(JsExpr value, boolean isCheap, Iterable<GoogRequire> requires) {
     return new AutoValue_Leaf(
-        /* initialStatements= */ ImmutableList.<CodeChunk>of(),
+        /* initialStatements= */ ImmutableList.<Statement>of(),
         value,
         ImmutableSet.copyOf(requires),
         isCheap);

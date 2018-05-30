@@ -3308,14 +3308,16 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
           controller.loaded();
         }
       });
-
+      var nonceAttr = !goog.DebugLoader_.IS_OLD_IE_ && goog.getScriptNonce() ?
+          ' nonce="' + goog.getScriptNonce() + '"' :
+          '';
       var event =
           goog.DebugLoader_.IS_OLD_IE_ ? 'onreadystatechange' : 'onload';
       var defer = goog.Dependency.defer_ ? 'defer' : '';
       doc.write(
           '<script src="' + this.path + '" ' + event +
           '="goog.Dependency.callback_(\'' + key +
-          '\', this)" type="text/javascript" ' + defer + '><' +
+          '\', this)" type="text/javascript" ' + defer + nonceAttr + '><' +
           '/script>');
     } else {
       var scriptEl =
@@ -3598,18 +3600,25 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
           'script>');
     }
 
-    var pending = controller.pending();
     // If one thing is pending it is this.
-    if ((pending.length > 1 && goog.DebugLoader_.IS_OLD_IE_) ||
-        (goog.Dependency.defer_ && goog.isDocumentLoading_())) {
-      // If anything else is loading we need to lazy load due to bugs in old IE.
-      // Specifically script tags with src and script tags with contents could
-      // execute out of order if document.write is used, so we cannot use
-      // document.write. Do not pause here; it breaks old IE as well.
+    var anythingElsePending = controller.pending().length > 1;
 
-      // Additionally if we are meant to defer scripts but the page is still
-      // loading (e.g. an ES6 module is loading) then also defer.
+    // If anything else is loading we need to lazy load due to bugs in old IE.
+    // Specifically script tags with src and script tags with contents could
+    // execute out of order if document.write is used, so we cannot use
+    // document.write. Do not pause here; it breaks old IE as well.
+    var useOldIeWorkAround =
+        anythingElsePending && goog.DebugLoader_.IS_OLD_IE_;
 
+    // Additionally if we are meant to defer scripts but the page is still
+    // loading (e.g. an ES6 module is loading) then also defer. Or if we are
+    // meant to defer and anything else is pending then defer (those may be
+    // scripts that did not need transformation and are just script tags with
+    // defer set to true, and we need to evaluate after that deferred script).
+    var needsAsyncLoading = goog.Dependency.defer_ &&
+        (anythingElsePending || goog.isDocumentLoading_());
+
+    if (useOldIeWorkAround || needsAsyncLoading) {
       // Note that we only defer when we have to rather than 100% of the time.
       // Always defering would work, but then in theory the order of
       // goog.require calls would then matter. We want to enforce that most of
@@ -8536,7 +8545,8 @@ goog.object.PROTOTYPE_FIELDS_ = [
  * @param {Object} target The object to modify. Existing properties will be
  *     overwritten if they are also present in one of the objects in
  *     `var_args`.
- * @param {...Object} var_args The objects from which values will be copied.
+ * @param {...(Object|null|undefined)} var_args The objects from which values
+ *     will be copied.
  */
 goog.object.extend = function(target, var_args) {
   var key, source;
@@ -24239,7 +24249,7 @@ goog.require('goog.string.Const');
 /**
  * Checks whether a given value is of a given content kind.
  *
- * @param {*} value The value to be examined.
+ * @param {?} value The value to be examined.
  * @param {goog.soy.data.SanitizedContentKind} contentKind The desired content
  *     kind.
  * @return {boolean} Whether the given value is of the given kind.
@@ -24261,7 +24271,7 @@ soydata.isContentKind_ = function(value, contentKind) {
  * undefined, a primitive or does not have a contentDir property, or the
  * property's value is not 1 (for LTR), -1 (for RTL), or 0 (for neutral).
  *
- * @param {*} value The value whose contentDir property, if any, is to
+ * @param {?} value The value whose contentDir property, if any, is to
  *     be returned.
  * @return {?goog.i18n.bidi.Dir} The contentDir property.
  */
@@ -24299,7 +24309,7 @@ goog.inherits(soydata.SanitizedHtml, goog.soy.data.SanitizedHtml);
  *
  * This HTML-escapes the value unless it is already SanitizedHtml or SafeHtml.
  *
- * @param {*} value The value to convert. If it is already a SanitizedHtml
+ * @param {?} value The value to convert. If it is already a SanitizedHtml
  *     object, it is left alone.
  * @return {!goog.soy.data.SanitizedHtml} A SanitizedHtml object derived from
  *     the stringified value. It is escaped unless the input is SanitizedHtml or
@@ -24361,7 +24371,7 @@ soydata.$$makeSanitizedContentFactory_ = function(ctor) {
   /**
    * Creates a ctor-type SanitizedContent instance.
    *
-   * @param {*} content The content to put in the instance.
+   * @param {?} content The content to put in the instance.
    * @param {?goog.i18n.bidi.Dir=} opt_contentDir The content direction. If
    *     undefined, ctor.prototype.contentDir is used.
    * @return {!goog.soy.data.SanitizedContent} The new instance. It is actually
@@ -24409,7 +24419,7 @@ soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_ = function(ctor) {
   /**
    * Creates a ctor-type SanitizedContent instance.
    *
-   * @param {*} content The content to put in the instance.
+   * @param {?} content The content to put in the instance.
    * @return {!goog.soy.data.SanitizedContent} The new instance. It is actually
    *     of type T above (ctor's type, a descendant of SanitizedContent), but
    *     there is no way to express that here.
@@ -24436,7 +24446,7 @@ soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_ = function(ctor) {
  * unescaped usage in a Soy template. A great case is for user-controlled
  * data that has historically been a source of vulernabilities.
  *
- * @param {*} content Text to protect.
+ * @param {?} content Text to protect.
  * @param {?goog.i18n.bidi.Dir=} opt_contentDir The content direction; null if
  *     unknown and thus to be estimated when necessary. Default: null.
  * @return {!goog.soy.data.UnsanitizedText} A wrapper that is rejected by the
@@ -24450,7 +24460,7 @@ soydata.markUnsanitizedText = function(content, opt_contentDir) {
 /**
  * Takes a leap of faith that the provided content is "safe" HTML.
  *
- * @param {*} content A string of HTML that can safely be embedded in
+ * @param {?} content A string of HTML that can safely be embedded in
  *     a PCDATA context in your app. If you would be surprised to find that an
  *     HTML sanitizer produced `s` (e.g. it runs code or fetches bad URLs)
  *     and you wouldn't write a template that produces `s` on security or
@@ -24468,7 +24478,7 @@ soydata.VERY_UNSAFE.ordainSanitizedHtml =
  * Takes a leap of faith that the provided content is "safe" (non-attacker-
  * controlled, XSS-free) Javascript.
  *
- * @param {*} content Javascript source that when evaluated does not
+ * @param {?} content Javascript source that when evaluated does not
  *     execute any attacker-controlled scripts.
  * @return {!goog.soy.data.SanitizedJs} Sanitized content wrapper that indicates
  *     to Soy not to escape when printed as Javascript source.
@@ -24487,7 +24497,7 @@ soydata.VERY_UNSAFE.ordainSanitizedJs =
  * attribute), such as if it's already been encoded or  if it's a Javascript:
  * URI.
  *
- * @param {*} content A chunk of URI that the caller knows is safe to
+ * @param {?} content A chunk of URI that the caller knows is safe to
  *     emit in a template.
  * @return {!goog.soy.data.SanitizedUri} Sanitized content wrapper that
  *     indicates to Soy not to escape or filter when printed in URI context.
@@ -24504,7 +24514,7 @@ soydata.VERY_UNSAFE.ordainSanitizedUri =
  * This creates a Soy SanitizedContent object which indicates to Soy there is
  * no need to filter it when printed as a TrustedResourceUri.
  *
- * @param {*} content A chunk of TrustedResourceUri such as that the caller
+ * @param {?} content A chunk of TrustedResourceUri such as that the caller
  *     knows is safe to emit in a template.
  * @return {!goog.soy.data.SanitizedTrustedResourceUri} Sanitized content
  *     wrapper that indicates to Soy not to escape or filter when printed in
@@ -24519,7 +24529,7 @@ soydata.VERY_UNSAFE.ordainSanitizedTrustedResourceUri =
  * Takes a leap of faith that the provided content is "safe" to use as an
  * HTML attribute.
  *
- * @param {*} content An attribute name and value, such as
+ * @param {?} content An attribute name and value, such as
  *     {@code dir="ltr"}.
  * @return {!goog.soy.data.SanitizedHtmlAttribute} Sanitized content wrapper
  *     that indicates to Soy not to escape when printed as an HTML attribute.
@@ -24533,7 +24543,7 @@ soydata.VERY_UNSAFE.ordainSanitizedHtmlAttribute =
  * Takes a leap of faith that the provided content is "safe" to use as STYLE
  * in a style attribute.
  *
- * @param {*} content CSS, such as `color:#c3d9ff`.
+ * @param {?} content CSS, such as `color:#c3d9ff`.
  * @return {!goog.soy.data.SanitizedStyle} Sanitized style wrapper that
  *     indicates to Soy there is no need to escape or filter when printed in CSS
  *     context.
@@ -24547,7 +24557,7 @@ soydata.VERY_UNSAFE.ordainSanitizedStyle =
  * Takes a leap of faith that the provided content is "safe" to use as CSS
  * in a style block.
  *
- * @param {*} content CSS, such as `color:#c3d9ff`.
+ * @param {?} content CSS, such as `color:#c3d9ff`.
  * @return {!goog.soy.data.SanitizedCss} Sanitized CSS wrapper that indicates to
  *     Soy there is no need to escape or filter when printed in CSS context.
  */
@@ -24605,24 +24615,6 @@ soy.$$assignDefaults = function(obj, defaults) {
 
 
 /**
- * Checks that the given map key is a string.
- *
- * <p>This is used to validate keys for legacy object map literals.
- *
- * @param {*} key Key to check.
- * @return {string} The given key.
- */
-soy.$$checkLegacyObjectMapLiteralKey = function(key) {
-  if ((typeof key) != 'string') {
-    throw Error(
-        'Map literal\'s key expression must evaluate to string' +
-        ' (encountered type "' + (typeof key) + '").');
-  }
-  return key;
-};
-
-
-/**
  * Gets the keys in a map as an array. There are no guarantees on the order.
  * @param {Object} map The map to get the keys of.
  * @return {!Array<string>} The array of keys in the given map.
@@ -24662,6 +24654,69 @@ soy.$$parseInt = function(str) {
   var parsed = parseInt(str, 10);
   return isNaN(parsed) ? null : parsed;
 };
+
+/**
+ * When equals comparison cannot be expressed using JS runtime semantics for ==,
+ * bail out to a runtime function. In practice, this only means comparisons
+ * of boolean and number are valid for equals, and everything else needs this
+ * function. Even "strings" have to go through this since in some cases they
+ * are just strings and in some cases they are UnsanitzedText. In addition,
+ * some sanitized content may be functions or objects that need to be coerced
+ * to a string.
+ * @param {?} obj1
+ * @param {?} obj2
+ * @return {boolean}
+ */
+soy.$$equals = function(obj1, obj2) {
+  /** @type {?} */
+  var valueOne;
+  /** @type {?} */
+  var valueTwo;
+
+  /**
+   * Convert text to string since that's what it really is. Or just keep it the
+   * same
+   * @param {?} obj
+   * @return {?}
+   */
+  function unsanitizedTextOrObject(obj) {
+    if (obj instanceof goog.soy.data.UnsanitizedText) {
+      return obj.toString();
+    } else {
+      return obj;
+    }
+  }
+
+  valueOne = unsanitizedTextOrObject(obj1);
+  valueTwo = unsanitizedTextOrObject(obj2);
+
+  // Incremental DOM functions have to be coerced to a string. At runtime
+  // they are tagged with a type for ATTR or HTML. They both need to be
+  // the same to be considered structurally equal. Beware, as this is a
+  // very expensive function.
+  if (goog.isFunction(valueOne) && goog.isFunction(valueTwo)) {
+    if ((/** @type {?} */ (valueOne)).type !==
+        (/** @type {?} */ (valueTwo)).type) {
+      return false;
+    } else {
+      return valueOne.toString() === valueTwo.toString();
+    }
+  }
+
+  // Likewise for sanitized content.
+  if (valueOne instanceof goog.soy.data.SanitizedContent &&
+      valueTwo instanceof goog.soy.data.SanitizedContent) {
+    if (valueOne.contentKind != valueTwo.contentKind) {
+      return false;
+    } else {
+      return valueOne.toString() == valueTwo.toString();
+    }
+  }
+
+  // Rely on javascript semantics for comparing two objects.
+  return valueOne == valueTwo;
+};
+
 
 
 /**
@@ -24837,7 +24892,7 @@ soydata.$$makeSanitizedContentFactoryForInternalBlocks_ = function(ctor) {
   /**
    * Creates a ctor-type SanitizedContent instance.
    *
-   * @param {*} content The content to put in the instance.
+   * @param {?} content The content to put in the instance.
    * @param {?goog.i18n.bidi.Dir=} opt_contentDir The content direction. If
    *     undefined, ctor.prototype.contentDir is used.
    * @return {!goog.soy.data.SanitizedContent|soydata.$$EMPTY_STRING_} The new
@@ -24895,7 +24950,7 @@ soydata.$$makeSanitizedContentFactoryWithDefaultDirOnlyForInternalBlocks_ =
   /**
    * Creates a ctor-type SanitizedContent instance.
    *
-   * @param {*} content The content to put in the instance.
+   * @param {?} content The content to put in the instance.
    * @return {!goog.soy.data.SanitizedContent|soydata.$$EMPTY_STRING_} The new
    *     instance, or an empty string. A new instance is actually of type T
    *     above (ctor's type, a descendant of SanitizedContent), but there's no
@@ -24916,7 +24971,7 @@ soydata.$$makeSanitizedContentFactoryWithDefaultDirOnlyForInternalBlocks_ =
 /**
  * Creates kind="text" block contents (internal use only).
  *
- * @param {*} content Text.
+ * @param {?} content Text.
  * @param {?goog.i18n.bidi.Dir=} opt_contentDir The content direction; null if
  *     unknown and thus to be estimated when necessary. Default: null.
  * @return {!goog.soy.data.UnsanitizedText|soydata.$$EMPTY_STRING_} Wrapped result.
@@ -24934,7 +24989,7 @@ soydata.$$markUnsanitizedTextForInternalBlocks = function(
 /**
  * Creates kind="html" block contents (internal use only).
  *
- * @param {*} content Text.
+ * @param {?} content Text.
  * @param {?goog.i18n.bidi.Dir=} opt_contentDir The content direction; null if
  *     unknown and thus to be estimated when necessary. Default: null.
  * @return {!goog.soy.data.SanitizedHtml|soydata.$$EMPTY_STRING_} Wrapped
@@ -24948,7 +25003,7 @@ soydata.VERY_UNSAFE.$$ordainSanitizedHtmlForInternalBlocks =
 /**
  * Creates kind="js" block contents (internal use only).
  *
- * @param {*} content Text.
+ * @param {?} content Text.
  * @return {!goog.soy.data.SanitizedJs|soydata.$$EMPTY_STRING_} Wrapped result.
  */
 soydata.VERY_UNSAFE.$$ordainSanitizedJsForInternalBlocks =
@@ -24959,7 +25014,7 @@ soydata.VERY_UNSAFE.$$ordainSanitizedJsForInternalBlocks =
 /**
  * Creates kind="trustedResourceUri" block contents (internal use only).
  *
- * @param {*} content Text.
+ * @param {?} content Text.
  * @return {goog.soy.data.SanitizedTrustedResourceUri|soydata.$$EMPTY_STRING_}
  *     Wrapped result.
  */
@@ -24971,7 +25026,7 @@ soydata.VERY_UNSAFE.$$ordainSanitizedTrustedResourceUriForInternalBlocks =
 /**
  * Creates kind="uri" block contents (internal use only).
  *
- * @param {*} content Text.
+ * @param {?} content Text.
  * @return {goog.soy.data.SanitizedUri|soydata.$$EMPTY_STRING_} Wrapped result.
  */
 soydata.VERY_UNSAFE.$$ordainSanitizedUriForInternalBlocks =
@@ -24982,7 +25037,7 @@ soydata.VERY_UNSAFE.$$ordainSanitizedUriForInternalBlocks =
 /**
  * Creates kind="attributes" block contents (internal use only).
  *
- * @param {*} content Text.
+ * @param {?} content Text.
  * @return {goog.soy.data.SanitizedHtmlAttribute|soydata.$$EMPTY_STRING_}
  *     Wrapped result.
  */
@@ -24994,7 +25049,7 @@ soydata.VERY_UNSAFE.$$ordainSanitizedAttributesForInternalBlocks =
 /**
  * Creates kind="style" block contents (internal use only).
  *
- * @param {*} content Text.
+ * @param {?} content Text.
  * @return {goog.soy.data.SanitizedStyle|soydata.$$EMPTY_STRING_} Wrapped
  *     result.
  */
@@ -25006,7 +25061,7 @@ soydata.VERY_UNSAFE.$$ordainSanitizedStyleForInternalBlocks =
 /**
  * Creates kind="css" block contents (internal use only).
  *
- * @param {*} content Text.
+ * @param {?} content Text.
  * @return {goog.soy.data.SanitizedCss|soydata.$$EMPTY_STRING_} Wrapped result.
  */
 soydata.VERY_UNSAFE.$$ordainSanitizedCssForInternalBlocks =
@@ -25026,7 +25081,7 @@ soydata.VERY_UNSAFE.$$ordainSanitizedCssForInternalBlocks =
  * double quote '"' in addition to '&', '<', and '>' so that a string can be
  * included in an HTML tag attribute value within double quotes.
  *
- * @param {*} value The value to convert. If it is already a SanitizedHtml
+ * @param {?} value The value to convert. If it is already a SanitizedHtml
  *     object, it is left alone.
  * @return {!goog.soy.data.SanitizedHtml} An escaped version of value.
  */
@@ -25068,7 +25123,7 @@ soy.$$cleanHtml = function(value, opt_safeTags) {
  * Used mainly internally for escaping message strings in attribute and rcdata
  * context, where we explicitly want to preserve any existing entities.
  *
- * @param {*} value Value to normalize.
+ * @param {?} value Value to normalize.
  * @return {string} A value safe to insert in HTML without any quotes or angle
  *     brackets.
  */
@@ -25120,7 +25175,7 @@ soy.$$HTML5_VOID_ELEMENTS_ = new RegExp(
  * If opt_tagWhitelist is not specified or is empty, then
  * the result can be used as an attribute value.
  *
- * @param {*} value The HTML to be escaped. May not be a string, but the
+ * @param {?} value The HTML to be escaped. May not be a string, but the
  *     value will be coerced to a string.
  * @param {Object<string, boolean>=} opt_tagWhitelist Has an own property whose
  *     name is a lower-case tag name and whose value is `1` for
@@ -25334,7 +25389,7 @@ soy.$$filterHtmlAttributes = function(value) {
 /**
  * Filters out strings that cannot be a substring of a valid HTML element name.
  *
- * @param {*} value The value to escape. May not be a string, but the value
+ * @param {?} value The value to escape. May not be a string, but the value
  *     will be coerced to a string.
  * @return {string} A valid HTML element name part.
  *     {@code "zSoyz"} if the input is invalid.
@@ -25354,7 +25409,7 @@ soy.$$filterHtmlElementName = function(value) {
  * Escapes characters in the value to make it valid content for a JS string
  * literal.
  *
- * @param {*} value The value to escape. May not be a string, but the value
+ * @param {?} value The value to escape. May not be a string, but the value
  *     will be coerced to a string.
  * @return {string} An escaped version of value.
  */
@@ -25366,7 +25421,7 @@ soy.$$escapeJsString = function(value) {
 /**
  * Encodes a value as a JavaScript literal.
  *
- * @param {*} value The value to escape. May not be a string, but the value
+ * @param {?} value The value to escape. May not be a string, but the value
  *     will be coerced to a string.
  * @return {string} A JavaScript code representation of the input.
  */
@@ -25401,7 +25456,7 @@ soy.$$escapeJsValue = function(value) {
  * Escapes characters in the string to make it valid content for a JS regular
  * expression literal.
  *
- * @param {*} value The value to escape. May not be a string, but the value
+ * @param {?} value The value to escape. May not be a string, but the value
  *     will be coerced to a string.
  * @return {string} An escaped version of value.
  */
@@ -25435,7 +25490,7 @@ soy.$$pctEncode_ = function(ch) {
 /**
  * Escapes a string so that it can be safely included in a URI.
  *
- * @param {*} value The value to escape. May not be a string, but the value
+ * @param {?} value The value to escape. May not be a string, but the value
  *     will be coerced to a string.
  * @return {string} An escaped version of value.
  */
@@ -25462,7 +25517,7 @@ soy.$$escapeUri = function(value) {
 /**
  * Removes rough edges from a URI by escaping any raw HTML/JS string delimiters.
  *
- * @param {*} value The value to escape. May not be a string, but the value
+ * @param {?} value The value to escape. May not be a string, but the value
  *     will be coerced to a string.
  * @return {string} An escaped version of value.
  */
@@ -25558,8 +25613,8 @@ soy.$$filterTrustedResourceUri = function(value) {
  * For any resource string/variable which has
  * |blessStringAsTrustedResuorceUrlForLegacy directive return the value as is.
  *
- * @param {*} value The value to be blessed. Might not be a string
- * @return {*} value Return current value.
+ * @param {?} value The value to be blessed. Might not be a string
+ * @return {?} value Return current value.
  */
 soy.$$blessStringAsTrustedResourceUrlForLegacy = function(value) {
   return value;
@@ -25569,7 +25624,7 @@ soy.$$blessStringAsTrustedResourceUrlForLegacy = function(value) {
 /**
  * Allows only data-protocol image URI's.
  *
- * @param {*} value The value to process. May not be a string, but the value
+ * @param {?} value The value to process. May not be a string, but the value
  *     will be coerced to a string.
  * @return {!goog.soy.data.SanitizedUri} An escaped version of value.
  */
@@ -25583,7 +25638,7 @@ soy.$$filterImageDataUri = function(value) {
 /**
  * Allows only sip URIs.
  *
- * @param {*} value The value to process. May not be a string, but the value
+ * @param {?} value The value to process. May not be a string, but the value
  *     will be coerced to a string.
  * @return {!goog.soy.data.SanitizedUri} An escaped version of value.
  */
@@ -25597,7 +25652,7 @@ soy.$$filterSipUri = function(value) {
 /**
  * Allows only tel URIs.
  *
- * @param {*} value The value to process. May not be a string, but the value
+ * @param {?} value The value to process. May not be a string, but the value
  *     will be coerced to a string.
  * @return {!goog.soy.data.SanitizedUri} An escaped version of value.
  */
@@ -25611,7 +25666,7 @@ soy.$$filterTelUri = function(value) {
 /**
  * Escapes a string so it can safely be included inside a quoted CSS string.
  *
- * @param {*} value The value to escape. May not be a string, but the value
+ * @param {?} value The value to escape. May not be a string, but the value
  *     will be coerced to a string.
  * @return {string} An escaped version of value.
  */
@@ -25658,7 +25713,7 @@ soy.$$filterCssValue = function(value) {
  * meant to be used unescaped.
  *
  * @param {?} value The value to filter.
- * @return {*} The value, that we dearly hope will not cause an attack.
+ * @return {?} The value, that we dearly hope will not cause an attack.
  */
 soy.$$filterNoAutoescape = function(value) {
   if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.TEXT)) {
@@ -25680,7 +25735,7 @@ soy.$$filterNoAutoescape = function(value) {
 
 /**
  * Converts \r\n, \r, and \n to <br>s
- * @param {*} value The string in which to convert newlines.
+ * @param {?} value The string in which to convert newlines.
  * @return {string|!goog.soy.data.SanitizedHtml} A copy of `value` with
  *     converted newlines. If `value` is SanitizedHtml, the return value
  *     is also SanitizedHtml, of the same known directionality.
@@ -25701,7 +25756,7 @@ soy.$$changeNewlineToBr = function(value) {
  * HTML tags or entities. Entites count towards the character count; HTML tags
  * do not.
  *
- * @param {*} value The HTML string to insert word breaks into. Can be other
+ * @param {?} value The HTML string to insert word breaks into. Can be other
  *     types, but the value will be coerced to a string.
  * @param {number} maxCharsBetweenWordBreaks Maximum number of non-space
  *     characters to allow before adding a word break.
@@ -25726,7 +25781,7 @@ soy.$$insertWordBreaks = function(value, maxCharsBetweenWordBreaks) {
  * Truncates a string to a given max length (if it's currently longer),
  * optionally adding ellipsis at the end.
  *
- * @param {*} str The string to truncate. Can be other types, but the value will
+ * @param {?} str The string to truncate. Can be other types, but the value will
  *     be coerced to a string.
  * @param {number} maxLen The maximum length of the string after truncation
  *     (including ellipsis, if applicable).
@@ -25823,7 +25878,7 @@ soy.$$getBidiFormatterInstance_ = function(bidiGlobalDir) {
  * If text has a goog.i18n.bidi.Dir-valued contentDir, this is used instead of
  * estimating the directionality.
  *
- * @param {*} text The content whose directionality is to be estimated.
+ * @param {?} text The content whose directionality is to be estimated.
  * @param {boolean=} opt_isHtml Whether text is HTML/HTML-escaped.
  *     Default: false.
  * @return {number} 1 if text is LTR, -1 if it is RTL, and 0 if it is neutral.
@@ -25850,7 +25905,7 @@ soy.$$bidiTextDir = function(text, opt_isHtml) {
  *
  * @param {number} bidiGlobalDir The global directionality context: 1 if ltr, -1
  *     if rtl, 0 if unknown.
- * @param {*} text The content whose directionality is to be estimated.
+ * @param {?} text The content whose directionality is to be estimated.
  * @param {boolean=} opt_isHtml Whether text is HTML/HTML-escaped.
  *     Default: false.
  * @return {!goog.soy.data.SanitizedHtmlAttribute} 'dir="rtl"' for RTL text in
@@ -25881,7 +25936,7 @@ soy.$$bidiDirAttr = function(bidiGlobalDir, text, opt_isHtml) {
  *
  * @param {number} bidiGlobalDir The global directionality context: 1 if ltr, -1
  *     if rtl, 0 if unknown.
- * @param {*} text The content whose directionality is to be estimated.
+ * @param {?} text The content whose directionality is to be estimated.
  * @param {boolean=} opt_isHtml Whether text is HTML/HTML-escaped.
  *     Default: false.
  * @return {string} A Unicode bidi mark matching bidiGlobalDir, or the empty
@@ -25908,7 +25963,7 @@ soy.$$bidiMarkAfter = function(bidiGlobalDir, text, opt_isHtml) {
  *
  * @param {number} bidiGlobalDir The global directionality context: 1 if ltr, -1
  *     if rtl, 0 if unknown.
- * @param {*} text The string to be wrapped. Can be other types, but the value
+ * @param {?} text The string to be wrapped. Can be other types, but the value
  *     will be coerced to a string.
  * @return {!goog.soy.data.SanitizedContent|string} The wrapped text.
  */
@@ -25954,7 +26009,7 @@ soy.$$bidiSpanWrap = function(bidiGlobalDir, text) {
  *
  * @param {number} bidiGlobalDir The global directionality context: 1 if ltr, -1
  *     if rtl, 0 if unknown.
- * @param {*} text The string to be wrapped. Can be other types, but the value
+ * @param {?} text The string to be wrapped. Can be other types, but the value
  *     will be coerced to a string.
  * @return {!goog.soy.data.SanitizedContent|string} The wrapped string.
  */
@@ -26370,7 +26425,7 @@ soy.esc.$$FILTER_FOR_FILTER_HTML_ELEMENT_NAME_ = /^(?!base|iframe|link|no|script
 
 /**
  * A helper for the Soy directive |normalizeHtml
- * @param {*} value Can be of any type but will be coerced to a string.
+ * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
  */
 soy.esc.$$normalizeHtmlHelper = function(value) {
@@ -26382,7 +26437,7 @@ soy.esc.$$normalizeHtmlHelper = function(value) {
 
 /**
  * A helper for the Soy directive |escapeHtmlNospace
- * @param {*} value Can be of any type but will be coerced to a string.
+ * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
  */
 soy.esc.$$escapeHtmlNospaceHelper = function(value) {
@@ -26394,7 +26449,7 @@ soy.esc.$$escapeHtmlNospaceHelper = function(value) {
 
 /**
  * A helper for the Soy directive |normalizeHtmlNospace
- * @param {*} value Can be of any type but will be coerced to a string.
+ * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
  */
 soy.esc.$$normalizeHtmlNospaceHelper = function(value) {
@@ -26406,7 +26461,7 @@ soy.esc.$$normalizeHtmlNospaceHelper = function(value) {
 
 /**
  * A helper for the Soy directive |escapeJsString
- * @param {*} value Can be of any type but will be coerced to a string.
+ * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
  */
 soy.esc.$$escapeJsStringHelper = function(value) {
@@ -26418,7 +26473,7 @@ soy.esc.$$escapeJsStringHelper = function(value) {
 
 /**
  * A helper for the Soy directive |escapeJsRegex
- * @param {*} value Can be of any type but will be coerced to a string.
+ * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
  */
 soy.esc.$$escapeJsRegexHelper = function(value) {
@@ -26430,7 +26485,7 @@ soy.esc.$$escapeJsRegexHelper = function(value) {
 
 /**
  * A helper for the Soy directive |escapeCssString
- * @param {*} value Can be of any type but will be coerced to a string.
+ * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
  */
 soy.esc.$$escapeCssStringHelper = function(value) {
@@ -26442,7 +26497,7 @@ soy.esc.$$escapeCssStringHelper = function(value) {
 
 /**
  * A helper for the Soy directive |filterCssValue
- * @param {*} value Can be of any type but will be coerced to a string.
+ * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
  */
 soy.esc.$$filterCssValueHelper = function(value) {
@@ -26456,7 +26511,7 @@ soy.esc.$$filterCssValueHelper = function(value) {
 
 /**
  * A helper for the Soy directive |normalizeUri
- * @param {*} value Can be of any type but will be coerced to a string.
+ * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
  */
 soy.esc.$$normalizeUriHelper = function(value) {
@@ -26468,7 +26523,7 @@ soy.esc.$$normalizeUriHelper = function(value) {
 
 /**
  * A helper for the Soy directive |filterNormalizeUri
- * @param {*} value Can be of any type but will be coerced to a string.
+ * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
  */
 soy.esc.$$filterNormalizeUriHelper = function(value) {
@@ -26484,7 +26539,7 @@ soy.esc.$$filterNormalizeUriHelper = function(value) {
 
 /**
  * A helper for the Soy directive |filterNormalizeMediaUri
- * @param {*} value Can be of any type but will be coerced to a string.
+ * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
  */
 soy.esc.$$filterNormalizeMediaUriHelper = function(value) {
@@ -26500,7 +26555,7 @@ soy.esc.$$filterNormalizeMediaUriHelper = function(value) {
 
 /**
  * A helper for the Soy directive |filterImageDataUri
- * @param {*} value Can be of any type but will be coerced to a string.
+ * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
  */
 soy.esc.$$filterImageDataUriHelper = function(value) {
@@ -26514,7 +26569,7 @@ soy.esc.$$filterImageDataUriHelper = function(value) {
 
 /**
  * A helper for the Soy directive |filterSipUri
- * @param {*} value Can be of any type but will be coerced to a string.
+ * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
  */
 soy.esc.$$filterSipUriHelper = function(value) {
@@ -26528,7 +26583,7 @@ soy.esc.$$filterSipUriHelper = function(value) {
 
 /**
  * A helper for the Soy directive |filterTelUri
- * @param {*} value Can be of any type but will be coerced to a string.
+ * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
  */
 soy.esc.$$filterTelUriHelper = function(value) {
@@ -26542,7 +26597,7 @@ soy.esc.$$filterTelUriHelper = function(value) {
 
 /**
  * A helper for the Soy directive |filterHtmlAttributes
- * @param {*} value Can be of any type but will be coerced to a string.
+ * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
  */
 soy.esc.$$filterHtmlAttributesHelper = function(value) {
@@ -26556,7 +26611,7 @@ soy.esc.$$filterHtmlAttributesHelper = function(value) {
 
 /**
  * A helper for the Soy directive |filterHtmlElementName
- * @param {*} value Can be of any type but will be coerced to a string.
+ * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
  */
 soy.esc.$$filterHtmlElementNameHelper = function(value) {

@@ -22,13 +22,13 @@ import com.google.common.collect.Iterables;
 
 /** Represents a sequence of statements. */
 @AutoValue
-abstract class StatementList extends CodeChunk {
+abstract class StatementList extends Statement {
   private static final StatementList EMPTY =
-      new AutoValue_StatementList(ImmutableList.<CodeChunk>of());
+      new AutoValue_StatementList(ImmutableList.<Statement>of());
 
-  abstract ImmutableList<? extends CodeChunk> statements();
+  abstract ImmutableList<? extends Statement> statements();
 
-  static StatementList of(Iterable<? extends CodeChunk> statements) {
+  static StatementList create(Iterable<? extends Statement> statements) {
     if (Iterables.isEmpty(statements)) {
       return EMPTY;
     }
@@ -37,8 +37,8 @@ abstract class StatementList extends CodeChunk {
     // TODO(lukes): newlines and semicolons are handled in an extremely haphazard way...we should
     // come up with some kind of coherent strategy.  Leaf nodes like this should probably be
     // responsible for adding these things rather than FormattingContext
-    ImmutableList.Builder<CodeChunk> unrolled = ImmutableList.builder();
-    for (CodeChunk statement : statements) {
+    ImmutableList.Builder<Statement> unrolled = ImmutableList.builder();
+    for (Statement statement : statements) {
       if (statement instanceof StatementList) {
         unrolled.addAll(((StatementList) statement).statements());
       } else {
@@ -50,14 +50,14 @@ abstract class StatementList extends CodeChunk {
 
   @Override
   public void collectRequires(RequiresCollector collector) {
-    for (CodeChunk statement : statements()) {
+    for (Statement statement : statements()) {
       statement.collectRequires(collector);
     }
   }
 
   @Override
   void doFormatInitialStatements(FormattingContext ctx) {
-    for (CodeChunk statement : statements()) {
+    for (Statement statement : statements()) {
       ctx.appendAll(statement);
     }
   }

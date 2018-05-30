@@ -28,9 +28,9 @@ import com.google.template.soy.exprtree.Operator.Associativity;
 @Immutable
 abstract class New extends Operation {
 
-  abstract CodeChunk.WithValue ctor();
+  abstract Expression ctor();
 
-  static New create(WithValue ctor) {
+  static New create(Expression ctor) {
     return new AutoValue_New(ctor);
   }
 
@@ -61,7 +61,7 @@ abstract class New extends Operation {
   }
 
   @Override
-  public ImmutableList<CodeChunk> initialStatements() {
+  public ImmutableList<Statement> initialStatements() {
     return ctor().initialStatements();
   }
 }

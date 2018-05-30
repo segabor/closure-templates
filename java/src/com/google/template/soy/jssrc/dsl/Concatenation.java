@@ -25,17 +25,17 @@ import com.google.template.soy.exprtree.Operator.Associativity;
  * Represents the concatenation of many chunks via the {@code +} operator.
  *
  * <p>This could be represented as a nested sequence of {@link BinaryOperation} chunks, but the
- * compiler tends to create very large concatenations (thousands of nodes) and the recursive
+ * compiler tends to create very large concatenations (thousands of nodes) and the naive recursive
  * formatting algorithm can cause stack overflow errors.
  */
 @AutoValue
 @Immutable
 abstract class Concatenation extends Operation {
 
-  static Concatenation create(Iterable<? extends CodeChunk.WithValue> parts) {
-    ImmutableList.Builder<CodeChunk> initialStatements = ImmutableList.builder();
-    ImmutableList.Builder<CodeChunk.WithValue> partsBuilder = ImmutableList.builder();
-    for (CodeChunk.WithValue part : parts) {
+  static Concatenation create(Iterable<? extends Expression> parts) {
+    ImmutableList.Builder<Statement> initialStatements = ImmutableList.builder();
+    ImmutableList.Builder<Expression> partsBuilder = ImmutableList.builder();
+    for (Expression part : parts) {
       initialStatements.addAll(part.initialStatements());
       if (part instanceof Concatenation) {
         partsBuilder.addAll(((Concatenation) part).parts());
@@ -54,7 +54,7 @@ abstract class Concatenation extends Operation {
     return new AutoValue_Concatenation(initialStatements.build(), partsBuilder.build());
   }
 
-  abstract ImmutableList<CodeChunk.WithValue> parts();
+  abstract ImmutableList<Expression> parts();
 
   @Override
   int precedence() {
@@ -68,7 +68,7 @@ abstract class Concatenation extends Operation {
 
   @Override
   public void collectRequires(RequiresCollector collector) {
-    for (CodeChunk.WithValue part : parts()) {
+    for (Expression part : parts()) {
       part.collectRequires(collector);
     }
   }
@@ -90,7 +90,7 @@ abstract class Concatenation extends Operation {
 
   @Override
   void doFormatInitialStatements(FormattingContext ctx) {
-    for (CodeChunk.WithValue part : parts()) {
+    for (Expression part : parts()) {
       ctx.appendInitialStatements(part);
     }
   }

@@ -22,11 +22,11 @@ import com.google.errorprone.annotations.Immutable;
 /** Represents a JavaScript return statement. */
 @AutoValue
 @Immutable
-abstract class Return extends CodeChunk {
+abstract class Return extends Statement {
 
-  abstract CodeChunk.WithValue value();
+  abstract Expression value();
 
-  static Return create(CodeChunk.WithValue value) {
+  static Return create(Expression value) {
     return new AutoValue_Return(value);
   }
 

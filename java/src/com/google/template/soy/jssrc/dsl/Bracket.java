@@ -28,13 +28,13 @@ import com.google.template.soy.exprtree.Operator.Associativity;
 @Immutable
 abstract class Bracket extends Operation {
 
-  abstract CodeChunk.WithValue receiver();
+  abstract Expression receiver();
 
-  abstract CodeChunk.WithValue key();
+  abstract Expression key();
 
-  static Bracket create(CodeChunk.WithValue receiver, CodeChunk.WithValue key) {
+  static Bracket create(Expression receiver, Expression key) {
     return new AutoValue_Bracket(
-        ImmutableList.<CodeChunk>builder()
+        ImmutableList.<Statement>builder()
             .addAll(receiver.initialStatements())
             .addAll(key.initialStatements())
             .build(),

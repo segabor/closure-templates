@@ -28,13 +28,13 @@ import com.google.template.soy.exprtree.Operator.Associativity;
 @Immutable
 abstract class Dot extends Operation {
 
-  abstract CodeChunk.WithValue receiver();
+  abstract Expression receiver();
 
-  abstract CodeChunk.WithValue key();
+  abstract Expression key();
 
-  static Dot create(CodeChunk.WithValue receiver, CodeChunk.WithValue key) {
+  static Dot create(Expression receiver, Expression key) {
     return new AutoValue_Dot(
-        ImmutableList.<CodeChunk>builder()
+        ImmutableList.<Statement>builder()
             .addAll(receiver.initialStatements())
             .addAll(key.initialStatements())
             .build(),

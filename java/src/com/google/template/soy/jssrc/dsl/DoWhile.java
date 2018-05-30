@@ -22,15 +22,15 @@ import com.google.errorprone.annotations.Immutable;
 /** Represents a {@code do {....} while(...);} loop. */
 @AutoValue
 @Immutable
-public abstract class DoWhile extends CodeChunk {
+public abstract class DoWhile extends Statement {
 
   public static Builder builder() {
     return new AutoValue_DoWhile.Builder();
   }
 
-  abstract CodeChunk body();
+  abstract Statement body();
 
-  abstract CodeChunk.WithValue condition();
+  abstract Expression condition();
 
   @Override
   public void collectRequires(RequiresCollector collector) {
@@ -53,9 +53,9 @@ public abstract class DoWhile extends CodeChunk {
   @AutoValue.Builder
   public abstract static class Builder {
 
-    public abstract Builder setCondition(CodeChunk.WithValue condition);
+    public abstract Builder setCondition(Expression condition);
 
-    public abstract Builder setBody(CodeChunk condition);
+    public abstract Builder setBody(Statement condition);
 
     public abstract DoWhile build();
   }

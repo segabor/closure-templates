@@ -16,16 +16,18 @@
 
 package com.google.template.soy.jssrc.dsl;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+
 import com.google.errorprone.annotations.Immutable;
 
 /** Represents {@code if} or {@code else if} clauses. */
 @Immutable
-final class IfThenPair {
-  final CodeChunk.WithValue predicate;
-  final CodeChunk consequent;
+final class IfThenPair<T extends CodeChunk> {
+  final Expression predicate;
+  final T consequent;
 
-  IfThenPair(CodeChunk.WithValue predicate, CodeChunk consequent) {
-    this.predicate = predicate;
-    this.consequent = consequent;
+  IfThenPair(Expression predicate, T consequent) {
+    this.predicate = checkNotNull(predicate);
+    this.consequent = checkNotNull(consequent);
   }
 }

@@ -22,24 +22,20 @@ import com.google.errorprone.annotations.Immutable;
 /** Represents a {@code for} statement. */
 @AutoValue
 @Immutable
-abstract class For extends CodeChunk {
+abstract class For extends Statement {
 
   abstract String localVar();
 
-  abstract CodeChunk.WithValue initial();
+  abstract Expression initial();
 
-  abstract CodeChunk.WithValue limit();
+  abstract Expression limit();
 
-  abstract CodeChunk.WithValue increment();
+  abstract Expression increment();
 
-  abstract CodeChunk body();
+  abstract Statement body();
 
   static For create(
-      String localVar,
-      CodeChunk.WithValue initial,
-      CodeChunk.WithValue limit,
-      CodeChunk.WithValue increment,
-      CodeChunk body) {
+      String localVar, Expression initial, Expression limit, Expression increment, Statement body) {
     return new AutoValue_For(localVar, initial, limit, increment, body);
   }
 

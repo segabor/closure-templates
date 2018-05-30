@@ -48,11 +48,11 @@ import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
 /**
- * Unit tests for {@link ResolveExpressionTypesVisitor}.
+ * Unit tests for {@link ResolveExpressionTypesPass}.
  *
  */
 @RunWith(JUnit4.class)
-public final class ResolveExpressionTypesVisitorTest {
+public final class ResolveExpressionTypesPassTest {
   private static final SoyFunction ASSERT_TYPE_FUNCTION =
       new SoyFunction() {
         @Override
@@ -68,9 +68,6 @@ public final class ResolveExpressionTypesVisitorTest {
 
   private static final SoyTypeRegistry TYPE_REGISTRY = new SoyTypeRegistry();
 
-  private static ResolveExpressionTypesVisitor createResolveExpressionTypesVisitor() {
-    return new ResolveExpressionTypesVisitor(TYPE_REGISTRY, ErrorReporter.exploding());
-  }
 
   @Test
   public void testOptionalParamTypes() {
@@ -241,8 +238,6 @@ public final class ResolveExpressionTypesVisitorTest {
             .addSoyFunction(ASSERT_TYPE_FUNCTION)
             .parse()
             .fileSet();
-    new ResolveNamesVisitor(ErrorReporter.exploding()).exec(soyTree);
-    createResolveExpressionTypesVisitor().exec(soyTree);
     assertTypes(soyTree);
   }
 
@@ -345,22 +340,6 @@ public final class ResolveExpressionTypesVisitorTest {
   }
 
   @Test
-  public void testLegacyObjectMapLiteral() {
-    SoyFileSetNode soyTree =
-        SoyFileSetParserBuilder.forFileContents(
-                constructTemplateSource(
-                    "{@param pi: int}",
-                    "{@param pf: float}",
-                    "{let $map: [1: $pi, 2:$pf]/}",
-                    "{assertType('legacy_object_map<int,float|int>', $map)}"))
-            .typeRegistry(TYPE_REGISTRY)
-            .addSoyFunction(ASSERT_TYPE_FUNCTION)
-            .parse()
-            .fileSet();
-    assertTypes(soyTree);
-  }
-
-  @Test
   public void testMapLiteralWithStringKeysAsMap() {
     SoyFileSetNode soyTree =
         SoyFileSetParserBuilder.forFileContents(
@@ -370,23 +349,6 @@ public final class ResolveExpressionTypesVisitorTest {
                     "{@param k1: string}",
                     "{let $map: map($k1: $v1, 'b': $v2) /}",
                     "{assertType('map<string,int|string>', $map)}"))
-            .typeRegistry(TYPE_REGISTRY)
-            .addSoyFunction(ASSERT_TYPE_FUNCTION)
-            .parse()
-            .fileSet();
-    assertTypes(soyTree);
-  }
-
-  @Test
-  public void testLegacyObjectMapLiteralWithStringKeysAsMap() {
-    SoyFileSetNode soyTree =
-        SoyFileSetParserBuilder.forFileContents(
-                constructTemplateSource(
-                    "{@param v1: int}",
-                    "{@param v2: string}",
-                    "{@param k1: string}",
-                    "{let $map: [$k1: $v1, 'b': $v2] /}",
-                    "{assertType('legacy_object_map<string,int|string>', $map)}"))
             .typeRegistry(TYPE_REGISTRY)
             .addSoyFunction(ASSERT_TYPE_FUNCTION)
             .parse()
@@ -412,14 +374,14 @@ public final class ResolveExpressionTypesVisitorTest {
   }
 
   @Test
-  public void testLegacyObjectMapLiteralAsRecord() {
+  public void testRecordLiteralAsRecord() {
     SoyFileSetNode soyTree =
         SoyFileSetParserBuilder.forFileContents(
                 constructTemplateSource(
                     "{@param pi: int}",
                     "{@param pf: float}",
-                    "{let $map: ['a': $pi, 'b':$pf]/}",
-                    "{assertType('[a: int, b: float]', $map)}"))
+                    "{let $record: ['a': $pi, 'b':$pf]/}",
+                    "{assertType('[a: int, b: float]', $record)}"))
             .typeRegistry(TYPE_REGISTRY)
             .addSoyFunction(ASSERT_TYPE_FUNCTION)
             .parse()
@@ -428,23 +390,10 @@ public final class ResolveExpressionTypesVisitorTest {
   }
 
   @Test
-  public void testMapLiteral_duplicateKeys() {
+  public void testRecordLiteral_duplicateKeys() {
     ErrorReporter reporter = ErrorReporter.createForTest();
     SoyFileSetParserBuilder.forFileContents(
-            constructTemplateSource("{let $map: map('a': 1, 'a': 2)/}"))
-        .errorReporter(reporter)
-        .typeRegistry(TYPE_REGISTRY)
-        .parse()
-        .fileSet();
-    assertThat(Iterables.getOnlyElement(reporter.getErrors()).message())
-        .isEqualTo("Map literals with duplicate keys are not allowed.  Duplicate key: 'a'");
-  }
-
-  @Test
-  public void testLegacyObjectMapLiteralAsRecord_duplicateKeys() {
-    ErrorReporter reporter = ErrorReporter.createForTest();
-    SoyFileSetParserBuilder.forFileContents(
-            constructTemplateSource("{let $map: ['a': 1, 'a': 2]/}"))
+            constructTemplateSource("{let $record: ['a': 1, 'a': 2]/}"))
         .errorReporter(reporter)
         .typeRegistry(TYPE_REGISTRY)
         .parse()

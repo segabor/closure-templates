@@ -19,7 +19,7 @@ package com.google.template.soy.jssrc.internal;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
-import static com.google.template.soy.jssrc.dsl.CodeChunk.number;
+import static com.google.template.soy.jssrc.dsl.Expression.number;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_IS_ARRAY;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_IS_BOOLEAN;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_IS_FUNCTION;
@@ -28,6 +28,7 @@ import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_IS_OBJECT;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_IS_STRING;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_SOY_DATA_SANITIZED_CONTENT;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_SOY_DATA_UNSANITIZED_TEXT;
+import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_MAP_IS_SOY_MAP;
 import static com.google.template.soy.jssrc.internal.JsRuntime.sanitizedContentType;
 
 import com.google.common.base.Joiner;
@@ -42,8 +43,8 @@ import com.google.common.collect.Sets;
 import com.google.template.soy.base.SoyBackendKind;
 import com.google.template.soy.base.internal.SanitizedContentKind;
 import com.google.template.soy.data.internalutils.NodeContentKinds;
-import com.google.template.soy.jssrc.dsl.CodeChunk;
 import com.google.template.soy.jssrc.dsl.CodeChunk.Generator;
+import com.google.template.soy.jssrc.dsl.Expression;
 import com.google.template.soy.jssrc.dsl.GoogRequire;
 import com.google.template.soy.types.LegacyObjectMapType;
 import com.google.template.soy.types.ListType;
@@ -114,8 +115,7 @@ final class JsType {
           .setPredicate(
               new TypePredicate() {
                 @Override
-                public Optional<CodeChunk.WithValue> maybeCheck(
-                    CodeChunk.WithValue value, Generator codeGenerator) {
+                public Optional<Expression> maybeCheck(Expression value, Generator codeGenerator) {
                   // TODO(lukes): we shouldn't allow numbers here, see if anyone relies on this
                   // 'feature'.
                   return Optional.of(
@@ -148,12 +148,11 @@ final class JsType {
           .setPredicate(
               new TypePredicate() {
                 @Override
-                public Optional<CodeChunk.WithValue> maybeCheck(
-                    CodeChunk.WithValue value, Generator codeGenerator) {
+                public Optional<Expression> maybeCheck(Expression value, Generator codeGenerator) {
                   return Optional.of(
                       GOOG_IS_STRING
                           .call(value)
-                          .or(value.instanceof_(GOOG_SOY_DATA_UNSANITIZED_TEXT), codeGenerator));
+                          .or(value.instanceOf(GOOG_SOY_DATA_UNSANITIZED_TEXT), codeGenerator));
                 }
               })
           .build();
@@ -171,8 +170,7 @@ final class JsType {
           .setPredicate(
               new TypePredicate() {
                 @Override
-                public Optional<CodeChunk.WithValue> maybeCheck(
-                    CodeChunk.WithValue value, Generator codeGenerator) {
+                public Optional<Expression> maybeCheck(Expression value, Generator codeGenerator) {
                   return Optional.of(value.doubleEqualsNull());
                 }
               })
@@ -191,12 +189,11 @@ final class JsType {
           .setPredicate(
               new TypePredicate() {
                 @Override
-                public Optional<CodeChunk.WithValue> maybeCheck(
-                    CodeChunk.WithValue value, Generator codeGenerator) {
+                public Optional<Expression> maybeCheck(Expression value, Generator codeGenerator) {
                   return Optional.of(
                       GOOG_IS_FUNCTION
                           .call(value)
-                          .or(value.instanceof_(GOOG_SOY_DATA_SANITIZED_CONTENT), codeGenerator));
+                          .or(value.instanceOf(GOOG_SOY_DATA_SANITIZED_CONTENT), codeGenerator));
                 }
               })
           .build();
@@ -318,8 +315,7 @@ final class JsType {
               .addRequires(keyTypeName.getGoogRequires())
               .addRequires(valueTypeName.getGoogRequires())
               .addRequire(GoogRequire.create("soy.map"))
-              // TODO(b/69049599): need actual type predicate
-              .setPredicate(TypePredicate.NO_OP)
+              .setPredicate(SOY_MAP_IS_SOY_MAP)
               .build();
         }
       case PROTO:
@@ -334,9 +330,9 @@ final class JsType {
             .setPredicate(
                 new TypePredicate() {
                   @Override
-                  public Optional<CodeChunk.WithValue> maybeCheck(
-                      CodeChunk.WithValue value, Generator codeGenerator) {
-                    return Optional.of(value.instanceof_(JsRuntime.protoConstructor(protoType)));
+                  public Optional<Expression> maybeCheck(
+                      Expression value, Generator codeGenerator) {
+                    return Optional.of(value.instanceOf(JsRuntime.protoConstructor(protoType)));
                   }
                 })
             .build();
@@ -388,14 +384,14 @@ final class JsType {
               .setPredicate(
                   new TypePredicate() {
                     @Override
-                    public Optional<CodeChunk.WithValue> maybeCheck(
-                        CodeChunk.WithValue value, Generator codeGenerator) {
-                      CodeChunk.WithValue result = null;
+                    public Optional<Expression> maybeCheck(
+                        Expression value, Generator codeGenerator) {
+                      Expression result = null;
                       // TODO(lukes): this will cause reevaluations, resolve by conditionally
                       // bouncing into a a temporary variable or augmenting the codechunk api to do
                       // this automatically.
                       for (JsType memberType : types) {
-                        Optional<CodeChunk.WithValue> typeAssertion =
+                        Optional<Expression> typeAssertion =
                             memberType.getTypeAssertion(value, codeGenerator);
                         if (!typeAssertion.isPresent()) {
                           return Optional.absent();
@@ -422,8 +418,7 @@ final class JsType {
     final TypePredicate NO_OP =
         new TypePredicate() {
           @Override
-          public Optional<CodeChunk.WithValue> maybeCheck(
-              CodeChunk.WithValue value, Generator codeGenerator) {
+          public Optional<Expression> maybeCheck(Expression value, Generator codeGenerator) {
             return Optional.absent();
           }
         };
@@ -433,7 +428,7 @@ final class JsType {
      * and {@code false} otherwise. Returns {@link Optional#absent()} if there is no validation to
      * be done.
      */
-    Optional<CodeChunk.WithValue> maybeCheck(CodeChunk.WithValue value, Generator codeGenerator);
+    Optional<Expression> maybeCheck(Expression value, Generator codeGenerator);
   }
 
   private final ImmutableSortedSet<String> typeExpressions;
@@ -477,19 +472,18 @@ final class JsType {
    * Returns a code chunk that generates a 'test' for whether or not the given value has this type
    * or {@link Optional#absent()} if no test is necessary.
    */
-  final Optional<CodeChunk.WithValue> getTypeAssertion(
-      CodeChunk.WithValue value, Generator codeGenerator) {
+  final Optional<Expression> getTypeAssertion(Expression value, Generator codeGenerator) {
     return predicate.maybeCheck(value, codeGenerator);
   }
 
   /** Generates code to coerce the value, returns {@code null} if no coercion is necessary. */
   @Nullable
-  final CodeChunk.WithValue getValueCoercion(CodeChunk.WithValue value, Generator codeGenerator) {
+  final Expression getValueCoercion(Expression value, Generator codeGenerator) {
     boolean needsProtoCoercion = coercionStrategies.contains(ValueCoercionStrategy.PROTO);
     if (!needsProtoCoercion) {
       return null;
     }
-    CodeChunk.WithValue coercion = value.dotAccess("$jspbMessageInstance").or(value, codeGenerator);
+    Expression coercion = value.dotAccess("$jspbMessageInstance").or(value, codeGenerator);
     return coercionStrategies.contains(ValueCoercionStrategy.NULL)
         ? value.and(coercion, codeGenerator)
         : coercion;
@@ -547,8 +541,7 @@ final class JsType {
         .setPredicate(
             new TypePredicate() {
               @Override
-              public Optional<CodeChunk.WithValue> maybeCheck(
-                  CodeChunk.WithValue value, Generator codeGenerator) {
+              public Optional<Expression> maybeCheck(Expression value, Generator codeGenerator) {
                 return Optional.of(
                     sanitizedContentType(kind).dotAccess("isCompatibleWith").call(value));
               }
@@ -605,12 +598,11 @@ final class JsType {
     }
 
     /** Sets a predicate which simply invokes the given function. */
-    Builder setPredicate(final CodeChunk.WithValue predicateFunction) {
+    Builder setPredicate(final Expression predicateFunction) {
       return setPredicate(
           new TypePredicate() {
             @Override
-            public Optional<CodeChunk.WithValue> maybeCheck(
-                CodeChunk.WithValue value, Generator codeGenerator) {
+            public Optional<Expression> maybeCheck(Expression value, Generator codeGenerator) {
               return Optional.of(checkNotNull(predicateFunction).call(value));
             }
           });

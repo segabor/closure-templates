@@ -34,9 +34,9 @@ import com.google.template.soy.jssrc.restricted.JsExpr;
 @AutoValue
 @Immutable
 abstract class Group extends Operation {
-  abstract CodeChunk.WithValue underlying();
+  abstract Expression underlying();
 
-  static Group create(WithValue underlying) {
+  static Group create(Expression underlying) {
     return new AutoValue_Group(underlying);
   }
 
@@ -67,7 +67,7 @@ abstract class Group extends Operation {
   }
 
   @Override
-  public ImmutableList<CodeChunk> initialStatements() {
+  public ImmutableList<Statement> initialStatements() {
     return underlying().initialStatements();
   }
 }
