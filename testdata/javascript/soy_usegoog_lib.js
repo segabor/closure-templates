@@ -503,7 +503,6 @@ goog.ModuleType = {
  * @private {?{
  *   moduleName: (string|undefined),
  *   declareLegacyNamespace:boolean,
- *   path:(string|undefined),
  *   type: goog.ModuleType
  * }}
  */
@@ -558,15 +557,6 @@ goog.isInEs6ModuleLoader_ = function() {
   }
 
   return false;
-};
-
-
-/**
- * @private
- * @return {?string|undefined} Path of the current module being initialized.
- */
-goog.getModulePath_ = function() {
-  return goog.moduleLoaderState_ && goog.moduleLoaderState_.path;
 };
 
 
@@ -1054,10 +1044,8 @@ goog.workaroundSafari10EvalBug = function(moduleDef) {
 
 /**
  * @param {function(?):?|string} moduleDef The module definition.
- * @param {string=} opt_path Path of this module. Required to goog.require ES6
- *     modules by path.
  */
-goog.loadModule = function(moduleDef, opt_path) {
+goog.loadModule = function(moduleDef) {
   // NOTE: we allow function definitions to be either in the from
   // of a string to eval (which keeps the original source intact) or
   // in a eval forbidden environment (CSP) we allow a function definition
@@ -1068,8 +1056,7 @@ goog.loadModule = function(moduleDef, opt_path) {
     goog.moduleLoaderState_ = {
       moduleName: '',
       declareLegacyNamespace: false,
-      type: goog.ModuleType.GOOG,
-      path: opt_path
+      type: goog.ModuleType.GOOG
     };
     var exports;
     if (goog.isFunction(moduleDef)) {
@@ -1102,7 +1089,6 @@ goog.loadModule = function(moduleDef, opt_path) {
         moduleId: goog.moduleLoaderState_.moduleName
       };
       goog.loadedModules_[moduleName] = data;
-      opt_path && (goog.loadedModules_[opt_path] = data);
     } else {
       throw new Error('Invalid module name \"' + moduleName + '\"');
     }
@@ -2859,12 +2845,10 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
             return pending;
           },
           /**
-           * @param {string} path
            * @param {goog.ModuleType} type
            */
-          setModuleState: function(path, type) {
+          setModuleState: function(type) {
             goog.moduleLoaderState_ = {
-              path: path,
               type: type,
               moduleName: '',
               declareLegacyNamespace: false
@@ -3082,13 +3066,11 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
 
 
   /**
-   * Sets the current module state. Allows goog.modules to require by path
-   * and lets goog.require return values.
+   * Sets the current module state.
    *
-   * @param {string} path Full path of the current module.
    * @param {goog.ModuleType} type Type of module.
    */
-  goog.LoadController.prototype.setModuleState = function(path, type) {};
+  goog.LoadController.prototype.setModuleState = function(type) {};
 
 
   /**
@@ -3270,7 +3252,7 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
         // CLOSURE_NO_DEPS set to true.
         goog.logToConsole_(
             'Consider setting CLOSURE_IMPORT_SCRIPT before loading base.js, ' +
-            'or seting CLOSURE_NO_DEPS to true.');
+            'or setting CLOSURE_NO_DEPS to true.');
         controller.loaded();
       } else {
         controller.pause();
@@ -3461,7 +3443,7 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
     //    error in the module).
     var beforeKey = goog.Dependency.registerCallback_(function() {
       goog.Dependency.unregisterCallback_(beforeKey);
-      controller.setModuleState(dep.path, goog.ModuleType.ES6);
+      controller.setModuleState(goog.ModuleType.ES6);
     });
     create(undefined, 'goog.Dependency.callback_("' + beforeKey + '")');
 
@@ -3550,7 +3532,7 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
       }
 
       if (isEs6) {
-        controller.setModuleState(dep.path, goog.ModuleType.ES6);
+        controller.setModuleState(goog.ModuleType.ES6);
       }
 
       var namespace;
@@ -3628,20 +3610,29 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
       });
       return;
     }
+    // TODO(johnplaisted): Externs are missing onreadystatechange for
+    // HTMLDocument.
+    /** @type {?} */
+    var doc = goog.global.document;
 
-    if (isEs6 && goog.inHtmlDocument_() && goog.isDocumentLoading_()) {
+    var isInternetExplorer =
+        goog.inHtmlDocument_() && 'ActiveXObject' in goog.global;
+
+    // Don't delay in any version of IE. There's bug around this that will
+    // cause out of order script execution. This means that on older IE ES6
+    // modules will load too early (while the document is still loading + the
+    // dom is not available). The other option is to load too late (when the
+    // document is complete and the onload even will never fire). This seems
+    // to be the lesser of two evils as scripts already act like the former.
+    if (isEs6 && goog.inHtmlDocument_() && goog.isDocumentLoading_() &&
+        !isInternetExplorer) {
       goog.Dependency.defer_ = true;
-      // TODO(johnplaisted): Externs are missing onreadystatechange for
-      // HTMLDocument.
-      /** @type {?} */
-      var doc = goog.global.document;
       // Transpiled ES6 modules still need to load like regular ES6 modules,
       // aka only after the document is interactive.
       controller.pause();
       var oldCallback = doc.onreadystatechange;
       doc.onreadystatechange = function() {
-        if (doc.attachEvent ? doc.readyState == 'complete' :
-                              doc.readyState == 'interactive') {
+        if (doc.readyState == 'interactive') {
           doc.onreadystatechange = oldCallback;
           load();
           controller.resume();
@@ -3742,14 +3733,14 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
           '"use strict";' + contents +
           '\n' +  // terminate any trailing single line comment.
           ';return exports' +
-          '}, "' + this.path + '");' +
+          '});' +
           '\n//# sourceURL=' + this.path + '\n';
     } else {
       return '' +
           'goog.loadModule(' +
           goog.global.JSON.stringify(
               contents + '\n//# sourceURL=' + this.path + '\n') +
-          ', "' + this.path + '");';
+          ');';
     }
   };
 
@@ -13616,7 +13607,7 @@ goog.string.Const.unwrap = function(stringConst) {
  * Creates a Const object from a compile-time constant string.
  *
  * It is illegal to invoke this function on an expression whose
- * compile-time-contant value cannot be determined by the Closure compiler.
+ * compile-time-constant value cannot be determined by the Closure compiler.
  *
  * Correct invocations include,
  * <pre>
@@ -14964,9 +14955,14 @@ goog.html.TrustedResourceUrl.prototype.getDirection = function() {
  *     the order of values in an object which might result in non-deterministic
  *     order of the parameters. However, browsers currently preserve the order.
  * @return {!goog.html.TrustedResourceUrl} New TrustedResourceUrl with params.
+ * @throws {!Error} If the url contains #.
  */
 goog.html.TrustedResourceUrl.prototype.cloneWithParams = function(params) {
   var url = goog.html.TrustedResourceUrl.unwrap(this);
+  if (/#/.test(url)) {
+    throw new Error(
+        'Found a hash in url (' + url + '), appending not supported.');
+  }
   var separator = /\?/.test(url) ? '&' : '?';
   for (var key in params) {
     var values = goog.isArray(params[key]) ?
@@ -16676,8 +16672,18 @@ goog.require('goog.string.TypedString');
  * takes no parameters and the type is immutable; hence only a default instance
  * corresponding to the empty string can be obtained via constructor invocation.
  *
- * @see goog.html.SafeHtml#create
- * @see goog.html.SafeHtml#htmlEscape
+ * Note that there is no goog.html.SafeHtml.fromConstant. The reason is that the
+ * following code would create an unsafe HTML:
+ *
+ * goog.html.SafeHtml.concat(
+ *     goog.html.SafeHtml.fromConstant(goog.string.Const.from('<script>')),
+ *     goog.html.SafeHtml.htmlEscape(userInput),
+ *     goog.html.SafeHtml.fromConstant(goog.string.Const.from('<\/script>')));
+ *
+ * There's goog.dom.constHtmlToNode to create a node from constant strings only.
+ *
+ * @see goog.html.SafeHtml.create
+ * @see goog.html.SafeHtml.htmlEscape
  * @constructor
  * @final
  * @struct
@@ -16695,7 +16701,7 @@ goog.html.SafeHtml = function() {
 
   /**
    * A type marker used to implement additional run-time type checking.
-   * @see goog.html.SafeHtml#unwrap
+   * @see goog.html.SafeHtml.unwrap
    * @const {!Object}
    * @private
    */
@@ -16748,7 +16754,7 @@ goog.html.SafeHtml.prototype.implementsGoogStringTypedString = true;
  * // instanceof goog.html.SafeHtml.
  * </pre>
  *
- * @see goog.html.SafeHtml#unwrap
+ * @see goog.html.SafeHtml.unwrap
  * @override
  */
 goog.html.SafeHtml.prototype.getTypedStringValue = function() {
@@ -16763,7 +16769,7 @@ if (goog.DEBUG) {
    * To obtain the actual string value wrapped in a SafeHtml, use
    * `goog.html.SafeHtml.unwrap`.
    *
-   * @see goog.html.SafeHtml#unwrap
+   * @see goog.html.SafeHtml.unwrap
    * @override
    */
   goog.html.SafeHtml.prototype.toString = function() {
@@ -17649,9 +17655,6 @@ goog.html.SafeHtml.BR =
  * If adding functions here also add them to analyzer's list at
  * j/c/g/devtools/staticanalysis/pipeline/analyzers/shared/SafeHtmlAnalyzers.java.
  * MOE:end_intracomment_strip
- *
- * @visibility {//javascript/closure/html:approved_for_unchecked_conversion}
- * @visibility {//javascript/closure/bin/sizetests:__pkg__}
  */
 
 
@@ -23633,7 +23636,8 @@ goog.Uri.QueryData.prototype.setIgnoreCase = function(ignoreCase) {
  * operates 'in-place', it does not create a new QueryData object.
  *
  * @param {...(?goog.Uri.QueryData|?goog.structs.Map<?, ?>|?Object)} var_args
- *     The object from which key value pairs will be copied.
+ *     The object from which key value pairs will be copied. Note: does not
+ *     accept null.
  * @suppress {deprecated} Use deprecated goog.structs.forEach to allow different
  * types of parameters.
  */

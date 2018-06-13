@@ -16,9 +16,10 @@
 
 package com.google.template.soy.exprtree;
 
+import com.google.common.collect.ImmutableList;
 import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.basetree.CopyState;
-import java.util.List;
 
 /**
  * A node representing a record literal (with keys and values as alternating children).
@@ -27,10 +28,15 @@ import java.util.List;
  */
 public final class RecordLiteralNode extends AbstractParentExprNode {
 
-  /** @param alternatingKeysAndValues The keys and values (alternating) in this record. */
-  public RecordLiteralNode(List<ExprNode> alternatingKeysAndValues, SourceLocation sourceLocation) {
+  private final ImmutableList<Identifier> keys;
+
+  /**
+   * Constructs a new record literal node with the given keys. The values should be set as children
+   * of this node, in the same order as the keys.
+   */
+  public RecordLiteralNode(Iterable<Identifier> keys, SourceLocation sourceLocation) {
     super(sourceLocation);
-    addChildren(alternatingKeysAndValues);
+    this.keys = ImmutableList.copyOf(keys);
   }
 
   /**
@@ -40,6 +46,15 @@ public final class RecordLiteralNode extends AbstractParentExprNode {
    */
   private RecordLiteralNode(RecordLiteralNode orig, CopyState copyState) {
     super(orig, copyState);
+    this.keys = orig.keys;
+  }
+
+  public ImmutableList<Identifier> getKeys() {
+    return keys;
+  }
+
+  public Identifier getKey(int i) {
+    return keys.get(i);
   }
 
   @Override
@@ -49,25 +64,17 @@ public final class RecordLiteralNode extends AbstractParentExprNode {
 
   @Override
   public String toSourceString() {
-
-    if (numChildren() == 0) {
-      return "[:]";
-    }
-
     StringBuilder sourceSb = new StringBuilder();
-    sourceSb.append('[');
+    sourceSb.append("record(");
 
-    for (int i = 0, n = numChildren(); i < n; i += 2) {
+    for (int i = 0, n = numChildren(); i < n; i++) {
       if (i != 0) {
         sourceSb.append(", ");
       }
-      sourceSb
-          .append(getChild(i).toSourceString())
-          .append(": ")
-          .append(getChild(i + 1).toSourceString());
+      sourceSb.append(getKey(i)).append(": ").append(getChild(i).toSourceString());
     }
 
-    sourceSb.append(']');
+    sourceSb.append(')');
     return sourceSb.toString();
   }
 
