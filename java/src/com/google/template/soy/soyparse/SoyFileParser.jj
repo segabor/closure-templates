@@ -3564,10 +3564,9 @@ private ExprNode GlobalOrFunctionCallLike() :
         key = Expr()
 
         (
-          // Force "record" down this path. For something like "record(a, b)" (with a command
-          // instead of a colon) this could get parsed as a function call, in which case the error
-          // message wouldn't make sense.
-          // TODO(b/80429224): Simplify this by pulling map and record out into separate methods.
+          // Force "record" down this path. For something like "record(a, b)" (with a comma instead
+          // of a colon) this could get parsed as a function call, in which case the error message
+          // wouldn't make sense.
           LOOKAHEAD( { isRecord || getToken(1).kind == COLON } )
           // parens contain a list of ident : expr pairs - this is a proto init call or record
           // literal
@@ -3649,6 +3648,7 @@ private ExprNode GlobalOrFunctionCallLike() :
             SourceLocation loc = ident.location().extend(createSrcLoc(closeParen));
             FunctionNode fnNode =
                 new FunctionNode(
+                    ident.identifier(),
                     pluginResolver.lookupSoyFunction(ident.identifier(), params.size(), loc),
                     loc);
             fnNode.addChildren(params);
@@ -3677,7 +3677,7 @@ private ExprNode GlobalOrFunctionCallLike() :
     if (type != null && type.getKind() == SoyType.Kind.PROTO) {
       return new ProtoInitNode(resolvedName, ImmutableList.of(), loc);
     } else {
-      return new FunctionNode(pluginResolver.lookupSoyFunction(name, 0, loc), loc);
+      return new FunctionNode(name, pluginResolver.lookupSoyFunction(name, 0, loc), loc);
     }
   }
 }

@@ -67,11 +67,13 @@ import com.google.template.soy.passes.FindIjParamsVisitor.IjParamsInfo;
 import com.google.template.soy.passes.FindTransitiveDepTemplatesVisitor;
 import com.google.template.soy.passes.FindTransitiveDepTemplatesVisitor.TransitiveDepTemplatesInfo;
 import com.google.template.soy.passes.PassManager;
+import com.google.template.soy.plugin.restricted.SoySourceFunction;
 import com.google.template.soy.pysrc.SoyPySrcOptions;
 import com.google.template.soy.pysrc.internal.PySrcMain;
 import com.google.template.soy.shared.SoyAstCache;
 import com.google.template.soy.shared.SoyGeneralOptions;
 import com.google.template.soy.shared.internal.GuiceSimpleScope;
+import com.google.template.soy.shared.internal.InternalPlugins;
 import com.google.template.soy.shared.internal.MainEntryPointUtils;
 import com.google.template.soy.shared.restricted.ApiCallScopeBindingAnnotations.ApiCall;
 import com.google.template.soy.shared.restricted.SoyFunction;
@@ -121,8 +123,8 @@ public final class SoyFileSet {
   // having it as its own 'parameter' class removes a small amount of boilerplate.
   static final class CoreDependencies {
     private final GuiceSimpleScope apiCallScope;
-    private final ImmutableMap<String, ? extends SoyFunction> soyFunctionMap;
-    private final ImmutableMap<String, ? extends SoyPrintDirective> printDirectives;
+    private final ImmutableMap<String, SoyFunction> soyFunctionMap;
+    private final ImmutableMap<String, SoyPrintDirective> printDirectives;
 
     @Inject
     CoreDependencies(
@@ -130,8 +132,8 @@ public final class SoyFileSet {
         ImmutableMap<String, ? extends SoyFunction> soyFunctionMap,
         ImmutableMap<String, ? extends SoyPrintDirective> printDirectives) {
       this.apiCallScope = apiCallScope;
-      this.soyFunctionMap = soyFunctionMap;
-      this.printDirectives = printDirectives;
+      this.soyFunctionMap = ImmutableMap.copyOf(soyFunctionMap);
+      this.printDirectives = ImmutableMap.copyOf(printDirectives);
     }
   }
 
@@ -207,6 +209,7 @@ public final class SoyFileSet {
           typeRegistryBuilder.build(),
           coreDependencies.soyFunctionMap,
           coreDependencies.printDirectives,
+          InternalPlugins.internalFunctionMap(),
           filesBuilder.build(),
           getGeneralOptions(),
           cache,
@@ -586,8 +589,9 @@ public final class SoyFileSet {
   /** For private use by pruneTranslatedMsgs(). */
   private ImmutableSet<Long> memoizedExtractedMsgIdsForPruning;
 
-  private final ImmutableMap<String, ? extends SoyFunction> soyFunctionMap;
-  private final ImmutableMap<String, ? extends SoyPrintDirective> printDirectives;
+  private final ImmutableMap<String, SoyFunction> soyFunctionMap;
+  private final ImmutableMap<String, SoyPrintDirective> printDirectives;
+  private final ImmutableMap<String, SoySourceFunction> soySourceFunctionMap;
 
   /** For reporting errors during parsing. */
   private ErrorReporter errorReporter;
@@ -597,8 +601,9 @@ public final class SoyFileSet {
   SoyFileSet(
       GuiceSimpleScope apiCallScopeProvider,
       SoyTypeRegistry typeRegistry,
-      ImmutableMap<String, ? extends SoyFunction> soyFunctionMap,
-      ImmutableMap<String, ? extends SoyPrintDirective> printDirectives,
+      ImmutableMap<String, SoyFunction> soyFunctionMap,
+      ImmutableMap<String, SoyPrintDirective> printDirectives,
+      ImmutableMap<String, SoySourceFunction> soySourceFunctionMap,
       ImmutableMap<String, SoyFileSupplier> soyFileSuppliers,
       SoyGeneralOptions generalOptions,
       @Nullable SoyAstCache cache,
@@ -615,6 +620,7 @@ public final class SoyFileSet {
     this.generalOptions = generalOptions.clone();
     this.soyFunctionMap = soyFunctionMap;
     this.printDirectives = printDirectives;
+    this.soySourceFunctionMap = soySourceFunctionMap;
     this.conformanceConfig = checkNotNull(conformanceConfig);
     this.loggingConfig = checkNotNull(loggingConfig);
     this.warningSink = warningSink;
@@ -658,6 +664,7 @@ public final class SoyFileSet {
                 PluginResolver.Mode.ALLOW_UNDEFINED,
                 printDirectives,
                 soyFunctionMap,
+                soySourceFunctionMap,
                 errorReporter));
     throwIfErrorsPresent();
 
@@ -725,6 +732,7 @@ public final class SoyFileSet {
                     PluginResolver.Mode.ALLOW_UNDEFINED,
                     printDirectives,
                     soyFunctionMap,
+                    soySourceFunctionMap,
                     errorReporter))
             .fileSet();
     throwIfErrorsPresent();
@@ -766,6 +774,7 @@ public final class SoyFileSet {
                   PluginResolver.Mode.ALLOW_UNDEFINED,
                   printDirectives,
                   soyFunctionMap,
+                  soySourceFunctionMap,
                   errorReporter));
 
       throwIfErrorsPresent();
@@ -1148,6 +1157,7 @@ public final class SoyFileSet {
                 : PluginResolver.Mode.REQUIRE_DEFINITIONS,
             printDirectives,
             soyFunctionMap,
+            soySourceFunctionMap,
             errorReporter));
   }
 

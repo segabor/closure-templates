@@ -69,10 +69,10 @@ import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.VarRefNode;
+import com.google.template.soy.plugin.restricted.SoySourceFunction;
 import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.shared.internal.ResolvedSignature;
 import com.google.template.soy.shared.restricted.Signature;
-import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
 import com.google.template.soy.soyparse.SoyFileParser;
@@ -88,6 +88,7 @@ import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyNode.ExprHolderNode;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
+import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.defn.LoopVar;
 import com.google.template.soy.types.AbstractMapType;
@@ -161,6 +162,12 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
       SoyErrorKind.of("Missing Soy type for node {0}.");
   private static final SoyErrorKind NOT_A_PROTO_TYPE =
       SoyErrorKind.of("''{0}'' is a ''{1}'', expected a protocol buffer.");
+  private static final SoyErrorKind OR_OPERATOR_HAS_CONSTANT_OPERAND =
+      SoyErrorKind.of(
+          "Constant operand ''{0}'' used with ''or'' operator. "
+              + "Consider simplifying or using the ?: operator, see "
+              + "go/soy/reference/expressions.md#logical-operators",
+          StyleAllowance.NO_PUNCTUATION);
   private static final SoyErrorKind STRING_LENGTH_ERROR =
       SoyErrorKind.of(
           "Soy strings do not have a ''length'' field. Use function strLen(...) instead.");
@@ -296,7 +303,6 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
       }
     }
   }
-
 
   // Given a map of type subsitutions, add all the entries to the current set of
   // active substitutions.
@@ -648,7 +654,12 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
 
     @Override
     protected void visitOrOpNode(OrOpNode node) {
-      visit(node.getChild(0)); // Assign normal types to left child
+      ExprNode lhs = node.getChild(0);
+      if (SoyTreeUtils.isConstantExpr(lhs)) {
+        errorReporter.warn(
+            node.getSourceLocation(), OR_OPERATOR_HAS_CONSTANT_OPERAND, lhs.toSourceString());
+      }
+      visit(lhs); // Assign normal types to left child
 
       // Save the state of substitutions.
       TypeSubstitution savedSubstitutionState = substitutions;
@@ -660,7 +671,12 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
       // For 'or' the second child only gets evaluated if node 0 is falsy.  So apply the negative
       // assertions.
       addTypeSubstitutions(visitor.negativeTypeConstraints);
-      visit(node.getChild(1));
+      ExprNode rhs = node.getChild(1);
+      visit(rhs);
+      if (SoyTreeUtils.isConstantExpr(rhs)) {
+        errorReporter.warn(
+            node.getSourceLocation(), OR_OPERATOR_HAS_CONSTANT_OPERAND, rhs.toSourceString());
+      }
 
       // Restore substitutions to previous state
       substitutions = savedSubstitutionState;
@@ -679,7 +695,7 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
       TypeNarrowingConditionVisitor visitor = new TypeNarrowingConditionVisitor();
       visitor.visitAndImplicitlyCastToBoolean(node.getChild(0));
 
-      // Now, re-visit the first node but with subsitutions. The reason is because
+      // Now, re-visit the first node but with substitutions. The reason is because
       // the value of node 0 is what will be returned if node 0 is truthy.
       addTypeSubstitutions(visitor.positiveTypeConstraints);
       visit(node.getChild(0));
@@ -768,12 +784,13 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
     @Override
     protected void visitFunctionNode(FunctionNode node) {
       visitChildren(node);
-      SoyFunction knownFunction = node.getSoyFunction();
+      Object knownFunction = node.getSoyFunction();
       if (knownFunction.getClass().isAnnotationPresent(SoyFunctionSignature.class)) {
         checkState(
-            knownFunction instanceof TypedSoyFunction,
-            "Function that uses @SoyFunctionSignature annotation must extend TypedSoyFunction.");
-        visitTypedSoyFunction(
+            knownFunction instanceof TypedSoyFunction || knownFunction instanceof SoySourceFunction,
+            "Classes annotated with @SoyFunctionSignature must either extend "
+                + "TypedSoyFunction or implement SoySourceFunction.");
+        visitSoyFunctionWithSignature(
             knownFunction.getClass().getAnnotation(SoyFunctionSignature.class),
             knownFunction.getClass().getCanonicalName(),
             node);
@@ -789,7 +806,7 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
      * For soy functions with type annotation, perform the strict type checking and set the return
      * type.
      */
-    private void visitTypedSoyFunction(
+    private void visitSoyFunctionWithSignature(
         SoyFunctionSignature fnSignature, String className, FunctionNode node) {
       ResolvedSignature matchedSignature = null;
       // Found the matched signature for the current function call.
@@ -1240,7 +1257,7 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
      * Private helper that checks types of the arguments and tries to set the return type for some
      * basic functions provided by Soy.
      */
-    private void visitSoyFunction(SoyFunction fn, FunctionNode node) {
+    private void visitSoyFunction(Object fn, FunctionNode node) {
       // Here we have special handling for a variety of 'generic' function.
       if (fn instanceof LegacyObjectMapToMapFunction) {
         // If argument type is incorrect, do not try to create a return type. Instead, set the
@@ -1330,7 +1347,7 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
         errorReporter.report(
             arg.getSourceLocation(),
             INCORRECT_ARG_TYPE,
-            node.getSoyFunction().getName(),
+            node.getFunctionName(),
             arg.getType(),
             expectedType);
         return false;
