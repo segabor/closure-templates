@@ -70,8 +70,8 @@ public class TranslateToSwiftExprVisitorTest {
 
   @Test
   public void testDataRef() {
-    assertThatSoyExpr("$boo").translatesTo("data.get(\"boo\")", Integer.MAX_VALUE);
-    assertThatSoyExpr("$boo.goo").translatesTo("data.get(\"boo\").get(\"goo\")", Integer.MAX_VALUE);
+    assertThatSoyExpr("$boo").translatesTo("data[\"boo\"]", Integer.MAX_VALUE);
+    assertThatSoyExpr("$boo.goo").translatesTo("data[\"boo\"][\"goo\"]", Integer.MAX_VALUE);
     assertThatSoyExpr("$boo['goo']")
         .translatesTo("runtime.key_safe_data_access(data.get(\"boo\"), \"goo\")", Integer.MAX_VALUE);
     assertThatSoyExpr("$boo[0]")
@@ -106,7 +106,7 @@ public class TranslateToSwiftExprVisitorTest {
     assertThatSoyExpr("$zoo").with(frame).translatesTo("zooData8", Integer.MAX_VALUE);
     assertThatSoyExpr("$zoo.boo")
         .with(frame)
-        .translatesTo("zooData8.get('boo')", Integer.MAX_VALUE);
+        .translatesTo("zooData8[\"boo\"]", Integer.MAX_VALUE);
   }
 
   @Test
@@ -155,13 +155,13 @@ public class TranslateToSwiftExprVisitorTest {
 
   @Test
   public void testCss() {
-    assertThatSoyExpr("css('foo')").translatesTo("getCSSName(\"foo\")", Integer.MAX_VALUE);
+    assertThatSoyExpr("css('foo')").translatesTo("runtime.getCSSName(\"foo\")", Integer.MAX_VALUE);
     assertThatSoyExpr("css($foo, 'base')")
-        .translatesTo("getCSSName(data[\"foo\"], \"base\")", Integer.MAX_VALUE);
+        .translatesTo("runtime.getCSSName(data[\"foo\"], \"base\")", Integer.MAX_VALUE);
   }
 
   @Test
   public void testXid() {
-    assertThatSoyExpr("xid('foo')").translatesTo("getXIDName(\"foo\")", Integer.MAX_VALUE);
+    assertThatSoyExpr("xid('foo')").translatesTo("runtime.getXIDName(\"foo\")", Integer.MAX_VALUE);
   }
 }
