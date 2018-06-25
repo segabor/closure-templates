@@ -37,27 +37,21 @@ public class TranslateToSwiftExprVisitorTest {
 
   @Test
   public void testListLiteral() {
-    assertThatSoyExpr("[]").translatesTo(new SwiftExpr("[]", Integer.MAX_VALUE), SwiftListExpr.class);
+    assertThatSoyExpr("[]").translatesTo(new SwiftExpr("[Any?]()", Integer.MAX_VALUE), SwiftListExpr.class);
     assertThatSoyExpr("['blah', 123, $foo]")
         .translatesTo(
-            new SwiftExpr("[\"blah\", 123, data.get(\"foo\")]", Integer.MAX_VALUE), SwiftListExpr.class);
+            new SwiftExpr("[\"blah\", 123, data[\"foo\"]] as [Any?]", Integer.MAX_VALUE), SwiftListExpr.class);
   }
 
   @Test
   public void testMapLiteral() {
     // Unquoted keys.
-    assertThatSoyExpr("[:]").translatesTo("[:]()", Integer.MAX_VALUE);
+    assertThatSoyExpr("[:]").translatesTo("[String:Any?]()", Integer.MAX_VALUE);
     assertThatSoyExpr("['aaa': 123, 'bbb': 'blah']")
-        .translatesTo(
-            "[\"aaa\": 123, \"bbb\": \"blah\"]", Integer.MAX_VALUE);
+        .translatesTo("[\"aaa\": 123, \"bbb\": \"blah\"] as [String:Any?]", Integer.MAX_VALUE);
     assertThatSoyExpr("['aaa': $foo, 'bbb': 'blah']")
         .translatesTo(
-            "collections.OrderedDict([('aaa', data.get('foo')), ('bbb', 'blah')])",
-            Integer.MAX_VALUE);
-
-    // Non-string keys are allowed in Python.
-    assertThatSoyExpr("[1: 'blah', 0: 123]")
-        .translatesTo("collections.OrderedDict([(1, 'blah'), (0, 123)])", Integer.MAX_VALUE);
+            "[\"aaa\": data[\"foo\"], \"bbb\": \"blah\"] as [String:Any?]", Integer.MAX_VALUE);
   }
 
   @Test
@@ -71,7 +65,7 @@ public class TranslateToSwiftExprVisitorTest {
 
     assertThatSoyExpr("STR").withGlobals(globals).translatesTo("'Hello World'", Integer.MAX_VALUE);
     assertThatSoyExpr("NUM").withGlobals(globals).translatesTo("55", Integer.MAX_VALUE);
-    assertThatSoyExpr("BOOL").withGlobals(globals).translatesTo("True", Integer.MAX_VALUE);
+    assertThatSoyExpr("BOOL").withGlobals(globals).translatesTo("true", Integer.MAX_VALUE);
   }
 
   @Test
@@ -118,10 +112,10 @@ public class TranslateToSwiftExprVisitorTest {
   @Test
   public void testBasicOperators() {
     assertThatSoyExpr("not $boo or true and $foo")
-        .translatesTo("not data.get('boo') or True and data.get('foo')", Operator.OR);
+        .translatesTo("data[\"boo\"] == nil or true and data[\"foo\"] != nil", Operator.OR);
   }
 
-  @Test
+  @Test // fixme
   public void testEqualOperator() {
     assertThatSoyExpr("'5' == 5 ? 1 : 0")
         .translatesTo("1 if runtime.type_safe_eq('5', 5) else 0", 1);
@@ -129,12 +123,12 @@ public class TranslateToSwiftExprVisitorTest {
         .translatesTo("1 if runtime.type_safe_eq('5', data.get('boo')) else 0", 1);
   }
 
-  @Test
+  @Test // fixme
   public void testNotEqualOperator() {
     assertThatSoyExpr("'5' != 5").translatesTo("not runtime.type_safe_eq('5', 5)", Operator.NOT);
   }
 
-  @Test
+  @Test // fixme
   public void testPlusOperator() {
     assertThatSoyExpr("( (8-4) + (2-1) )")
         .translatesTo("runtime.type_safe_add(8 - 4, 2 - 1)", Integer.MAX_VALUE);
@@ -144,30 +138,30 @@ public class TranslateToSwiftExprVisitorTest {
   public void testNullCoalescingOperator() {
     assertThatSoyExpr("$boo ?: 5")
         .translatesTo(
-            "data.get(\"boo\") ?? 5", Operator.CONDITIONAL);
+            "data[\"boo\"] ?? 5", Operator.CONDITIONAL);
   }
 
   @Test
   public void testConditionalOperator() {
     assertThatSoyExpr("$boo ? 5 : 6")
-        .translatesTo("data.get(\"boo\") ? 5 : 6", Operator.CONDITIONAL);
+        .translatesTo("data[\"boo\"] != nil ? 5 : 6", Operator.CONDITIONAL);
   }
 
   @Test
   public void testCheckNotNull() {
     assertThatSoyExpr("checkNotNull($boo) ? 1 : 0")
-        .translatesTo("1 if runtime.check_not_null(data.get(\"boo\")) else 0", Operator.CONDITIONAL);
+        .translatesTo("data[\"boo\"] != nil ? 1 : 0", Operator.CONDITIONAL);
   }
 
   @Test
   public void testCss() {
-    assertThatSoyExpr("css('foo')").translatesTo("runtime.get_css_name(\"foo\")", Integer.MAX_VALUE);
+    assertThatSoyExpr("css('foo')").translatesTo("getCSSName(\"foo\")", Integer.MAX_VALUE);
     assertThatSoyExpr("css($foo, 'base')")
-        .translatesTo("runtime.get_css_name(data.get(\"foo\"), \"base\")", Integer.MAX_VALUE);
+        .translatesTo("getCSSName(data[\"foo\"], \"base\")", Integer.MAX_VALUE);
   }
 
   @Test
   public void testXid() {
-    assertThatSoyExpr("xid('foo')").translatesTo("runtime.get_xid_name(\"foo\")", Integer.MAX_VALUE);
+    assertThatSoyExpr("xid('foo')").translatesTo("getXIDName(\"foo\")", Integer.MAX_VALUE);
   }
 }
