@@ -126,7 +126,7 @@ public final class SwiftExprUtils {
       } else if (elem instanceof SwiftExpr) {
         values.add(((SwiftExpr) elem).getText());
       } else if (elem instanceof String) {
-        values.add("'" + elem + "'");
+        values.add("\"" + elem + "\"");
       }
     }
 
@@ -157,7 +157,7 @@ public final class SwiftExprUtils {
     ImmutableList<SwiftExpr> exprs = ImmutableList.of(pyExpr, new SwiftExpr("nil", Integer.MAX_VALUE));
     // Note: is/is not is Python's identity comparison. It's used for None checks for performance.
     String conditionalExpr = genExprWithNewToken(Operator.NOT_EQUAL, exprs, "!=");
-    return new SwiftExpr(conditionalExpr, PyExprUtils.pyPrecedenceForOperator(Operator.NOT_EQUAL));
+    return new SwiftExpr(conditionalExpr, SwiftExprUtils.swiftPrecedenceForOperator(Operator.NOT_EQUAL));
   }
 
   /** Generates a Python null (None) check expression for the given {@link SwiftExpr}. */
@@ -165,7 +165,7 @@ public final class SwiftExprUtils {
     ImmutableList<SwiftExpr> exprs = ImmutableList.of(expr, new SwiftExpr("nil", Integer.MAX_VALUE));
     // Note: is/is not is Python's identity comparison. It's used for None checks for performance.
     String conditionalExpr = genExprWithNewToken(Operator.EQUAL, exprs, "==");
-    return new SwiftExpr(conditionalExpr, PyExprUtils.pyPrecedenceForOperator(Operator.EQUAL));
+    return new SwiftExpr(conditionalExpr, SwiftExprUtils.swiftPrecedenceForOperator(Operator.EQUAL));
   }
 
   /**
