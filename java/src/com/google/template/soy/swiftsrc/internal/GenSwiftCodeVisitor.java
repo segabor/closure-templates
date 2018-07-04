@@ -246,12 +246,15 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       genSwiftExprsVisitor = genSwiftExprsVisitorFactory.create(localVarExprs, errorReporter);
 
       // Generate function definition up to colon.
+      // FIXME: generate name for function like namespace_templName
+      final String funcName = GenSwiftCallExprVisitor.getLocalTemplateName(node);
+
       swiftCodeBuilder.appendLine(
           "public func ",
-          GenSwiftCallExprVisitor.getLocalTemplateName(node),
+          funcName,
           // These defaults are safe because soy only ever reads from these parameters.  If that
           // changes, bad things could happen.
-          "(_ data: [String:String] = [], _ ijData: [String] = []) -> String {");
+          "(_ data: [String:Any] = [:], _ ijData: [String:Any] = [:]) -> String {");
       swiftCodeBuilder.increaseIndent();
 
       generateFunctionBody(node);
@@ -777,6 +780,14 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       }
 
       // Store the entire manifest for use at runtime.
+      // FIXME: work out a better mapping
+      // now namespaces are mapped to sources
+      // but we want namespace + template name to be mapped to a renderer function
+      // like
+      // ```swift
+      //    var registry = [String: ([String:Any]) -> String]
+      //    registry["example.simple.HelloWorld"] = renderHelloWorld
+      // ```
       swiftCodeBuilder.appendLine("let NAMESPACE_MANIFEST : [String:String] = [");
       swiftCodeBuilder.increaseIndentTwice();
       for (Map.Entry<String, String> entry : namespaceManifest.entrySet()) {

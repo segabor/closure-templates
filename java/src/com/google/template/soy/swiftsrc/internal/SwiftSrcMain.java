@@ -36,73 +36,21 @@ public class SwiftSrcMain {
     this.apiCallScope = apiCallScope;
   }
 
-  public void generateSwiftFiles(
-      SoyFileSetNode soyTree,
-      SoySwiftSrcOptions swiftSrcOptions,
-      String outputPathFormat,
-      String inputPathsPrefix,
-      ErrorReporter errorReporter)
-      throws IOException {
-
-    ImmutableList<SoyFileNode> srcsToCompile =
-        ImmutableList.copyOf(
-            Iterables.filter(soyTree.getChildren(), SoyFileNode.MATCH_SRC_FILENODE));
-
-    // Determine the output paths.
-    List<String> soyNamespaces = getSoyNamespaces(soyTree);
-    Multimap<String, Integer> outputs =
-        MainEntryPointUtils.mapOutputsToSrcs(null, outputPathFormat, srcsToCompile);
-
-    // Generate the manifest and add it to the current manifest.
-    ImmutableMap<String, String> manifest = generateManifest(soyNamespaces, outputs);
-
-    // Generate the Swift source.
-    List<String> swiftFileContents = genSwiftSource(soyTree, swiftSrcOptions, manifest, errorReporter);
-
-    if (srcsToCompile.size() != swiftFileContents.size()) {
-      throw new AssertionError(
-          String.format(
-              "Expected to generate %d code chunk(s), got %d",
-              srcsToCompile.size(), swiftFileContents.size()));
-    }
-
-    // Write out the Python outputs.
-    for (String outputFilePath : outputs.keySet()) {
-      try (Writer out = Files.newWriter(new File(outputFilePath), StandardCharsets.UTF_8)) {
-        for (int inputFileIndex : outputs.get(outputFilePath)) {
-          out.write(swiftFileContents.get(inputFileIndex));
-        }
-      }
-    }
-
-    // Write out the manifest file.
-    if (swiftSrcOptions.namespaceManifestFile() != null) {
-      try (Writer out =
-          Files.newWriter(new File(swiftSrcOptions.namespaceManifestFile()), StandardCharsets.UTF_8)) {
-        Properties prop = new Properties();
-        for (String namespace : manifest.keySet()) {
-          prop.put(namespace, manifest.get(namespace));
-        }
-        prop.store(out, null);
-      }
-    }
-  }
-
   /**
-   * Generates Python source code given a Soy parse tree and an options object.
+   * Generates Swift source code given a Soy parse tree and an options object.
    *
-   * @param soyTree The Soy parse tree to generate Python source code for.
-   * @param pySrcOptions The compilation options relevant to this backend.
+   * @param soyTree The Soy parse tree to generate Swift source code for.
+   * @param swiftSrcOptions The compilation options relevant to this backend.
    * @param currentManifest The namespace manifest for current sources.
    * @param errorReporter The Soy error reporter that collects errors during code generation.
-   * @return A list of strings where each string represents the Python source code that belongs in
-   *     one Python file. The generated Python files correspond one-to-one to the original Soy
+   * @return A list of strings where each string represents the Swift source code that belongs in
+   *     one Swift file. The generated Swift files correspond one-to-one to the original Soy
    *     source files.
    * @throws SoySyntaxException If a syntax error is found.
    */
   public List<String> genSwiftSource(
       SoyFileSetNode soyTree,
-      SoySwiftSrcOptions pySrcOptions,
+      SoySwiftSrcOptions swiftSrcOptions,
       ImmutableMap<String, String> currentManifest,
       ErrorReporter errorReporter) {
 
@@ -111,12 +59,12 @@ public class SwiftSrcMain {
       BidiGlobalDir bidiGlobalDir = null;
           // FIXME do we need this? SoyBidiUtils.decodeBidiGlobalDirFromPyOptions(pySrcOptions.getBidiIsRtlFn());
       ApiCallScopeUtils.seedSharedParams(inScope, null, bidiGlobalDir);
-      return createVisitor(pySrcOptions, currentManifest).gen(soyTree, errorReporter);
+      return createVisitor(swiftSrcOptions, currentManifest).gen(soyTree, errorReporter);
     }
   }
 
   /**
-   * Generates Python source files given a Soy parse tree, an options object, and information on
+   * Generates Swift source files given a Soy parse tree, an options object, and information on
    * where to put the output files.
    *
    * @param soyTree The Soy parse tree to generate Python source code for.
@@ -195,10 +143,9 @@ public class SwiftSrcMain {
     ImmutableMap.Builder<String, String> manifest = new ImmutableMap.Builder<>();
     for (String outputFilePath : outputs.keySet()) {
       for (int inputFileIndex : outputs.get(outputFilePath)) {
-    	  	// FIXME
-        String pythonPath = outputFilePath.replace(".py", "").replace('/', '.');
+        String swiftPath = outputFilePath.replace(".swift", "").replace('/', '.');
 
-        manifest.put(soyNamespaces.get(inputFileIndex), pythonPath);
+        manifest.put(soyNamespaces.get(inputFileIndex), swiftPath);
       }
     }
     return manifest.build();
