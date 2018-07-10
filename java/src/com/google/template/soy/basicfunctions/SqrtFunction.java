@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 Google Inc.
+ * Copyright 2018 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,13 +16,10 @@
 
 package com.google.template.soy.basicfunctions;
 
-import com.google.common.collect.Lists;
-import com.google.template.soy.exprtree.Operator;
-import com.google.template.soy.jbcsrc.restricted.BytecodeUtils;
 import com.google.template.soy.jbcsrc.restricted.JbcSrcPluginContext;
+import com.google.template.soy.jbcsrc.restricted.MethodRef;
 import com.google.template.soy.jbcsrc.restricted.SoyExpression;
 import com.google.template.soy.jbcsrc.restricted.SoyJbcSrcFunction;
-import com.google.template.soy.jssrc.dsl.SoyJsPluginUtils;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcFunction;
 import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
@@ -30,53 +27,52 @@ import com.google.template.soy.plugin.java.restricted.JavaValue;
 import com.google.template.soy.plugin.java.restricted.JavaValueFactory;
 import com.google.template.soy.plugin.java.restricted.SoyJavaSourceFunction;
 import com.google.template.soy.pysrc.restricted.PyExpr;
-import com.google.template.soy.pysrc.restricted.PyExprUtils;
 import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import java.lang.reflect.Method;
 import java.util.List;
+import javax.inject.Singleton;
 
-/**
- * Soy function that checks whether its argument is a defined nonnull value.
- *
- */
+/** Computes the sqrt of a Number expression. */
 @SoyFunctionSignature(
-    name = "isNonnull",
+    name = "sqrt",
     value =
         @Signature(
-            // TODO(b/70946095): should return bool
-            returnType = "?",
-            parameterTypes = {"any"}))
+            returnType = "number",
+            parameterTypes = {"number"}))
+@Singleton
 @SoyPureFunction
-class IsNonnullFunction extends TypedSoyFunction
+public class SqrtFunction extends TypedSoyFunction
     implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
     JsExpr arg = args.get(0);
-    JsExpr nullJsExpr = new JsExpr("null", Integer.MAX_VALUE);
-    // Note: In JavaScript, "x != null" is equivalent to "x !== undefined && x !== null".
-    return SoyJsPluginUtils.genJsExprUsingSoySyntax(
-        Operator.NOT_EQUAL, Lists.<JsExpr>newArrayList(arg, nullJsExpr));
+    return new JsExpr("Math.sqrt(" + arg.getText() + ")", Integer.MAX_VALUE);
   }
 
   @Override
   public PyExpr computeForPySrc(List<PyExpr> args) {
-    // Note: This check could blow up if the variable was never created at all. However, this should
-    // not be possible as a variable not found in the function is assumed to be part of opt_data.
-    return PyExprUtils.genPyNotNullCheck(args.get(0));
+    return new PyExpr(String.format("runtime.sqrt(%s)", args.get(0).getText()), Integer.MAX_VALUE);
+  }
+
+  // lazy singleton pattern, allows other backends to avoid the work.
+  private static final class Methods {
+    static final Method MATH_SQRT = JavaValueFactory.createMethod(Math.class, "sqrt", double.class);
+    static final MethodRef MATH_SQRT_REF = MethodRef.create(MATH_SQRT);
   }
 
   @Override
   public JavaValue applyForJavaSource(
       JavaValueFactory factory, List<JavaValue> args, JavaPluginContext context) {
-    return args.get(0).isNonNull();
+    return factory.callStaticMethod(Methods.MATH_SQRT, args.get(0));
   }
 
   @Override
   public SoyExpression computeForJbcSrc(JbcSrcPluginContext context, List<SoyExpression> args) {
-    return BytecodeUtils.isNonNull(args.get(0));
+    return SoyExpression.forFloat(Methods.MATH_SQRT_REF.invoke(args.get(0).coerceToDouble()));
   }
 }

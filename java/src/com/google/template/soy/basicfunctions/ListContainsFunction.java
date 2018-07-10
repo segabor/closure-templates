@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Google Inc.
+ * Copyright 2018 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -16,7 +16,10 @@
 
 package com.google.template.soy.basicfunctions;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.google.template.soy.data.SoyList;
+import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.jbcsrc.restricted.JbcSrcPluginContext;
 import com.google.template.soy.jbcsrc.restricted.MethodRef;
 import com.google.template.soy.jbcsrc.restricted.SoyExpression;
@@ -28,48 +31,39 @@ import com.google.template.soy.plugin.java.restricted.JavaValue;
 import com.google.template.soy.plugin.java.restricted.JavaValueFactory;
 import com.google.template.soy.plugin.java.restricted.SoyJavaSourceFunction;
 import com.google.template.soy.pysrc.restricted.PyExpr;
+import com.google.template.soy.pysrc.restricted.PyListExpr;
 import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
-import com.google.template.soy.types.FloatType;
-import com.google.template.soy.types.SoyTypes;
 import java.lang.reflect.Method;
 import java.util.List;
+import javax.inject.Singleton;
 
 /**
- * Soy function that converts a string to a float.
+ * Soy function for checking if an item is contained in a list.
  *
- * <p>This function accepts a single string. If the string is a valid float, then the function will
- * return that float. Otherwise, it will return {@code null}.
+ * <p>Usage: {@code listContains(list, item)}
  *
- * <p>Ex: <code>
- *   {parseFloat('9.1') + 1}  // evaluates to 10.1
- *   {parseFloat('garbage') ?: 1.0}  // evaluates to 1.0
- * </code>
+ * <ul>
+ *   <li>list: The list in which to look for the item.
+ *   <li>item: The item to search for in the list.
+ * </ul>
  */
-@SoyPureFunction
 @SoyFunctionSignature(
-    name = "parseFloat",
+    name = "listContains",
     value =
         @Signature(
-            parameterTypes = {"string"},
-            // TODO(b/70946095): should be nullable
-            returnType = "float"))
-public final class ParseFloatFunction extends TypedSoyFunction
+            parameterTypes = {"list<any>", "any"},
+            returnType = "bool"))
+@Singleton
+@SoyPureFunction
+public class ListContainsFunction extends TypedSoyFunction
     implements SoyJavaSourceFunction,
         SoyLibraryAssistedJsSrcFunction,
         SoyPySrcFunction,
         SoyJbcSrcFunction {
-
-  @Override
-  public JsExpr computeForJsSrc(List<JsExpr> args) {
-    // TODO(user): parseFloat('123abc') == 123; JS parseFloat tries to parse as much as it can.
-    // That means parseFloat('1.1.1') == 1.1
-    String arg = args.get(0).getText();
-    return new JsExpr(String.format("soy.$$parseFloat(%s)", arg), Integer.MAX_VALUE);
-  }
 
   @Override
   public ImmutableSet<String> getRequiredJsLibNames() {
@@ -77,28 +71,46 @@ public final class ParseFloatFunction extends TypedSoyFunction
   }
 
   @Override
+  public JsExpr computeForJsSrc(List<JsExpr> args) {
+    return new JsExpr(
+        "soy.$$listContains(" + args.get(0).getText() + "," + args.get(1).getText() + ")",
+        Integer.MAX_VALUE);
+  }
+
+  @Override
   public PyExpr computeForPySrc(List<PyExpr> args) {
-    return new PyExpr(
-        String.format("runtime.parse_float(%s)", args.get(0).getText()), Integer.MAX_VALUE);
+    ImmutableList.Builder<String> expTexts = ImmutableList.builder();
+    for (PyExpr expr : args) {
+      expTexts.add(expr.getText());
+    }
+    return new PyListExpr(
+        "any(runtime.type_safe_eq(el, "
+            + args.get(1).getText()
+            + ") for el in "
+            + args.get(0).getText()
+            + ")",
+        Integer.MAX_VALUE);
   }
 
   // lazy singleton pattern, allows other backends to avoid the work.
   private static final class Methods {
-    static final Method PARSE_FLOAT =
-        JavaValueFactory.createMethod(BasicFunctionsRuntime.class, "parseFloat", String.class);
-    static final MethodRef PARSE_FLOAT_REF = MethodRef.create(PARSE_FLOAT);
+    static final Method LIST_CONTAINS_FN =
+        JavaValueFactory.createMethod(
+            BasicFunctionsRuntime.class, "listContains", SoyList.class, SoyValue.class);
+    static final MethodRef LIST_CONTAINS_FN_REF = MethodRef.create(LIST_CONTAINS_FN);
   }
 
   @Override
   public JavaValue applyForJavaSource(
       JavaValueFactory factory, List<JavaValue> args, JavaPluginContext context) {
-    return factory.callStaticMethod(Methods.PARSE_FLOAT, args.get(0));
+    return factory.callStaticMethod(Methods.LIST_CONTAINS_FN, args.get(0), args.get(1));
   }
 
   @Override
   public SoyExpression computeForJbcSrc(JbcSrcPluginContext context, List<SoyExpression> args) {
-    return SoyExpression.forSoyValue(
-        SoyTypes.makeNullable(FloatType.getInstance()),
-        Methods.PARSE_FLOAT_REF.invoke(args.get(0).unboxAs(String.class)));
+    SoyExpression list = args.get(0);
+    SoyExpression value = args.get(1);
+    return SoyExpression.forBool(
+        list.box().checkedCast(SoyList.class).invoke(Methods.LIST_CONTAINS_FN_REF, value.box()));
   }
 }

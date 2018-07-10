@@ -9330,6 +9330,13 @@ goog.labs.userAgent.platform.isChromecast = function() {
 };
 
 /**
+ * @return {boolean} Whether the platform is KaiOS.
+ */
+goog.labs.userAgent.platform.isKaiOS = function() {
+  return goog.labs.userAgent.util.matchUserAgentIgnoreCase('KaiOS');
+};
+
+/**
  * The version of the platform. We only determine the version for Windows,
  * Mac, and Chrome OS. It doesn't make much sense on Linux. For Windows, we only
  * look at the NT version. Non-NT-based versions (e.g. 95, 98, etc.) are given
@@ -9808,6 +9815,12 @@ goog.define('goog.userAgent.ASSUME_IPOD', false);
 
 
 /**
+ * @define {boolean} Whether the user agent is running on KaiOS.
+ */
+goog.define('goog.userAgent.ASSUME_KAIOS', false);
+
+
+/**
  * @type {boolean}
  * @private
  */
@@ -9927,6 +9940,14 @@ goog.userAgent.IOS = goog.userAgent.PLATFORM_KNOWN_ ?
     (goog.userAgent.ASSUME_IPHONE || goog.userAgent.ASSUME_IPAD ||
      goog.userAgent.ASSUME_IPOD) :
     goog.labs.userAgent.platform.isIos();
+
+/**
+ * Whether the user agent is running on KaiOS.
+ */
+goog.userAgent.KAIOS = goog.userAgent.PLATFORM_KNOWN_ ?
+    goog.userAgent.ASSUME_KAIOS :
+    goog.labs.userAgent.platform.isKaiOS();
+
 
 /**
  * @return {string} The string that describes the version number of the user
@@ -15526,7 +15547,7 @@ goog.html.SafeUrl.fromConstant = function(url) {
 goog.html.SAFE_MIME_TYPE_PATTERN_ = new RegExp(
     // Note: Due to content-sniffing concerns, only add MIME types for
     // media formats.
-    '^(?:audio/(?:3gpp|3gpp2|aac|midi|mp4|mpeg|ogg|x-m4a|x-wav|webm)|' +
+    '^(?:audio/(?:3gpp2|3gpp|aac|midi|mp3|mp4|mpeg|oga|ogg|opus|x-m4a|x-wav|wav|webm)|' +
         'image/(?:bmp|gif|jpeg|jpg|png|tiff|webp)|' +
         // TODO(b/68188949): Due to content-sniffing concerns, text/csv should
         // be removed from the whitelist.
@@ -26201,6 +26222,30 @@ soy.$$listContains = function(list, val) {
   return goog.array.findIndex(list, function(el) {
     return soy.$$equals(val, el);
   }) >= 0;
+};
+
+
+/**
+ * Converts the ASCII characters in the given string to lower case.
+ * @param {string} s
+ * @return {string}
+ */
+soy.$$strToAsciiLowerCase = function(s) {
+  return goog.array.map(s, function(c) {
+    return 'A' <= c && c <= 'Z' ? c.toLowerCase() : c;
+  }).join('');
+};
+
+
+/**
+ * Converts the ASCII characters in the given string to upper case.
+ * @param {string} s
+ * @return {string}
+ */
+soy.$$strToAsciiUpperCase = function(s) {
+  return goog.array.map(s, function(c) {
+    return 'a' <= c && c <= 'z' ? c.toUpperCase() : c;
+  }).join('');
 };
 
 

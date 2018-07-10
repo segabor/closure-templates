@@ -17,7 +17,7 @@
 package com.google.template.soy.basicfunctions;
 
 import static com.google.common.truth.Truth.assertThat;
-import static com.google.template.soy.jbcsrc.restricted.testing.ExpressionTester.assertThatExpression;
+import static com.google.template.soy.jbcsrc.restricted.testing.ExpressionSubject.assertThatExpression;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -79,7 +79,7 @@ public final class LegacyObjectMapToMapFunctionTest {
   public void computeForJbcSrc() {
     assertThatExpression(
             LEGACY_OBJECT_MAP_TO_MAP.computeForJbcSrc(
-                null /* context */,
+                /* context= */ null,
                 ImmutableList.of(
                     SoyExpression.forSoyValue(
                         UnknownType.getInstance(),

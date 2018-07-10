@@ -468,8 +468,14 @@ def parse_float(s):
     return None
   return None if math.isnan(f) else f
 
-def unsupported(str):
-  raise Exception("unsupported feature: " + str)
+
+def sqrt(num):
+  """Returns the square root of the given number."""
+  return math.sqrt(num)
+
+
+def unsupported(msg):
+  raise Exception('unsupported feature: ' + msg)
 
 
 def map_to_legacy_object_map(m):
@@ -503,6 +509,17 @@ def maybe_coerce_key_to_string(key):
   if sanitize.is_content_kind(key, sanitize.CONTENT_KIND.TEXT):
     return key.content
   return key
+
+
+def str_to_ascii_lower_case(s):
+  """Converts the ASCII characters in the given string to lower case."""
+  return ''.join([c.lower() if 'A' <= c <= 'Z' else c for c in s])
+
+
+def str_to_ascii_upper_case(s):
+  """Converts the ASCII characters in the given string to upper case."""
+  return ''.join([c.upper() if 'a' <= c <= 'z' else c for c in s])
+
 
 ######################
 # Utility functions. #
