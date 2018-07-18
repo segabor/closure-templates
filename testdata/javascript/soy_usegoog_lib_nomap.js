@@ -12843,9 +12843,9 @@ goog.format.IS_IE8_OR_ABOVE_ =
 
 /**
  * Constant for the WBR replacement used by insertWordBreaks.  Safari requires
- * <wbr></wbr>, Opera needs the &shy; entity, though this will give a visible
- * hyphen at breaks.  IE8 uses a zero width space.
- * Other browsers just use <wbr>.
+ * &lt;wbr&gt;&lt;/wbr&gt;, Opera needs the &shy; entity, though this will give
+ * a visible hyphen at breaks.  IE8 uses a zero width space. Other browsers just
+ * use &lt;wbr&gt;.
  * @type {string}
  */
 goog.format.WORD_BREAK_HTML =
@@ -16723,15 +16723,18 @@ goog.require('goog.string.TypedString');
  * takes no parameters and the type is immutable; hence only a default instance
  * corresponding to the empty string can be obtained via constructor invocation.
  *
- * Note that there is no goog.html.SafeHtml.fromConstant. The reason is that the
- * following code would create an unsafe HTML:
+ * Note that there is no `goog.html.SafeHtml.fromConstant`. The reason is that
+ * the following code would create an unsafe HTML:
  *
+ * ```
  * goog.html.SafeHtml.concat(
  *     goog.html.SafeHtml.fromConstant(goog.string.Const.from('<script>')),
  *     goog.html.SafeHtml.htmlEscape(userInput),
  *     goog.html.SafeHtml.fromConstant(goog.string.Const.from('<\/script>')));
+ * ```
  *
- * There's goog.dom.constHtmlToNode to create a node from constant strings only.
+ * There's `goog.dom.constHtmlToNode` to create a node from constant strings
+ * only.
  *
  * @see goog.html.SafeHtml.create
  * @see goog.html.SafeHtml.htmlEscape
@@ -24750,8 +24753,8 @@ soy.$$equals = function(obj1, obj2) {
   // the same to be considered structurally equal. Beware, as this is a
   // very expensive function.
   if (goog.isFunction(valueOne) && goog.isFunction(valueTwo)) {
-    if ((/** @type {?} */ (valueOne)).type !==
-        (/** @type {?} */ (valueTwo)).type) {
+    if ((/** @type {?} */ (valueOne)).contentKind !==
+        (/** @type {?} */ (valueTwo)).contentKind) {
       return false;
     } else {
       return valueOne.toString() === valueTwo.toString();
@@ -25791,6 +25794,18 @@ soy.$$filterSipUri = function(value) {
       soy.esc.$$filterSipUriHelper(value));
 };
 
+/**
+ * Function that converts sms uri string to a sanitized uri
+ *
+ * @param {string} value sms uri
+ * @return {!goog.soy.data.SanitizedUri} An sanitized version of the sms uri.
+ */
+soy.$$strSmsUriToUri = function(value) {
+  // NOTE: Even if it's a SanitizedUri, we will still filter it.
+  return soydata.VERY_UNSAFE.ordainSanitizedUri(
+      soy.esc.$$filterSmsUriHelper(value));
+};
+
 
 /**
  * Allows only tel URIs.
@@ -26590,6 +26605,12 @@ soy.esc.$$FILTER_FOR_FILTER_SIP_URI_ = /^sip:[0-9a-z;=\-+._!~*'\u0020\/():&$#?@,
  * A pattern that vets values produced by the named directives.
  * @private {!RegExp}
  */
+soy.esc.$$FILTER_FOR_FILTER_SMS_URI_ = /^sms:[0-9a-z;=\-+._!~*'\u0020\/():&$#?@,]+$/i;
+
+/**
+ * A pattern that vets values produced by the named directives.
+ * @private {!RegExp}
+ */
 soy.esc.$$FILTER_FOR_FILTER_TEL_URI_ = /^tel:[0-9a-z;=\-+._!~*'\u0020\/():&$#?@,]+$/i;
 
 /**
@@ -26757,6 +26778,20 @@ soy.esc.$$filterSipUriHelper = function(value) {
   var str = String(value);
   if (!soy.esc.$$FILTER_FOR_FILTER_SIP_URI_.test(str)) {
     goog.asserts.fail('Bad value `%s` for |filterSipUri', [str]);
+    return 'about:invalid#zSoyz';
+  }
+  return str;
+};
+
+/**
+ * A helper for the Soy directive |filterSmsUri
+ * @param {?} value Can be of any type but will be coerced to a string.
+ * @return {string} The escaped text.
+ */
+soy.esc.$$filterSmsUriHelper = function(value) {
+  var str = String(value);
+  if (!soy.esc.$$FILTER_FOR_FILTER_SMS_URI_.test(str)) {
+    goog.asserts.fail('Bad value `%s` for |filterSmsUri', [str]);
     return 'about:invalid#zSoyz';
   }
   return str;

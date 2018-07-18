@@ -23,10 +23,8 @@ import com.google.inject.AbstractModule;
 import com.google.inject.Key;
 import com.google.inject.Provides;
 import com.google.inject.multibindings.OptionalBinder;
-import com.google.template.soy.jbcsrc.shared.CompiledTemplates;
-import com.google.template.soy.shared.internal.GuiceSimpleScope;
 import com.google.template.soy.shared.internal.SharedModule;
-import com.google.template.soy.shared.restricted.ApiCallScopeBindingAnnotations.ApiCall;
+import com.google.template.soy.shared.internal.SoyScopedData;
 import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
 import javax.inject.Singleton;
@@ -42,7 +40,6 @@ import javax.inject.Singleton;
 public final class PrecompiledSoyModule extends AbstractModule {
   @Override
   protected void configure() {
-    // This installs all the core plugins and the apicallscope dependencies.
     install(new SharedModule());
     OptionalBinder.newOptionalBinder(
         binder(), new Key<ImmutableSet<String>>(Deltemplates.class) {});
@@ -52,15 +49,16 @@ public final class PrecompiledSoyModule extends AbstractModule {
   @Singleton
   @Precompiled
   SoySauce provideSoySauce(
-      @ApiCall GuiceSimpleScope scope,
+      SoyScopedData scopedData,
       @Deltemplates Optional<ImmutableSet<String>> allDeltemplates,
-      ImmutableMap<String, ? extends SoyFunction> functions,
-      ImmutableMap<String, ? extends SoyPrintDirective> printDirectives) {
-    return new SoySauceImpl(
-        new CompiledTemplates(allDeltemplates.or(ImmutableSet.<String>of())),
-        scope,
-        functions,
-        printDirectives);
+      ImmutableMap<String, ? extends SoyFunction> pluginFunctions,
+      ImmutableMap<String, ? extends SoyPrintDirective> pluginDirectives) {
+    return new SoySauceBuilder()
+        .withDelTemplates(allDeltemplates.or(ImmutableSet.<String>of()))
+        .withScope(scopedData)
+        .withFunctions(pluginFunctions)
+        .withDirectives(pluginDirectives)
+        .build();
   }
 
   @Override

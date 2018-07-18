@@ -16,67 +16,94 @@
 
 package com.google.template.soy.sharedpasses.render;
 
-import com.google.template.soy.data.SoyList;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.restricted.BooleanData;
-import com.google.template.soy.data.restricted.FloatData;
-import com.google.template.soy.data.restricted.IntegerData;
 import com.google.template.soy.data.restricted.NullData;
-import com.google.template.soy.data.restricted.StringData;
 import com.google.template.soy.data.restricted.UndefinedData;
+import com.google.template.soy.internal.i18n.BidiGlobalDir;
 import com.google.template.soy.plugin.java.restricted.JavaValue;
+import com.ibm.icu.util.ULocale;
+import javax.annotation.Nullable;
 
 /** Wraps a {@link SoyValue} into a {@link JavaValue}. */
 final class TofuJavaValue implements JavaValue {
   static TofuJavaValue forSoyValue(SoyValue soyValue) {
-    return new TofuJavaValue(soyValue);
+    return new TofuJavaValue(checkNotNull(soyValue), null, null);
   }
 
-  private final SoyValue soyValue;
+  static TofuJavaValue forULocale(ULocale locale) {
+    return new TofuJavaValue(null, checkNotNull(locale), null);
+  }
 
-  private TofuJavaValue(SoyValue soyValue) {
+  static JavaValue forBidiDir(BidiGlobalDir bidiGlobalDir) {
+    return new TofuJavaValue(null, null, checkNotNull(bidiGlobalDir));
+  }
+
+  @Nullable private final SoyValue soyValue;
+  @Nullable private final ULocale locale;
+  @Nullable private final BidiGlobalDir bidiGlobalDir;
+
+  private TofuJavaValue(SoyValue soyValue, ULocale locale, BidiGlobalDir bidiGlobalDir) {
     this.soyValue = soyValue;
+    this.locale = locale;
+    this.bidiGlobalDir = bidiGlobalDir;
+  }
+
+  boolean hasSoyValue() {
+    return soyValue != null;
   }
 
   SoyValue soyValue() {
+    checkState(soyValue != null);
     return soyValue;
+  }
+
+  BidiGlobalDir bidiGlobalDir() {
+    checkState(bidiGlobalDir != null);
+    return bidiGlobalDir;
+  }
+
+  ULocale locale() {
+    checkState(locale != null);
+    return locale;
   }
 
   @Override
   public TofuJavaValue isNonNull() {
+    if (soyValue == null) {
+      throw RenderException.create(
+          "isNonNull is only supported on the 'args' parameters of JavaValueFactory methods");
+    }
     return forSoyValue(
         BooleanData.forValue(!(soyValue instanceof UndefinedData || soyValue instanceof NullData)));
   }
 
   @Override
   public TofuJavaValue isNull() {
+    if (soyValue == null) {
+      throw RenderException.create(
+          "isNull is only supported on the 'args' parameters of JavaValueFactory methods");
+    }
     return forSoyValue(
         BooleanData.forValue(soyValue instanceof UndefinedData || soyValue instanceof NullData));
   }
 
   @Override
   public ValueSoyType soyType() {
-    // Tofu works in SoyValues, so we interpret the runtime type as the type of the SoyValue
-    // and rely on the TofuValueFactory to cast appropriately before calling methods.
-    if (soyValue instanceof StringData) {
-      return ValueSoyType.STRING;
-    } else if (soyValue instanceof BooleanData) {
-      return ValueSoyType.BOOLEAN;
-    } else if (soyValue instanceof NullData || soyValue instanceof UndefinedData) {
-      return ValueSoyType.NULL;
-    } else if (soyValue instanceof FloatData) {
-      return ValueSoyType.FLOAT;
-    } else if (soyValue instanceof IntegerData) {
-      return ValueSoyType.INTEGER;
-    } else if (soyValue instanceof SoyList) {
-      return ValueSoyType.LIST;
-    } else {
-      return ValueSoyType.OTHER;
-    }
+    throw new UnsupportedOperationException();
   }
 
   @Override
   public String toString() {
-    return "TofuJavaValue[soyValue=" + soyValue + "]";
+    if (soyValue != null) {
+      return "TofuJavaValue[soyValue=" + soyValue + "]";
+    } else if (locale != null) {
+      return "TofuJavaValue[locale=" + locale + "]";
+    } else {
+      return "TofuJavaValue[bidiGlobalDir=" + bidiGlobalDir + "]";
+    }
   }
 }

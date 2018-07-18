@@ -23,11 +23,8 @@ import static com.google.template.soy.jssrc.dsl.Expression.number;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
-import com.google.inject.Guice;
-import com.google.inject.Injector;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
 import com.google.template.soy.SoyFileSetParserBuilder;
-import com.google.template.soy.SoyModule;
 import com.google.template.soy.base.internal.UniqueNameGenerator;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.jssrc.SoyJsSrcOptions;
@@ -35,7 +32,6 @@ import com.google.template.soy.jssrc.dsl.CodeChunk;
 import com.google.template.soy.jssrc.dsl.Expression;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyLibraryAssistedJsSrcFunction;
-import com.google.template.soy.shared.AutoEscapingType;
 import com.google.template.soy.shared.SharedTestUtils;
 import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.soytree.SoyNode;
@@ -55,7 +51,6 @@ import org.junit.runners.JUnit4;
 @RunWith(JUnit4.class)
 public final class GenJsCodeVisitorTest {
   private static final Joiner JOINER = Joiner.on('\n');
-  private static final Injector INJECTOR = Guice.createInjector(new SoyModule());
 
   // Let 'goo' simulate a local variable from a 'foreach' loop.
   private static final ImmutableMap<String, Expression> LOCAL_VAR_TRANSLATIONS =
@@ -97,8 +92,7 @@ public final class GenJsCodeVisitorTest {
   @Before
   public void setUp() {
     jsSrcOptions = new SoyJsSrcOptions();
-    genJsCodeVisitor =
-        JsSrcMain.createVisitor(jsSrcOptions, INJECTOR.getInstance(SoyTypeRegistry.class));
+    genJsCodeVisitor = JsSrcMain.createVisitor(jsSrcOptions, new SoyTypeRegistry());
     genJsCodeVisitor.templateAliases = TEMPLATE_ALIASES;
   }
 
@@ -560,8 +554,8 @@ public final class GenJsCodeVisitorTest {
             + "{if $boo}\n"
             + // wrapping in if-block makes using assertGeneratedJsCode easier
             "  {let $alpha: $boo.foo /}\n"
-            + "  {let $beta}Boo!{/let}\n"
-            + "  {let $gamma}\n"
+            + "  {let $beta kind=\"text\"}Boo!{/let}\n"
+            + "  {let $gamma kind=\"text\"}\n"
             + "    {for $i in range($alpha)}\n"
             + "      {$i}{$beta}\n"
             + "    {/for}\n"
@@ -575,15 +569,19 @@ public final class GenJsCodeVisitorTest {
             + "if (opt_data.boo) {\n"
             + "  var alpha__soy8 = opt_data.boo.foo;\n"
             + "  var beta__soy11 = 'Boo!';\n"
+            + "  var beta__wrapped11 = "
+            + "soydata.$$markUnsanitizedTextForInternalBlocks(beta__soy11);\n"
             + "  var gamma__soy21 = '';\n"
             + "  var i14ListLen = Math.max(0, Math.ceil((alpha__soy8 - 0) / 1));\n"
             + "  for (var i14Index = 0; i14Index < i14ListLen; i14Index++) {\n"
             + "    var i14Data = 0 + i14Index * 1;\n"
-            + "    gamma__soy21 += i14Data + beta__soy11;\n"
+            + "    gamma__soy21 += i14Data + beta__wrapped11;\n"
             + "  }\n"
+            + "  var gamma__wrapped21 = "
+            + "soydata.$$markUnsanitizedTextForInternalBlocks(gamma__soy21);\n"
             + "  var delta__soy24 = 'Boop!';\n"
             + "  var delta__wrapped24 = soydata.VERY_UNSAFE.$$ordainSanitizedHtmlForInternalBlocks(delta__soy24);\n"
-            + "  output += alpha__soy8 + beta__soy11 + gamma__soy21 + delta__wrapped24;\n"
+            + "  output += alpha__soy8 + beta__wrapped11 + gamma__wrapped21 + delta__wrapped24;\n"
             + "}\n";
     assertGeneratedJsCode(soyNodeCode, expectedJsCode);
   }
@@ -594,8 +592,7 @@ public final class GenJsCodeVisitorTest {
   public void testStrictLetAddsAppropriateRequires() {
     jsSrcOptions.setShouldProvideRequireSoyNamespaces(true);
     String soyNodeCode = "{let $text kind=\"text\"}foo{/let}{let $html kind=\"html\"}foo{/let}\n";
-    ParseResult parseResult =
-        SoyFileSetParserBuilder.forTemplateContents(AutoEscapingType.STRICT, soyNodeCode).parse();
+    ParseResult parseResult = SoyFileSetParserBuilder.forTemplateContents(soyNodeCode).parse();
     String jsFilesContents =
         genJsCodeVisitor
             .gen(parseResult.fileSet(), parseResult.registry(), ErrorReporter.exploding())
@@ -681,7 +678,7 @@ public final class GenJsCodeVisitorTest {
     soyNodeCode =
         "{@param boo : ?}\n"
             + "{call some.func data=\"$boo\"}\n"
-            + "  {param goo}\n"
+            + "  {param goo kind=\"text\"}\n"
             + "    {for $i in range(7)}\n"
             + "      {$i}\n"
             + "    {/for}\n"
@@ -695,7 +692,9 @@ public final class GenJsCodeVisitorTest {
             + "  var i6Data = 0 + i6Index * 1;\n"
             + "  param12 += i6Data;\n"
             + "}\n"
-            + "output += some.func(soy.$$assignDefaults({goo: param12}, opt_data.boo), opt_ijData);\n";
+            + "output += some.func(soy.$$assignDefaults("
+            + "{goo: soydata.$$markUnsanitizedTextForInternalBlocks(param12)}, opt_data.boo), "
+            + "opt_ijData);\n";
     assertGeneratedJsCode(soyNodeCode, expectedJsCode);
   }
 

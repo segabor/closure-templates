@@ -23,18 +23,17 @@ import static com.google.common.truth.Truth.assertWithMessage;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.inject.Guice;
-import com.google.inject.Injector;
-import com.google.inject.Key;
 import com.google.template.soy.SoyFileSetParserBuilder;
-import com.google.template.soy.SoyModule;
 import com.google.template.soy.base.internal.UniqueNameGenerator;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.jssrc.dsl.CodeChunk;
 import com.google.template.soy.shared.SharedTestUtils;
+import com.google.template.soy.shared.internal.InternalPlugins;
+import com.google.template.soy.shared.internal.NoOpScopedData;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
 import com.google.template.soy.soytree.CallNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
+import java.util.regex.Pattern;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -47,8 +46,6 @@ import org.junit.runners.JUnit4;
 public final class GenCallCodeUtilsTest {
 
   private static final Joiner JOINER = Joiner.on('\n');
-
-  private static final Injector INJECTOR = Guice.createInjector(new SoyModule());
 
   @Test
   public void testGenCallExprForBasicCalls() {
@@ -67,18 +64,25 @@ public final class GenCallCodeUtilsTest {
             getCallExprTextHelper(
                 "{@param boo : ?}",
                 "{call some.func data=\"$boo\"}",
-                "  {param goo}Blah{/param}",
+                "  {param goo kind=\"text\"}Blah{/param}",
                 "{/call}"))
-        .isEqualTo("some.func(soy.$$assignDefaults({goo: 'Blah'}, opt_data.boo), opt_ijData);");
+        .isEqualTo(
+            "some.func(soy.$$assignDefaults("
+                + "{goo: soydata.$$markUnsanitizedTextForInternalBlocks('Blah')}, opt_data.boo), "
+                + "opt_ijData);");
 
     String callExprText =
         getCallExprTextHelper(
             "{call some.func}\n"
-                + "  {param goo}\n"
+                + "  {param goo kind=\"text\"}\n"
                 + "    {for $i in range(3)}{$i}{/for}\n"
                 + "  {/param}\n"
                 + "{/call}\n");
-    assertThat(callExprText).matches("some[.]func[(][{]goo: param[0-9]+[}], opt_ijData[)];");
+    assertThat(callExprText)
+        .matches(
+            Pattern.quote("some.func({goo: soydata.$$markUnsanitizedTextForInternalBlocks(param")
+                + "[0-9]+"
+                + Pattern.quote(")}, opt_ijData);"));
   }
 
   @Test
@@ -213,7 +217,7 @@ public final class GenCallCodeUtilsTest {
     CallNode callNode = (CallNode) SharedTestUtils.getNode(soyTree, 0);
     // Manually setting the escaping directives.
     ImmutableMap<String, ? extends SoyPrintDirective> directives =
-        INJECTOR.getInstance(new Key<ImmutableMap<String, ? extends SoyPrintDirective>>() {});
+        InternalPlugins.internalDirectiveMap(new NoOpScopedData());
     callNode.setEscapingDirectives(
         escapingDirectives.stream().map(directives::get).collect(toImmutableList()));
 

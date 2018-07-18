@@ -37,6 +37,7 @@ import com.google.template.soy.base.internal.SanitizedContentKind;
 import com.google.template.soy.base.internal.UniqueNameGenerator;
 import com.google.template.soy.data.SoyRecord;
 import com.google.template.soy.data.SoyValueProvider;
+import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.jbcsrc.SoyNodeCompiler.CompiledMethodBody;
 import com.google.template.soy.jbcsrc.internal.ClassData;
@@ -55,6 +56,7 @@ import com.google.template.soy.jbcsrc.restricted.Statement;
 import com.google.template.soy.jbcsrc.restricted.TypeInfo;
 import com.google.template.soy.jbcsrc.shared.CompiledTemplate;
 import com.google.template.soy.jbcsrc.shared.TemplateMetadata;
+import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
 import com.google.template.soy.soytree.CallBasicNode;
 import com.google.template.soy.soytree.CallDelegateNode;
 import com.google.template.soy.soytree.CallParamContentNode;
@@ -92,9 +94,13 @@ final class TemplateCompiler {
   private final ImmutableMap<String, FieldRef> paramFields;
   private final CompiledTemplateMetadata template;
   private final InnerClasses innerClasses;
+  private final ErrorReporter reporter;
   private SoyClassWriter writer;
 
-  TemplateCompiler(CompiledTemplateRegistry registry, CompiledTemplateMetadata template) {
+  TemplateCompiler(
+      CompiledTemplateRegistry registry,
+      CompiledTemplateMetadata template,
+      ErrorReporter reporter) {
     this.registry = registry;
     this.template = template;
     TypeInfo ownerType = template.typeInfo();
@@ -112,6 +118,7 @@ final class TemplateCompiler {
       builder.put(name, createFinalField(ownerType, name, SoyValueProvider.class).asNonNull());
     }
     this.paramFields = builder.build();
+    this.reporter = reporter;
   }
 
   /**
@@ -261,7 +268,8 @@ final class TemplateCompiler {
                 thisVar,
                 AppendableExpression.forLocal(appendableVar),
                 variableSet,
-                variables)
+                variables,
+                reporter)
             .compile(node);
     final Statement returnDone = Statement.returnExpression(MethodRef.RENDER_RESULT_DONE.invoke());
     new Statement() {
@@ -372,6 +380,11 @@ final class TemplateCompiler {
     @Override
     public JbcSrcPluginContext getPluginContext() {
       return renderContext;
+    }
+
+    @Override
+    public JavaPluginContext getJavaPluginContext() {
+      return renderContext.asJavaPluginContext();
     }
 
     @Override

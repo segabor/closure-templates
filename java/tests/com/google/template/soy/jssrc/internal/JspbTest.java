@@ -22,11 +22,8 @@ import static com.google.template.soy.jssrc.internal.JsSrcSubject.assertThatSoyE
 import static com.google.template.soy.jssrc.internal.JsSrcSubject.expr;
 
 import com.google.common.collect.ImmutableList;
-import com.google.inject.Guice;
-import com.google.inject.Injector;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
 import com.google.template.soy.SoyFileSetParserBuilder;
-import com.google.template.soy.SoyModule;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.jssrc.SoyJsSrcOptions;
 import com.google.template.soy.testing.Example;
@@ -227,20 +224,17 @@ public final class JspbTest {
    */
   @Test
   public void testHeaderParamFieldImport() {
-    Injector injector = Guice.createInjector(new SoyModule());
-
     SoyJsSrcOptions jsSrcOptions = new SoyJsSrcOptions();
     jsSrcOptions.setShouldProvideRequireSoyNamespaces(true);
 
     GenJsCodeVisitor genJsCodeVisitor =
-        JsSrcMain.createVisitor(jsSrcOptions, injector.getInstance(SoyTypeRegistry.class));
+        JsSrcMain.createVisitor(jsSrcOptions, new SoyTypeRegistry());
     genJsCodeVisitor.jsCodeBuilder = new JsCodeBuilder();
 
     String testFileContent =
         "{namespace boo.foo}\n"
             + "\n"
-            + "/** */\n"
-            + "{template .goo autoescape=\"deprecated-noncontextual\"}\n"
+            + "{template .goo}\n"
             + "  {@param moo : example.ExampleExtendable}\n"
             + "  {$moo.someExtensionField}\n"
             + "{/template}\n";
@@ -265,13 +259,14 @@ public final class JspbTest {
             + "goog.require('proto.example.ExampleExtendable');\n"
             + "goog.require('proto.example.SomeExtension');\n"
             + "goog.require('soy.asserts');\n"
+            + "goog.require('soydata.VERY_UNSAFE');\n"
             + "\n"
             + "\n"
             + "/**\n"
             + " * @param {boo.foo.goo.Params} opt_data\n"
             + " * @param {Object<string, *>=} opt_ijData\n"
             + " * @param {Object<string, *>=} opt_ijData_deprecated\n"
-            + " * @return {string}\n"
+            + " * @return {!goog.soy.data.SanitizedHtml}\n"
             + " * @suppress {checkTypes}\n"
             + " */\n"
             + "boo.foo.goo = function(opt_data, opt_ijData, opt_ijData_deprecated) {\n"
@@ -281,7 +276,8 @@ public final class JspbTest {
             + "  var moo = soy.asserts.assertType("
             + "$tmp instanceof proto.example.ExampleExtendable, "
             + "'moo', $tmp, 'proto.example.ExampleExtendable');\n"
-            + "  return '' + moo.getExtension(proto.example.SomeExtension.someExtensionField);\n"
+            + "  return soydata.VERY_UNSAFE.ordainSanitizedHtml("
+            + "moo.getExtension(proto.example.SomeExtension.someExtensionField));\n"
             + "};\n"
             + "/**\n"
             + " * @typedef {{\n"

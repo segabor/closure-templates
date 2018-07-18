@@ -19,20 +19,18 @@ package com.google.template.soy.plugin.java.restricted;
 import java.lang.reflect.Method;
 import java.util.List;
 
-/**
- * A factory for instructing soy how to implement a {@link SoyJavaSourceFunction} or {@link
- * SoyJavaSourcePrintDirective} at runtime.
- */
+/** A factory for instructing soy how to implement a {@link SoyJavaSourceFunction}. */
 public abstract class JavaValueFactory {
 
   /** Instructs Soy to call the given static {@code method} with the given params at runtime. */
   public abstract JavaValue callStaticMethod(Method method, JavaValue... params);
 
   /**
-   * Instructs Soy to call the given {@code method} with the given params at runtime. The class the
-   * runtime is within must be registered with Soy as the {@link JavaPluginRuntime} for this plugin.
+   * Instructs Soy to call the given {@code method} with the given params on the registered plugin
+   * instance at runtime. In the SoySauce backend, instances are registered in the
+   * SoySauce.Renderer, in the Tofu backend, instances are registered in the SoyTofu.Renderer.
    */
-  public abstract JavaValue callRuntimeMethod(Method method, JavaValue... params);
+  public abstract JavaValue callInstanceMethod(Method method, JavaValue... params);
 
   /**
    * Returns a JavaValue that corresponds to a list containing each of the values. The values will

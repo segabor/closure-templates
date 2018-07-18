@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2012 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,13 +14,17 @@
  * limitations under the License.
  */
 
-package com.google.template.soy.plugin.java.restricted;
+package com.google.template.soy.i18ndirectives;
 
-import com.google.template.soy.plugin.restricted.SoySourcePrintDirective;
-import java.util.List;
+import com.google.common.base.Supplier;
+import com.google.common.collect.ImmutableSet;
+import com.google.template.soy.shared.restricted.SoyPrintDirective;
 
-/** A {@link SoySourcePrintDirective} that generates code to be called at Java render time. */
-public interface SoyJavaSourcePrintDirective extends SoySourcePrintDirective {
-  /** Instructs Soy as to how to render the directive. */
-  JavaValue applyForJavaSrc(JavaValueFactory factory, List<JavaValue> args, JavaPluginContext ctx);
+/** Lists all i18n directives. */
+public final class I18nDirectives {
+  private I18nDirectives() {}
+
+  public static ImmutableSet<SoyPrintDirective> directives(Supplier<String> localeProvider) {
+    return ImmutableSet.of(new FormatNumDirective(localeProvider));
+  }
 }

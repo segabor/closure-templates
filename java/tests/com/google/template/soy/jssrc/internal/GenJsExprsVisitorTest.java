@@ -23,9 +23,7 @@ import static com.google.template.soy.jssrc.dsl.Expression.number;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.inject.Guice;
 import com.google.template.soy.SoyFileSetParserBuilder;
-import com.google.template.soy.SoyModule;
 import com.google.template.soy.base.internal.UniqueNameGenerator;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.jssrc.dsl.CodeChunk;
@@ -48,10 +46,6 @@ import org.junit.runners.JUnit4;
 public final class GenJsExprsVisitorTest {
 
   private static final Joiner JOINER = Joiner.on('\n');
-
-  static {
-    Guice.createInjector(new SoyModule());
-  }
 
   // Let 'goo' simulate a local variable from a 'foreach' loop.
   private static final ImmutableMap<String, Expression> LOCAL_VAR_TRANSLATIONS =
@@ -219,10 +213,12 @@ public final class GenJsExprsVisitorTest {
         JOINER.join(
             "{@param boo : ?}",
             "{call some.func data=\"$boo\"}",
-            "  {param goo}Blah{/param}",
+            "  {param goo kind=\"text\"}Blah{/param}",
             "{/call}");
     assertGeneratedChunks(
-        soyNodeCode, "some.func(soy.$$assignDefaults({goo: 'Blah'}, opt_data.boo), opt_ijData);");
+        soyNodeCode,
+        "some.func(soy.$$assignDefaults({goo: soydata.$$markUnsanitizedTextForInternalBlocks("
+            + "'Blah')}, opt_data.boo), opt_ijData);");
   }
 
   @Test
@@ -240,10 +236,11 @@ public final class GenJsExprsVisitorTest {
         JOINER.join(
             "{@param goo : ?}",
             "{call some.func}",
-            "  {param goo}{lb}{isNonnull($goo)}{rb} is {$goo.moo}{/param}",
+            "  {param goo kind=\"text\"}{lb}{isNonnull($goo)}{rb} is {$goo.moo}{/param}",
             "{/call}");
     expectedJsExprText =
-        "some.func({goo: '{' + (gooData8 != null) + '} is ' + gooData8.moo}, opt_ijData);";
+        "some.func({goo: soydata.$$markUnsanitizedTextForInternalBlocks("
+            + "'{' + (gooData8 != null) + '} is ' + gooData8.moo)}, opt_ijData);";
     assertGeneratedChunks(soyNodeCode, expectedJsExprText);
   }
 

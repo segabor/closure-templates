@@ -45,6 +45,8 @@ import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.google.template.soy.shared.restricted.SoyPurePrintDirective;
 import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcPrintDirective;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
+import java.util.List;
+import java.util.Set;
 
 /**
  * An escaping directive that is backed by {@link Sanitizers} in java, {@code soyutils.js} or the
@@ -180,7 +182,6 @@ public abstract class BasicEscapeDirective
   // Concrete subclasses.
 
   /** Implements the |escapeCssString directive. */
-  @Singleton
   @SoyPurePrintDirective
   static final class EscapeCssString extends BasicEscapeDirective implements Streamable {
 
@@ -195,7 +196,6 @@ public abstract class BasicEscapeDirective
   }
 
   /** Implements the |filterCssValue directive. */
-  @Singleton
   @SoyPurePrintDirective
   static final class FilterCssValue extends BasicEscapeDirective {
 
@@ -213,7 +213,6 @@ public abstract class BasicEscapeDirective
    * Implements the |normalizeHtml directive. This escapes the same as escapeHtml except does not
    * escape attributes.
    */
-  @Singleton
   @SoyPurePrintDirective
   static final class NormalizeHtml extends BasicEscapeDirective implements Streamable {
 
@@ -228,7 +227,6 @@ public abstract class BasicEscapeDirective
   }
 
   /** Implements the |escapeHtmlRcdata directive. */
-  @Singleton
   @SoyPurePrintDirective
   static final class EscapeHtmlRcdata extends BasicEscapeDirective implements Streamable {
 
@@ -243,7 +241,6 @@ public abstract class BasicEscapeDirective
   }
 
   /** Implements the |escapeHtmlAttribute directive. */
-  @Singleton
   @SoyPurePrintDirective
   static final class EscapeHtmlAttribute extends BasicEscapeDirective {
 
@@ -258,7 +255,6 @@ public abstract class BasicEscapeDirective
   }
 
   /** Implements the |escapeHtmlAttributeNospace directive. */
-  @Singleton
   @SoyPurePrintDirective
   static final class EscapeHtmlAttributeNospace extends BasicEscapeDirective {
 
@@ -273,7 +269,6 @@ public abstract class BasicEscapeDirective
   }
 
   /** Implements the |filterHtmlAttributes directive. */
-  @Singleton
   @SoyPurePrintDirective
   static final class FilterHtmlAttributes extends BasicEscapeDirective implements Streamable {
 
@@ -293,7 +288,6 @@ public abstract class BasicEscapeDirective
   }
 
   /** Implements the |filterHtmlElementName directive. */
-  @Singleton
   @SoyPurePrintDirective
   static final class FilterHtmlElementName extends BasicEscapeDirective {
 
@@ -308,7 +302,6 @@ public abstract class BasicEscapeDirective
   }
 
   /** Implements the |escapeJsRegex directive. */
-  @Singleton
   @SoyPurePrintDirective
   static final class EscapeJsRegex extends BasicEscapeDirective implements Streamable {
 
@@ -323,7 +316,6 @@ public abstract class BasicEscapeDirective
   }
 
   /** Implements the |escapeJsString directive. */
-  @Singleton
   @SoyPurePrintDirective
   static final class EscapeJsString extends BasicEscapeDirective implements Streamable {
 
@@ -338,7 +330,6 @@ public abstract class BasicEscapeDirective
   }
 
   /** Implements the |escapeJsValue directive. */
-  @Singleton
   @SoyPurePrintDirective
   static final class EscapeJsValue extends BasicEscapeDirective implements ShortCircuitable {
 
@@ -358,7 +349,6 @@ public abstract class BasicEscapeDirective
   }
 
   /** Implements the |filterNormalizeUri directive. */
-  @Singleton
   @SoyPurePrintDirective
   static final class FilterNormalizeUri extends BasicEscapeDirective {
 
@@ -373,7 +363,6 @@ public abstract class BasicEscapeDirective
   }
 
   /** Implements the |filterNormalizeMediaUri directive. */
-  @Singleton
   @SoyPurePrintDirective
   static final class FilterNormalizeMediaUri extends BasicEscapeDirective {
 
@@ -388,7 +377,6 @@ public abstract class BasicEscapeDirective
   }
 
   /** Implements the |normalizeUri directive. */
-  @Singleton
   @SoyPurePrintDirective
   static final class NormalizeUri extends BasicEscapeDirective implements Streamable {
 
@@ -403,7 +391,6 @@ public abstract class BasicEscapeDirective
   }
 
   /** Implements the |escapeUri directive. */
-  @Singleton
   @SoyPurePrintDirective
   static final class EscapeUri extends BasicEscapeDirective {
 
@@ -418,7 +405,6 @@ public abstract class BasicEscapeDirective
   }
 
   /** Implements the |filterTrustedResourceUri directive. */
-  @Singleton
   @SoyPurePrintDirective
   static final class FilterTrustedResourceUri extends BasicEscapeDirective
       implements ShortCircuitable {

@@ -42,6 +42,7 @@ import com.google.template.soy.data.LoggingAdvisingAppendable;
 import com.google.template.soy.data.SanitizedContent;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
 import com.google.template.soy.data.restricted.StringData;
+import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.jbcsrc.SoyNodeCompiler.CompiledMethodBody;
 import com.google.template.soy.jbcsrc.internal.InnerClasses;
@@ -60,6 +61,8 @@ import com.google.template.soy.jbcsrc.restricted.TypeInfo;
 import com.google.template.soy.jbcsrc.runtime.DetachableContentProvider;
 import com.google.template.soy.jbcsrc.runtime.DetachableSoyValueProvider;
 import com.google.template.soy.jbcsrc.shared.RenderContext;
+import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
+import com.google.template.soy.plugin.java.restricted.JavaValue;
 import com.google.template.soy.soytree.CallParamContentNode;
 import com.google.template.soy.soytree.CallParamValueNode;
 import com.google.template.soy.soytree.LetContentNode;
@@ -170,18 +173,21 @@ final class LazyClosureCompiler {
   private final TemplateParameterLookup parentVariableLookup;
   private final ExpressionToSoyValueProviderCompiler expressionToSoyValueProviderCompiler;
   private final TemplateVariableManager parentVariables;
+  private final ErrorReporter reporter;
 
   LazyClosureCompiler(
       CompiledTemplateRegistry registry,
       InnerClasses innerClasses,
       TemplateParameterLookup parentVariableLookup,
       TemplateVariableManager parentVariables,
-      ExpressionToSoyValueProviderCompiler expressionToSoyValueProviderCompiler) {
+      ExpressionToSoyValueProviderCompiler expressionToSoyValueProviderCompiler,
+      ErrorReporter reporter) {
     this.registry = registry;
     this.innerClasses = innerClasses;
     this.parentVariableLookup = parentVariableLookup;
     this.parentVariables = parentVariables;
     this.expressionToSoyValueProviderCompiler = expressionToSoyValueProviderCompiler;
+    this.reporter = reporter;
   }
 
   Expression compileLazyExpression(
@@ -315,7 +321,7 @@ final class LazyClosureCompiler {
       LazyClosureParameterLookup lookup =
           new LazyClosureParameterLookup(this, parentVariableLookup, variableSet, thisVar);
       SoyExpression compile =
-          ExpressionCompiler.createBasicCompiler(lookup, variableSet).compile(exprNode);
+          ExpressionCompiler.createBasicCompiler(lookup, variableSet, reporter).compile(exprNode);
       SoyExpression expression = compile.box();
       final Statement storeExpr = RESOLVED_VALUE.putInstanceField(thisVar, expression);
       final Statement returnDone = Statement.returnExpression(RENDER_RESULT_DONE.invoke());
@@ -372,7 +378,8 @@ final class LazyClosureCompiler {
               thisVar,
               AppendableExpression.forLocal(appendableVar),
               variableSet,
-              lookup);
+              lookup,
+              reporter);
       CompiledMethodBody compileChildren = soyNodeCompiler.compile(renderUnit, prefix, suffix);
       writer.setNumDetachStates(compileChildren.numberOfDetachStates());
       final Statement nodeBody = compileChildren.body();
@@ -619,6 +626,33 @@ final class LazyClosureCompiler {
         @Override
         public Expression getULocale() {
           return getDelegate().getULocale();
+        }
+      };
+    }
+
+    @Override
+    public JavaPluginContext getJavaPluginContext() {
+      // return a lazy delegate.  Most plugins never even need the context, but accessing
+      // getRenderContext() will copy the field into the inner class as a side effect.  using a lazy
+      // delegate we can avoid that in the common case.
+      return new JavaPluginContext() {
+        JavaPluginContext delegate;
+
+        JavaPluginContext getDelegate() {
+          if (delegate == null) {
+            delegate = getRenderContext().asJavaPluginContext();
+          }
+          return delegate;
+        }
+
+        @Override
+        public JavaValue getULocale() {
+          return getDelegate().getULocale();
+        }
+
+        @Override
+        public JavaValue getBidiDir() {
+          return getDelegate().getBidiDir();
         }
       };
     }

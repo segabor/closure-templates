@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 Google Inc.
+ * Copyright 2009 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,7 +14,16 @@
  * limitations under the License.
  */
 
-package com.google.template.soy.plugin.restricted;
+package com.google.template.soy.coredirectives;
 
-/** A soy print directive that generates its source code. */
-public interface SoySourcePrintDirective {}
+import com.google.common.collect.ImmutableSet;
+import com.google.template.soy.shared.restricted.SoyPrintDirective;
+
+/** Lists all core directives */
+public final class CoreDirectives {
+  private CoreDirectives() {}
+
+  public static ImmutableSet<SoyPrintDirective> directives() {
+    return ImmutableSet.of(new NoAutoescapeDirective(), new EscapeHtmlDirective());
+  }
+}

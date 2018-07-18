@@ -21,7 +21,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
-import com.google.inject.Guice;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
 import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.base.internal.SoyFileSupplier;
@@ -31,12 +30,12 @@ import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.logging.ValidatedLoggingConfig;
 import com.google.template.soy.passes.PassManager;
 import com.google.template.soy.plugin.restricted.SoySourceFunction;
-import com.google.template.soy.shared.AutoEscapingType;
 import com.google.template.soy.shared.SharedTestUtils;
 import com.google.template.soy.shared.SoyAstCache;
 import com.google.template.soy.shared.SoyGeneralOptions;
 import com.google.template.soy.shared.internal.InternalPlugins;
-import com.google.template.soy.shared.internal.SharedModule;
+import com.google.template.soy.shared.internal.SoyScopedData;
+import com.google.template.soy.shared.internal.SoySimpleScope;
 import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
 import com.google.template.soy.soyparse.PluginResolver;
@@ -46,7 +45,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import javax.annotation.Nullable;
-import javax.inject.Inject;
 
 /**
  * Fluent builder for configuring {@link com.google.template.soy.SoyFileSetParser}s in tests.
@@ -60,8 +58,9 @@ public final class SoyFileSetParserBuilder {
   @Nullable private SoyAstCache astCache = null;
   private ErrorReporter errorReporter = ErrorReporter.exploding(); // See #parse for discussion.
   private boolean allowUnboundGlobals;
-  @Inject private ImmutableMap<String, ? extends SoyFunction> soyFunctionMap;
-  @Inject private ImmutableMap<String, ? extends SoyPrintDirective> soyPrintDirectiveMap;
+  private final SoyScopedData scopedData;
+  private ImmutableMap<String, SoyFunction> soyFunctionMap;
+  private ImmutableMap<String, SoyPrintDirective> soyPrintDirectiveMap;
   private ImmutableMap<String, SoySourceFunction> sourceFunctionMap;
   // disable optimization by default
   private SoyGeneralOptions options = new SoyGeneralOptions().disableOptimizer();
@@ -98,29 +97,20 @@ public final class SoyFileSetParserBuilder {
    * contents of a Soy template.
    */
   public static SoyFileSetParserBuilder forTemplateContents(String... templateContents) {
-    return forTemplateContents(AutoEscapingType.DEPRECATED_NONCONTEXTUAL, templateContents);
+    return forTemplateContents(/* strictHtml= */ false, templateContents);
   }
 
   /**
    * Returns a builder that gets its Soy inputs from the given strings, treating each string as the
-   * contents of a Soy template, and using the given {@link AutoEscapingType}.
+   * contents of a Soy template, and using the given strictHtml mode.
    */
   public static SoyFileSetParserBuilder forTemplateContents(
-      AutoEscapingType autoEscapingType, String... templateContents) {
-    return forTemplateContents(autoEscapingType, /* strictHtml= */ false, templateContents);
-  }
-
-  /**
-   * Returns a builder that gets its Soy inputs from the given strings, treating each string as the
-   * contents of a Soy template, and using the given {@link AutoEscapingType} and strictHtml mode.
-   */
-  public static SoyFileSetParserBuilder forTemplateContents(
-      AutoEscapingType autoEscapingType, boolean strictHtml, String... templateContents) {
+      boolean strictHtml, String... templateContents) {
     String[] fileContents = new String[templateContents.length];
     for (int i = 0; i < fileContents.length; ++i) {
       fileContents[i] =
           SharedTestUtils.buildTestSoyFileContent(
-              autoEscapingType, strictHtml, /* soyDocParamNames= */ null, templateContents[i]);
+              strictHtml, /* soyDocParamNames= */ null, templateContents[i]);
     }
     return new SoyFileSetParserBuilder(fileContents);
   }
@@ -135,9 +125,10 @@ public final class SoyFileSetParserBuilder {
       builder.put(supplier.getFilePath(), supplier);
     }
     this.soyFileSuppliers = builder.build();
-    // inject our @Inject fields to get the default set of functions and print directives
-    Guice.createInjector(new SharedModule()).injectMembers(this);
-    this.sourceFunctionMap = InternalPlugins.internalFunctionMap();
+    this.scopedData = new SoySimpleScope();
+    this.soyFunctionMap = InternalPlugins.internalLegacyFunctionMap();
+    this.soyPrintDirectiveMap = InternalPlugins.internalDirectiveMap(scopedData);
+    this.sourceFunctionMap = InternalPlugins.internalFunctionMap(scopedData);
   }
 
   /** Sets the parser's declared syntax version. Returns this object, for chaining. */
@@ -165,15 +156,11 @@ public final class SoyFileSetParserBuilder {
     return this;
   }
 
-  /** Warning: This SoySourceFunctions are not yet working completely. Do not use this method. */
-  @Deprecated
   public SoyFileSetParserBuilder addSoySourceFunction(SoySourceFunction function) {
-    return addSoySourceFunction(ImmutableList.of(function));
+    return addSoySourceFunctions(ImmutableList.of(function));
   }
 
-  /** Warning: This SoySourceFunctions are not yet working completely. Do not use this method. */
-  @Deprecated
-  public SoyFileSetParserBuilder addSoySourceFunction(
+  public SoyFileSetParserBuilder addSoySourceFunctions(
       Iterable<? extends SoySourceFunction> sourceFunctions) {
     Map<String, SoySourceFunction> functions = new LinkedHashMap<>();
     functions.putAll(sourceFunctionMap);
@@ -269,6 +256,10 @@ public final class SoyFileSetParserBuilder {
    * {@link #errorReporter}.
    */
   public ParseResult parse() {
+    return build().parse();
+  }
+
+  public SoyFileSetParser build() {
     PassManager.Builder passManager =
         new PassManager.Builder()
             .setSoyPrintDirectiveMap(soyPrintDirectiveMap)
@@ -297,7 +288,6 @@ public final class SoyFileSetParserBuilder {
         .setPassManager(passManager.build())
         .setErrorReporter(errorReporter)
         .setGeneralOptions(options)
-        .build()
-        .parse();
+        .build();
   }
 }

@@ -16,6 +16,7 @@
 
 package com.google.template.soy.bididirectives;
 
+import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.data.LoggingAdvisingAppendable;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
@@ -39,9 +40,6 @@ import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.util.List;
 import java.util.Set;
 import javax.annotation.Nonnull;
-import javax.inject.Inject;
-import javax.inject.Provider;
-import javax.inject.Singleton;
 
 /**
  * A directive that maybe wraps the output within a 'span' with dir=ltr or dir=rtl. This wrapping is
@@ -49,7 +47,6 @@ import javax.inject.Singleton;
  * directionality.
  *
  */
-@Singleton
 final class BidiSpanWrapDirective
     implements SanitizedContentOperator,
         SoyJavaPrintDirective,
@@ -58,12 +55,11 @@ final class BidiSpanWrapDirective
         SoySwiftSrcPrintDirective,
         SoyJbcSrcPrintDirective.Streamable {
 
-  /** Provider for the current bidi global directionality. */
-  private final Provider<BidiGlobalDir> bidiGlobalDirProvider;
+  /** Supplier for the current bidi global directionality. */
+  private final Supplier<BidiGlobalDir> bidiGlobalDirProvider;
 
-  /** @param bidiGlobalDirProvider Provider for the current bidi global directionality. */
-  @Inject
-  BidiSpanWrapDirective(Provider<BidiGlobalDir> bidiGlobalDirProvider) {
+  /** @param bidiGlobalDirProvider Supplier for the current bidi global directionality. */
+  BidiSpanWrapDirective(Supplier<BidiGlobalDir> bidiGlobalDirProvider) {
     this.bidiGlobalDirProvider = bidiGlobalDirProvider;
   }
 

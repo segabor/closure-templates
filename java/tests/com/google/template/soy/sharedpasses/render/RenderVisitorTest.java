@@ -28,11 +28,8 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.util.concurrent.AbstractFuture;
 import com.google.common.util.concurrent.Futures;
-import com.google.inject.Guice;
-import com.google.inject.Injector;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
 import com.google.template.soy.SoyFileSetParserBuilder;
-import com.google.template.soy.SoyModule;
 import com.google.template.soy.data.LoggingAdvisingAppendable;
 import com.google.template.soy.data.SanitizedContent;
 import com.google.template.soy.data.SoyAbstractValue;
@@ -43,7 +40,6 @@ import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.SoyValueConverterUtility;
 import com.google.template.soy.data.UnsafeSanitizedContentOrdainer;
 import com.google.template.soy.error.ErrorReporter;
-import com.google.template.soy.internal.i18n.BidiGlobalDir;
 import com.google.template.soy.msgs.SoyMsgBundle;
 import com.google.template.soy.msgs.internal.MsgUtils;
 import com.google.template.soy.msgs.restricted.SoyMsg;
@@ -70,7 +66,6 @@ import java.io.PrintStream;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 import javax.annotation.Nullable;
-import org.junit.Before;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -81,8 +76,6 @@ import org.junit.runners.JUnit4;
  */
 @RunWith(JUnit4.class)
 public class RenderVisitorTest {
-
-  private static final Injector INJECTOR = Guice.createInjector(new SoyModule());
 
   private static final SoyRecord TEST_DATA;
 
@@ -150,11 +143,6 @@ public class RenderVisitorTest {
 
   private SoyIdRenamingMap xidRenamingMap = null;
   private SoyCssRenamingMap cssRenamingMap = null;
-
-  @Before
-  public void setUp() {
-    SharedTestUtils.simulateNewApiCall(INJECTOR, null, BidiGlobalDir.LTR);
-  }
 
   /**
    * Asserts that the given input string (should be a template body) renders to the given result.
@@ -287,7 +275,7 @@ public class RenderVisitorTest {
             xidRenamingMap,
             cssRenamingMap,
             false,
-            /* functionRuntimes= */ ImmutableMap.of());
+            /* pluginInstances= */ ImmutableMap.of());
     rv.exec(templateNode);
     return outputSb.toString();
   }
@@ -336,7 +324,7 @@ public class RenderVisitorTest {
             xidRenamingMap,
             cssRenamingMap,
             false,
-            /* functionRuntimes= */ ImmutableMap.of());
+            /* pluginInstances= */ ImmutableMap.of());
     TemplateNode templateNode = templateRegistry.getBasicTemplate(templateName);
     rv.exec(templateNode);
     return outputSb.toString();
@@ -694,8 +682,8 @@ public class RenderVisitorTest {
     String templateBody =
         "{@param foo: ?}\n"
             + "  {let $alpha: $foo.goo2[1] /}\n"
-            + "  {let $beta}Boo!{/let}\n"
-            + "  {let $gamma}\n"
+            + "  {let $beta kind=\"text\"}Boo!{/let}\n"
+            + "  {let $gamma kind=\"text\"}\n"
             + "    {for $i in range($alpha)}\n"
             + "      {$i}{$beta}\n"
             + "    {/for}\n"
@@ -884,7 +872,7 @@ public class RenderVisitorTest {
         "{namespace ns}\n"
             + "\n"
             + "/** @param boo @param foo @param goo */\n"
-            + "{template .callerTemplate autoescape=\"deprecated-noncontextual\"}\n"
+            + "{template .callerTemplate}\n"
             + "  {call .calleeTemplate data=\"all\" /}\n"
             + "  {call .calleeTemplate data=\"$foo\" /}\n"
             + "  {call .calleeTemplate data=\"all\"}\n"
@@ -894,10 +882,10 @@ public class RenderVisitorTest {
             + "    {param boo: 'moo' /}\n"
             + "  {/call}\n"
             + "  {call .calleeTemplate data=\"$foo\"}\n"
-            + "    {param boo}moo{/param}\n"
+            + "    {param boo kind=\"text\"}moo{/param}\n"
             + "  {/call}\n"
             + "  {call .calleeTemplate}\n"
-            + "    {param boo}zoo{/param}\n"
+            + "    {param boo kind=\"text\"}zoo{/param}\n"
             + "    {param goo: $foo.goo /}\n"
             + "  {/call}\n"
             + "{/template}\n"
@@ -906,7 +894,7 @@ public class RenderVisitorTest {
             + " * @param boo\n"
             + " * @param goo\n"
             + " */\n"
-            + "{template .calleeTemplate autoescape=\"deprecated-noncontextual\"}\n"
+            + "{template .calleeTemplate}\n"
             + "  {$boo}\n"
             + "  {for $n in $goo} {$n}{/for}{\\n}\n"
             + "{/template}\n";
@@ -985,7 +973,7 @@ public class RenderVisitorTest {
         "{namespace ns}\n"
             + "\n"
             + "/** @param boo @param foo @param goo */\n"
-            + "{template .callerTemplate autoescape=\"deprecated-noncontextual\"}\n"
+            + "{template .callerTemplate}\n"
             + "  {call .calleeTemplate data=\"all\" /}\n"
             + "  {call .calleeTemplate data=\"$foo\" /}\n"
             + "  {call .calleeTemplate data=\"all\"}\n"
@@ -995,10 +983,10 @@ public class RenderVisitorTest {
             + "    {param boo: 'moo' /}\n"
             + "  {/call}\n"
             + "  {call .calleeTemplate data=\"$foo\"}\n"
-            + "    {param boo}moo{/param}\n"
+            + "    {param boo kind=\"text\"}moo{/param}\n"
             + "  {/call}\n"
             + "  {call .calleeTemplate}\n"
-            + "    {param boo}zoo{/param}\n"
+            + "    {param boo kind=\"text\"}zoo{/param}\n"
             + "    {param goo: $foo.goo /}\n"
             + "  {/call}\n"
             + "{/template}\n"
@@ -1007,7 +995,7 @@ public class RenderVisitorTest {
             + " * @param boo\n"
             + " * @param goo\n"
             + " */\n"
-            + "{template .calleeTemplate autoescape=\"deprecated-noncontextual\"}\n"
+            + "{template .calleeTemplate}\n"
             + "  {$boo}{$ij.future}\n"
             + "  {for $n in $goo} {$n}{/for}{\\n}\n"
             + "{/template}\n";
@@ -1050,7 +1038,7 @@ public class RenderVisitorTest {
             xidRenamingMap,
             cssRenamingMap,
             false,
-            /* functionRuntimes= */ ImmutableMap.of());
+            /* pluginInstances= */ ImmutableMap.of());
     rv.exec(templateRegistry.getBasicTemplate("ns.callerTemplate"));
 
     String expectedOutput =
@@ -1468,7 +1456,7 @@ public class RenderVisitorTest {
   public void testRenderLogStmtOrdering() throws Exception {
     String templateBody =
         ""
-            + "{let $gamma}\n"
+            + "{let $gamma kind=\"text\"}\n"
             + "  {log}let-block{/log}\n"
             + "  let-block\n"
             + "{/let}\n"
@@ -1492,9 +1480,9 @@ public class RenderVisitorTest {
         "{namespace ns}\n"
             + "\n"
             + "/** */\n"
-            + "{template .callerTemplate autoescape=\"deprecated-noncontextual\"}\n"
+            + "{template .callerTemplate}\n"
             + "  {call .calleeTemplate}\n"
-            + "    {param foo}\n"
+            + "    {param foo kind=\"text\"}\n"
             + "      param{log}param{/log}\n"
             + "    {/param}\n"
             + "  {/call}\n"
@@ -1503,12 +1491,12 @@ public class RenderVisitorTest {
             + "/**\n"
             + " * @param foo\n"
             + " */\n"
-            + "{template .calleeTemplate autoescape=\"deprecated-noncontextual\"}\n"
+            + "{template .calleeTemplate}\n"
             + "  callee{log}callee{/log}\n"
             + "  {sp}{$foo}{sp}{$foo}\n"
             + "{/template}\n";
-    // Send stdout to my own buffer.
 
+    // Send stdout to my own buffer.
     ByteArrayOutputStream buffer = new ByteArrayOutputStream();
     System.setOut(new PrintStream(buffer));
     assertThat(

@@ -1,5 +1,5 @@
 /*
- * Copyright 2015 Google Inc.
+ * Copyright 2018 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,6 +17,7 @@
 package com.google.template.soy.jbcsrc;
 
 import com.google.common.base.Function;
+import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.jbcsrc.restricted.Expression;
 import com.google.template.soy.jbcsrc.restricted.SoyExpression;
@@ -36,9 +37,10 @@ public final class JbcSrcJavaValues {
   public static SoyExpression computeForJavaSource(
       FunctionNode fnNode,
       JavaPluginContext context,
-      Function<String, Expression> functionRuntimeFn,
+      Function<String, Expression> pluginInstanceFn,
       List<SoyExpression> args) {
-    return new JbcSrcValueFactory(fnNode, context, input -> functionRuntimeFn.apply(input))
+    return new JbcSrcValueFactory(
+            fnNode, context, pluginInstanceFn::apply, ErrorReporter.exploding())
         .computeForJavaSource(args);
   }
 

@@ -24,6 +24,8 @@ import com.google.common.base.Ascii;
 import com.google.common.base.Optional;
 import com.google.common.base.Predicate;
 import com.google.common.base.Predicates;
+import com.google.common.base.Supplier;
+import com.google.common.base.Suppliers;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedSet;
@@ -40,11 +42,9 @@ import com.google.template.soy.jbcsrc.shared.LegacyFunctionAdapter;
 import com.google.template.soy.jbcsrc.shared.RenderContext;
 import com.google.template.soy.logging.SoyLogger;
 import com.google.template.soy.msgs.SoyMsgBundle;
-import com.google.template.soy.plugin.java.restricted.JavaPluginRuntime;
 import com.google.template.soy.shared.SoyCssRenamingMap;
 import com.google.template.soy.shared.SoyIdRenamingMap;
-import com.google.template.soy.shared.internal.ApiCallScopeUtils;
-import com.google.template.soy.shared.internal.GuiceSimpleScope;
+import com.google.template.soy.shared.internal.SoyScopedData;
 import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.shared.restricted.SoyJavaFunction;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
@@ -55,19 +55,19 @@ import java.util.Map;
 /** Main entry point for rendering Soy templates on the server. */
 public final class SoySauceImpl implements SoySauce {
   private final CompiledTemplates templates;
-  private final GuiceSimpleScope apiCallScope;
-  private final ImmutableMap<String, JavaPluginRuntime> functionRuntimes;
+  private final SoyScopedData.Enterable apiCallScope;
+  private final ImmutableMap<String, Supplier<Object>> pluginInstances;
   private final ImmutableMap<String, SoyJavaPrintDirective> printDirectives;
 
   public SoySauceImpl(
       CompiledTemplates templates,
-      GuiceSimpleScope apiCallScope,
+      SoyScopedData.Enterable apiCallScope,
       ImmutableMap<String, ? extends SoyFunction> functions,
       ImmutableMap<String, ? extends SoyPrintDirective> printDirectives) {
     this.templates = checkNotNull(templates);
     this.apiCallScope = checkNotNull(apiCallScope);
 
-    ImmutableMap.Builder<String, JavaPluginRuntime> runtimeBuilder = ImmutableMap.builder();
+    ImmutableMap.Builder<String, Supplier<Object>> pluginInstancesBuilder = ImmutableMap.builder();
 
     for (Map.Entry<String, ? extends SoyFunction> entry : functions.entrySet()) {
       String fnName = entry.getKey();
@@ -77,7 +77,7 @@ public final class SoySauceImpl implements SoySauce {
       if (entry.getValue() instanceof SoyJavaFunction
           && !(entry.getValue() instanceof SoyJbcSrcFunction)) {
         SoyJavaFunction fn = (SoyJavaFunction) entry.getValue();
-        runtimeBuilder.put(fnName, new LegacyFunctionAdapter(fn));
+        pluginInstancesBuilder.put(fnName, Suppliers.ofInstance(new LegacyFunctionAdapter(fn)));
       }
     }
 
@@ -92,7 +92,7 @@ public final class SoySauceImpl implements SoySauce {
       }
     }
     this.printDirectives = soyJavaPrintDirectives.build();
-    this.functionRuntimes = runtimeBuilder.build();
+    this.pluginInstances = pluginInstancesBuilder.build();
   }
 
   @Override
@@ -226,7 +226,7 @@ public final class SoySauceImpl implements SoySauce {
     private <T> WriteContinuation startRender(OutputAppendable out) throws IOException {
       RenderContext context =
           contextBuilder
-              .withFunctionRuntimes(functionRuntimes)
+              .withPluginInstances(pluginInstances)
               .withMessageBundle(msgs)
               .withActiveDelPackageSelector(activeDelegatePackages)
               .build();
@@ -271,7 +271,7 @@ public final class SoySauceImpl implements SoySauce {
       RenderContext context)
       throws IOException {
     RenderResult result;
-    try (GuiceSimpleScope.InScope scope = scoper.enter()) {
+    try (SoyScopedData.InScope scope = scoper.enter()) {
       result = template.render(out, context);
     } catch (Throwable t) {
       rewriteStackTrace(t);
@@ -322,23 +322,18 @@ public final class SoySauceImpl implements SoySauce {
   }
 
   private static final class Scoper {
-    final GuiceSimpleScope scope;
+    final SoyScopedData.Enterable scope;
     final BidiGlobalDir dir;
     final String localeString;
 
-    Scoper(GuiceSimpleScope scope, BidiGlobalDir dir, String localeString) {
+    Scoper(SoyScopedData.Enterable scope, BidiGlobalDir dir, String localeString) {
       this.scope = scope;
       this.dir = dir;
       this.localeString = localeString;
     }
 
-    GuiceSimpleScope.InScope enter() {
-      // TODO(lukes): this isn't right, re-entering the scope shouldn't retrigger injection of
-      // items, we need an explicit detach api.  This happens to be fine because these are the only
-      // 2 keys available in this scope
-      GuiceSimpleScope.InScope withScope = scope.enter();
-      ApiCallScopeUtils.seedSharedParams(withScope, dir, localeString);
-      return withScope;
+    SoyScopedData.InScope enter() {
+      return scope.enter(dir, localeString);
     }
   }
 }

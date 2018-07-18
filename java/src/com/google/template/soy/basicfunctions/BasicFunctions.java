@@ -16,7 +16,7 @@
 
 package com.google.template.soy.basicfunctions;
 
-import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.ImmutableList;
 import com.google.template.soy.plugin.restricted.SoySourceFunction;
 
 /** Lists all functions in this package. */
@@ -24,23 +24,35 @@ public class BasicFunctions {
 
   private BasicFunctions() {}
 
-  public static ImmutableSet<SoySourceFunction> functions() {
-    return ImmutableSet.of(
+  public static ImmutableList<SoySourceFunction> functions() {
+    return ImmutableList.of(
         new AugmentMapFunction(),
         new CeilingFunction(),
         new ConcatListsFunction(),
         new FloorFunction(),
+        new HtmlToTextFunction(),
         new IsNonnullFunction(),
         new IsNullFunction(),
+        new KeysFunction(),
+        new LegacyObjectMapToMapFunction(),
         new LengthFunction(),
         new ListContainsFunction(),
+        new MapKeysFunction(),
         new MaxFunction(),
         new MinFunction(),
+        new MapToLegacyObjectMapFunction(),
         new ParseFloatFunction(),
         new ParseIntFunction(),
         new RangeFunction(),
         new RandomIntFunction(),
         new RoundFunction(),
-        new SqrtFunction());
+        new SqrtFunction(),
+        new StrSmsUriToUriFunction(),
+        new StrContainsFunction(),
+        new StrIndexOfFunction(),
+        new StrLenFunction(),
+        new StrSubFunction(),
+        new StrToAsciiLowerCaseFunction(),
+        new StrToAsciiUpperCaseFunction());
   }
 }

@@ -34,8 +34,6 @@ import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcPrintDirective;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.util.List;
 import java.util.Set;
-import javax.inject.Inject;
-import javax.inject.Singleton;
 
 /**
  * Implements the |filterImageDataUri directive, which only accepts data URI's corresponding to
@@ -44,7 +42,6 @@ import javax.inject.Singleton;
  * <p>Note that this directive is not autoescape cancelling, and can thus be used in strict
  * templates. The directive returns its result as an object of type SanitizedContent of kind URI.
  */
-@Singleton
 @SoyPurePrintDirective
 final class FilterImageDataUriDirective
     implements SoyJavaPrintDirective,
@@ -54,9 +51,6 @@ final class FilterImageDataUriDirective
         SoyJbcSrcPrintDirective {
 
   private static final ImmutableSet<Integer> VALID_ARGS_SIZES = ImmutableSet.of(0);
-
-  @Inject
-  public FilterImageDataUriDirective() {}
 
   @Override
   public String getName() {

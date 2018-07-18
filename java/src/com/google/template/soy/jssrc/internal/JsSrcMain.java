@@ -32,9 +32,8 @@ import com.google.template.soy.jssrc.internal.GenJsExprsVisitor.GenJsExprsVisito
 import com.google.template.soy.msgs.SoyMsgBundle;
 import com.google.template.soy.msgs.internal.InsertMsgsVisitor;
 import com.google.template.soy.passes.CombineConsecutiveRawTextNodesPass;
-import com.google.template.soy.shared.internal.ApiCallScopeUtils;
-import com.google.template.soy.shared.internal.GuiceSimpleScope;
 import com.google.template.soy.shared.internal.MainEntryPointUtils;
+import com.google.template.soy.shared.internal.SoyScopedData;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.TemplateRegistry;
@@ -54,12 +53,12 @@ import javax.annotation.Nullable;
 public class JsSrcMain {
 
   /** The scope object that manages the API call scope. */
-  private final GuiceSimpleScope apiCallScope;
+  private final SoyScopedData.Enterable apiCallScope;
 
   private final SoyTypeRegistry typeRegistry;
 
   /** @param apiCallScope The scope object that manages the API call scope. */
-  public JsSrcMain(GuiceSimpleScope apiCallScope, SoyTypeRegistry typeRegistry) {
+  public JsSrcMain(SoyScopedData.Enterable apiCallScope, SoyTypeRegistry typeRegistry) {
     this.apiCallScope = apiCallScope;
     this.typeRegistry = typeRegistry;
   }
@@ -87,13 +86,10 @@ public class JsSrcMain {
     // VeLogInstrumentationVisitor add html attributes for {velog} commands and also run desugaring
     // pass since code generator does not understand html nodes (yet).
     new VeLogInstrumentationVisitor(templateRegistry).exec(soyTree);
-    try (GuiceSimpleScope.InScope inScope = apiCallScope.enter()) {
-      // Seed the scoped parameters.
-      BidiGlobalDir bidiGlobalDir =
-          SoyBidiUtils.decodeBidiGlobalDirFromJsOptions(
-              jsSrcOptions.getBidiGlobalDir(), jsSrcOptions.getUseGoogIsRtlForBidiGlobalDir());
-      ApiCallScopeUtils.seedSharedParams(inScope, msgBundle, bidiGlobalDir);
-
+    BidiGlobalDir bidiGlobalDir =
+        SoyBidiUtils.decodeBidiGlobalDirFromJsOptions(
+            jsSrcOptions.getBidiGlobalDir(), jsSrcOptions.getUseGoogIsRtlForBidiGlobalDir());
+    try (SoyScopedData.InScope inScope = apiCallScope.enter(msgBundle, bidiGlobalDir)) {
       // Replace MsgNodes.
       if (jsSrcOptions.shouldGenerateGoogMsgDefs()) {
         Preconditions.checkState(

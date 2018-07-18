@@ -27,7 +27,6 @@ import com.google.template.soy.jbcsrc.restricted.JbcSrcPluginContext;
 import com.google.template.soy.jbcsrc.restricted.MethodRef;
 import com.google.template.soy.jbcsrc.restricted.SoyExpression;
 import com.google.template.soy.jbcsrc.restricted.SoyJbcSrcPrintDirective;
-import com.google.template.soy.jbcsrc.restricted.SoyJbcSrcPrintDirective.Streamable.AppendableAndOptions;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyLibraryAssistedJsSrcPrintDirective;
 import com.google.template.soy.pysrc.restricted.PyExpr;
@@ -41,8 +40,6 @@ import com.google.template.soy.swiftsrc.restricted.SwiftFunctionExprBuilder;
 
 import java.util.List;
 import java.util.Set;
-import javax.inject.Inject;
-import javax.inject.Singleton;
 import org.objectweb.asm.Type;
 
 /**
@@ -50,7 +47,6 @@ import org.objectweb.asm.Type;
  * ellipsis.
  *
  */
-@Singleton
 @SoyPurePrintDirective
 final class TruncateDirective
     implements SoyJavaPrintDirective,
@@ -58,9 +54,6 @@ final class TruncateDirective
         SoyPySrcPrintDirective,
         SoySwiftSrcPrintDirective,
         SoyJbcSrcPrintDirective.Streamable {
-
-  @Inject
-  public TruncateDirective() {}
 
   @Override
   public String getName() {
