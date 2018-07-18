@@ -19,9 +19,8 @@ import com.google.common.collect.Multimap;
 import com.google.common.io.Files;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
-import com.google.template.soy.shared.internal.ApiCallScopeUtils;
-import com.google.template.soy.shared.internal.GuiceSimpleScope;
 import com.google.template.soy.shared.internal.MainEntryPointUtils;
+import com.google.template.soy.shared.internal.SoyScopedData;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.swiftsrc.SoySwiftSrcOptions;
@@ -30,9 +29,9 @@ import com.google.template.soy.swiftsrc.internal.GenSwiftExprsVisitor.GenSwiftEx
 public class SwiftSrcMain {
 
   /** The scope object that manages the API call scope. */
-  private final GuiceSimpleScope apiCallScope;
+  private final SoyScopedData.Enterable apiCallScope;
 
-  public SwiftSrcMain(GuiceSimpleScope apiCallScope) {
+  public SwiftSrcMain(SoyScopedData.Enterable apiCallScope) {
     this.apiCallScope = apiCallScope;
   }
 
@@ -54,11 +53,10 @@ public class SwiftSrcMain {
       ImmutableMap<String, String> currentManifest,
       ErrorReporter errorReporter) {
 
-    try (GuiceSimpleScope.InScope inScope = apiCallScope.enter()) {
-      // Seed the scoped parameters, for plugins
-      BidiGlobalDir bidiGlobalDir = null;
-          // FIXME do we need this? SoyBidiUtils.decodeBidiGlobalDirFromPyOptions(pySrcOptions.getBidiIsRtlFn());
-      ApiCallScopeUtils.seedSharedParams(inScope, null, bidiGlobalDir);
+    // FIXME do we need this?
+    BidiGlobalDir bidiGlobalDir = null;
+    // SoyBidiUtils.decodeBidiGlobalDirFromPyOptions(pySrcOptions.getBidiIsRtlFn());
+    try (SoyScopedData.InScope inScope = apiCallScope.enter(/* msgBundle= */ null, bidiGlobalDir)) {
       return createVisitor(swiftSrcOptions, currentManifest).gen(soyTree, errorReporter);
     }
   }

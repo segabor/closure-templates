@@ -36,6 +36,8 @@ import com.google.template.soy.pysrc.restricted.PyExprUtils;
 import com.google.template.soy.pysrc.restricted.PyFunctionExprBuilder;
 import com.google.template.soy.pysrc.restricted.SoyPySrcPrintDirective;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcPrintDirective;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.ibm.icu.util.ULocale;
 import java.util.List;
 import java.util.Set;

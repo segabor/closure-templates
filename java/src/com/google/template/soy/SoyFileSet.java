@@ -76,7 +76,6 @@ import com.google.template.soy.soyparse.PluginResolver;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
-import com.google.template.soy.soytree.Visibility;
 import com.google.template.soy.swiftsrc.SoySwiftSrcOptions;
 import com.google.template.soy.swiftsrc.internal.SwiftSrcMain;
 import com.google.template.soy.tofu.SoyTofu;
@@ -1091,12 +1090,8 @@ public final class SoyFileSet {
     requireStrictAutoescaping();
     ParseResult result = parse();
     throwIfErrorsPresent();
-    new SwiftSrcMain(apiCallScopeProvider)
-        .genSwiftFiles(
-            result.fileSet(),
-            swiftSrcOptions,
-            outputPathFormat,
-            errorReporter);
+    new SwiftSrcMain(scopedData.enterable())
+        .genSwiftFiles(result.fileSet(), swiftSrcOptions, outputPathFormat, errorReporter);
 
     throwIfErrorsPresent();
     reportWarnings();

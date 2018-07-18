@@ -92,7 +92,6 @@ public class SoyExprForSwiftSubject extends Subject<SoyExprForSwiftSubject, Stri
         SoyFileSetParserBuilder.forTemplateContents(getSubject()).parse().fileSet();
     SoyNode node = SharedTestUtils.getNode(soyTree, 0);
 
-    SharedTestUtils.simulateNewApiCall(injector, null, BidiGlobalDir.LTR);
     final IsComputableAsSwiftExprVisitor isComputableAsSwiftExprs =
         new IsComputableAsSwiftExprVisitor();
     // There is a circular dependency between the GenPyExprsVisitorFactory and GenPyCallExprVisitor
