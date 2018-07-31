@@ -3165,6 +3165,24 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
 
 
   /**
+   * @return {string} The pathname part of this dependency's path if it is a
+   *     URI.
+   */
+  goog.Dependency.prototype.getPathName = function() {
+    var pathName = this.path;
+    var protocolIndex = pathName.indexOf('://');
+    if (protocolIndex >= 0) {
+      pathName = pathName.substring(protocolIndex + 3);
+      var slashIndex = pathName.indexOf('/');
+      if (slashIndex >= 0) {
+        pathName = pathName.substring(slashIndex + 1);
+      }
+    }
+    return pathName;
+  };
+
+
+  /**
    * @param {function()} callback Callback to fire as soon as this has loaded.
    * @final
    */
@@ -3583,10 +3601,13 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
       if (isEs6) {
         // Due to circular dependencies this may not be available for require
         // right now.
-        goog.global['$jscomp']['require']['ensure']([dep.path], function() {
-          controller.registerEs6ModuleExports(
-              dep.path, goog.global['$jscomp']['require'](dep.path), namespace);
-        });
+        goog.global['$jscomp']['require']['ensure'](
+            [dep.getPathName()], function() {
+              controller.registerEs6ModuleExports(
+                  dep.path,
+                  goog.global['$jscomp']['require'](dep.getPathName()),
+                  namespace);
+            });
       }
 
       controller.loaded();
@@ -3717,7 +3738,8 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
 
   /** @override */
   goog.TranspiledDependency.prototype.transform = function(contents) {
-    return this.transpiler.transpile(contents, this.path);
+    // Transpile with the pathname so that ES6 modules are domain agnostic.
+    return this.transpiler.transpile(contents, this.getPathName());
   };
 
 
@@ -3754,7 +3776,7 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
   /** @override */
   goog.GoogModuleDependency.prototype.transform = function(contents) {
     if (this.needsTranspile_) {
-      contents = this.transpiler_.transpile(contents, this.path);
+      contents = this.transpiler_.transpile(contents, this.getPathName());
     }
 
     if (!goog.LOAD_MODULE_USING_EVAL || !goog.isDef(goog.global.JSON)) {
@@ -10708,7 +10730,7 @@ goog.debug.getFunctionName = function(fn) {
   // Heuristically determine function name based on code.
   var functionSource = String(fn);
   if (!goog.debug.fnNameCache_[functionSource]) {
-    var matches = /function ([^\(]+)/.exec(functionSource);
+    var matches = /function\s+([^\(]+)/m.exec(functionSource);
     if (matches) {
       var method = matches[1];
       goog.debug.fnNameCache_[functionSource] = method;
@@ -15678,7 +15700,7 @@ goog.html.SAFE_URL_PATTERN_ =
 goog.html.SafeUrl.sanitize = function(url) {
   if (url instanceof goog.html.SafeUrl) {
     return url;
-  } else if (url.implementsGoogStringTypedString) {
+  } else if (typeof url == 'object' && url.implementsGoogStringTypedString) {
     url = /** @type {!goog.string.TypedString} */ (url).getTypedStringValue();
   } else {
     url = String(url);
@@ -15709,7 +15731,7 @@ goog.html.SafeUrl.sanitize = function(url) {
 goog.html.SafeUrl.sanitizeAssertUnchanged = function(url) {
   if (url instanceof goog.html.SafeUrl) {
     return url;
-  } else if (url.implementsGoogStringTypedString) {
+  } else if (typeof url == 'object' && url.implementsGoogStringTypedString) {
     url = /** @type {!goog.string.TypedString} */ (url).getTypedStringValue();
   } else {
     url = String(url);
@@ -16893,13 +16915,14 @@ goog.html.SafeHtml.htmlEscape = function(textOrHtml) {
   if (textOrHtml instanceof goog.html.SafeHtml) {
     return textOrHtml;
   }
+  var textIsObject = typeof textOrHtml == 'object';
   var dir = null;
-  if (textOrHtml.implementsGoogI18nBidiDirectionalString) {
+  if (textIsObject && textOrHtml.implementsGoogI18nBidiDirectionalString) {
     dir = /** @type {!goog.i18n.bidi.DirectionalString} */ (textOrHtml)
               .getDirection();
   }
   var textAsString;
-  if (textOrHtml.implementsGoogStringTypedString) {
+  if (textIsObject && textOrHtml.implementsGoogStringTypedString) {
     textAsString = /** @type {!goog.string.TypedString} */ (textOrHtml)
                        .getTypedStringValue();
   } else {
