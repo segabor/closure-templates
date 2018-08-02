@@ -35,6 +35,8 @@ import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
 import org.objectweb.asm.Type;
@@ -51,7 +53,7 @@ import org.objectweb.asm.Type;
             parameterTypes = {"list<any>"},
             returnType = "int"))
 public final class LengthFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction {
+    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction, SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -98,5 +100,10 @@ public final class LengthFunction extends TypedSoyFunction
     }
     return SoyExpression.forInt(
         BytecodeUtils.numericConversion(lengthExpressionAsInt, Type.LONG_TYPE));
+  }
+
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    return new SwiftExpr(args.get(0).getText() + ".count", Integer.MAX_VALUE);
   }
 }

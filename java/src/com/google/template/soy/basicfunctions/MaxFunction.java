@@ -36,6 +36,8 @@ import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -52,7 +54,7 @@ import java.util.List;
             parameterTypes = {"?", "?"}))
 @SoyPureFunction
 public final class MaxFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction {
+    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction, SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -107,5 +109,17 @@ public final class MaxFunction extends TypedSoyFunction
       return SoyExpression.forSoyValue(
           NUMBER_TYPE, Methods.MAX_FN_REF.invoke(left.box(), right.box()));
     }
+  }
+
+  /**
+   * Note: this function might require importing Darwin/Glibc
+   */
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    SwiftExpr arg0 = args.get(0);
+    SwiftExpr arg1 = args.get(1);
+
+    return new SwiftExpr(
+        "max(" + arg0.getText() + ", " + arg1.getText() + ")", Integer.MAX_VALUE);
   }
 }

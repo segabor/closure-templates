@@ -34,6 +34,8 @@ import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
 import org.objectweb.asm.Type;
@@ -59,7 +61,7 @@ import org.objectweb.asm.Type;
     })
 @SoyPureFunction
 final class StrIndexOfFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction {
+    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction, SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -103,5 +105,12 @@ final class StrIndexOfFunction extends TypedSoyFunction
             left.unboxAs(String.class)
                 .invoke(Methods.STRING_INDEX_OF_REF, right.unboxAs(String.class)),
             Type.LONG_TYPE));
+  }
+
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    SwiftExpr left = args.get(0);
+    SwiftExpr right = args.get(1);
+    return new SwiftExpr(String.format("%s.index(of:%s)?.encodedOffset ?? -1", left, right), Integer.MAX_VALUE);
   }
 }

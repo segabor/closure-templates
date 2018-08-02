@@ -34,6 +34,8 @@ import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
 import org.objectweb.asm.Type;
@@ -58,7 +60,7 @@ import org.objectweb.asm.Type;
     })
 @SoyPureFunction
 final class StrLenFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction {
+    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction, SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -91,5 +93,10 @@ final class StrLenFunction extends TypedSoyFunction
     return SoyExpression.forInt(
         BytecodeUtils.numericConversion(
             args.get(0).unboxAs(String.class).invoke(Methods.STRING_LENGTH_REF), Type.LONG_TYPE));
+  }
+
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    return new SwiftExpr(String.format("%s.count", args), Integer.MAX_VALUE);
   }
 }

@@ -37,6 +37,8 @@ import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.google.template.soy.types.IntType;
 import com.google.template.soy.types.ListType;
 import java.lang.reflect.Method;
@@ -71,7 +73,8 @@ public final class RangeFunction extends TypedSoyFunction
     implements SoyJavaSourceFunction,
         SoyLibraryAssistedJsSrcFunction,
         SoyPySrcFunction,
-        SoyJbcSrcFunction {
+        SoyJbcSrcFunction,
+        SoySwiftSrcFunction {
 
   private static final class Methods {
     static final Method RANGE_1 =
@@ -155,5 +158,20 @@ public final class RangeFunction extends TypedSoyFunction
   @Override
   public ImmutableSet<String> getRequiredJsLibNames() {
     return ImmutableSet.of("goog.array");
+  }
+
+  /**
+   * FIXME Swift does not support ranges with custom steps
+   */
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    switch (args.size()) {
+      case 1:
+        return new SwiftExpr(String.format("0..<%s", args.get(0).getText()), Integer.MAX_VALUE);
+      case 2:
+        return new SwiftExpr(String.format("%s..<%s", args.get(0).getText(), args.get(1).getText()), Integer.MAX_VALUE);
+      default:
+        throw new AssertionError();
+    }
   }
 }

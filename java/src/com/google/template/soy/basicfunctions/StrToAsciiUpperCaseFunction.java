@@ -35,6 +35,8 @@ import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -50,7 +52,8 @@ public final class StrToAsciiUpperCaseFunction extends TypedSoyFunction
     implements SoyJavaSourceFunction,
         SoyLibraryAssistedJsSrcFunction,
         SoyPySrcFunction,
-        SoyJbcSrcFunction {
+        SoyJbcSrcFunction,
+        SoySwiftSrcFunction {
 
   @Override
   public ImmutableSet<String> getRequiredJsLibNames() {
@@ -86,5 +89,11 @@ public final class StrToAsciiUpperCaseFunction extends TypedSoyFunction
   public SoyExpression computeForJbcSrc(JbcSrcPluginContext context, List<SoyExpression> args) {
     return SoyExpression.forString(
         Methods.ASCII_TO_UPPER_CASE_FN_REF.invoke(args.get(0).unboxAs(String.class)));
+  }
+
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    SwiftExpr arg0 = args.get(0);
+    return new SwiftExpr(String.format("%s.uppercased()", arg0), Integer.MAX_VALUE);
   }
 }

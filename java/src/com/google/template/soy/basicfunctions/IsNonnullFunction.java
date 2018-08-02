@@ -36,6 +36,9 @@ import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
+import com.google.template.soy.swiftsrc.restricted.SwiftExprUtils;
 import java.util.List;
 
 /**
@@ -51,7 +54,7 @@ import java.util.List;
             parameterTypes = {"any"}))
 @SoyPureFunction
 class IsNonnullFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction {
+    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction, SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -78,5 +81,10 @@ class IsNonnullFunction extends TypedSoyFunction
   @Override
   public SoyExpression computeForJbcSrc(JbcSrcPluginContext context, List<SoyExpression> args) {
     return BytecodeUtils.isNonNull(args.get(0));
+  }
+
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    return SwiftExprUtils.genSwiftNotNullCheck(args.get(0));
   }
 }

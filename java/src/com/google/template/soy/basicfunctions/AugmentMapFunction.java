@@ -36,6 +36,8 @@ import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.google.template.soy.types.LegacyObjectMapType;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyType.Kind;
@@ -63,7 +65,8 @@ public final class AugmentMapFunction extends TypedSoyFunction
     implements SoyJavaSourceFunction,
         SoyLibraryAssistedJsSrcFunction,
         SoyPySrcFunction,
-        SoyJbcSrcFunction {
+        SoyJbcSrcFunction,
+        SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -124,5 +127,14 @@ public final class AugmentMapFunction extends TypedSoyFunction
     PyFunctionExprBuilder fnBuilder = new PyFunctionExprBuilder("dict");
     fnBuilder.addArg(args.get(0)).setUnpackedKwargs(args.get(1));
     return fnBuilder.asPyExpr();
+  }
+  
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    SwiftExpr dict1 = args.get(0);
+    SwiftExpr dict2 = args.get(1);
+
+    // Solution borrowed from: https://stackoverflow.com/questions/24051904/how-do-you-add-a-dictionary-of-items-into-another-dictionary
+    return new SwiftExpr(dict1.getText() + ".merging(" + dict2.getText() + ", uniquingKeysWith: { (first, _) in first })", Integer.MAX_VALUE);
   }
 }

@@ -33,6 +33,8 @@ import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.google.template.soy.types.FloatType;
 import com.google.template.soy.types.SoyTypes;
 import java.lang.reflect.Method;
@@ -61,7 +63,8 @@ public final class ParseFloatFunction extends TypedSoyFunction
     implements SoyJavaSourceFunction,
         SoyLibraryAssistedJsSrcFunction,
         SoyPySrcFunction,
-        SoyJbcSrcFunction {
+        SoyJbcSrcFunction,
+        SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -100,5 +103,10 @@ public final class ParseFloatFunction extends TypedSoyFunction
     return SoyExpression.forSoyValue(
         SoyTypes.makeNullable(FloatType.getInstance()),
         Methods.PARSE_FLOAT_REF.invoke(args.get(0).unboxAs(String.class)));
+  }
+
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    return new SwiftExpr(String.format("Float(%s)", args.get(0).getText()), Integer.MAX_VALUE);
   }
 }

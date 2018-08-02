@@ -35,6 +35,9 @@ import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
+import com.google.template.soy.swiftsrc.restricted.SwiftListExpr;
 import com.google.template.soy.types.IntType;
 import com.google.template.soy.types.LegacyObjectMapType;
 import com.google.template.soy.types.ListType;
@@ -68,7 +71,8 @@ public final class KeysFunction extends TypedSoyFunction
     implements SoyJavaSourceFunction,
         SoyLibraryAssistedJsSrcFunction,
         SoyPySrcFunction,
-        SoyJbcSrcFunction {
+        SoyJbcSrcFunction,
+        SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -123,5 +127,11 @@ public final class KeysFunction extends TypedSoyFunction
     return SoyExpression.forList(
         listType,
         Methods.KEYS_FN_REF.invoke(soyExpression.box().checkedCast(SoyLegacyObjectMap.class)));
+  }
+
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    SwiftExpr arg = args.get(0);
+    return new SwiftListExpr(arg.getText() + ".keys", Integer.MAX_VALUE);
   }
 }

@@ -30,6 +30,8 @@ import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyJavaFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.util.List;
 
 /**
@@ -47,7 +49,8 @@ public final class DebugSoyTemplateInfoFunction extends TypedSoyFunction
     implements SoyJavaFunction,
         SoyLibraryAssistedJsSrcFunction,
         SoyPySrcFunction,
-        SoyJbcSrcFunction {
+        SoyJbcSrcFunction,
+        SoySwiftSrcFunction {
 
   // $$ prefix ensures that the function cannot be used directly
   public static final String NAME = "$$debugSoyTemplateInfo";
@@ -90,5 +93,10 @@ public final class DebugSoyTemplateInfoFunction extends TypedSoyFunction
   @Override
   public SoyExpression computeForJbcSrc(JbcSrcPluginContext context, List<SoyExpression> args) {
     return SoyExpression.forBool(context.getDebugSoyTemplateInfo());
+  }
+
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    return new SwiftExpr("false", Integer.MAX_VALUE);
   }
 }

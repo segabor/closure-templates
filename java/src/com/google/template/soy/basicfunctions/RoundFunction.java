@@ -40,6 +40,8 @@ import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
 import org.objectweb.asm.Type;
@@ -60,7 +62,7 @@ import org.objectweb.asm.Type;
     })
 @SoyPureFunction
 public final class RoundFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction {
+    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction, SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -194,6 +196,21 @@ public final class RoundFunction extends TypedSoyFunction
       return invokeRoundFunction(args.get(0));
     }
     return invokeRoundFunction(args.get(0), args.get(1));
+  }
+
+  /**
+   * round() func requires importing Darwin/Glibc
+   */
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    SwiftExpr value = args.get(0);
+    SwiftExpr numDigitsAfterPt = (args.size() == 2) ? args.get(1) : null;
+
+    int numDigitsAfterPtAsInt = convertNumDigits(numDigitsAfterPt);
+
+    // FIXME implement the whole feature
+
+    return new SwiftExpr("round(" + value.getText() + ")", Integer.MAX_VALUE);
   }
 
   private SoyExpression invokeRoundFunction(SoyExpression soyExpression) {

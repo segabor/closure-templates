@@ -37,6 +37,8 @@ import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -58,7 +60,7 @@ import java.util.List;
     })
 @SoyPureFunction
 final class StrContainsFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction {
+    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction, SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -102,5 +104,12 @@ final class StrContainsFunction extends TypedSoyFunction
     SoyExpression right = args.get(1);
     return SoyExpression.forBool(
         left.unboxAs(String.class).invoke(Methods.STRING_CONTAINS_REF, right.coerceToString()));
+  }
+
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    SwiftExpr arg0 = args.get(0);
+    SwiftExpr arg1 = args.get(1);
+    return new SwiftExpr(String.format("%s.contains(%s)", arg0.getText(), arg1.getText()), Integer.MAX_VALUE);
   }
 }

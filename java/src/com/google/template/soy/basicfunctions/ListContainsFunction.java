@@ -37,6 +37,8 @@ import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -61,7 +63,8 @@ public class ListContainsFunction extends TypedSoyFunction
     implements SoyJavaSourceFunction,
         SoyLibraryAssistedJsSrcFunction,
         SoyPySrcFunction,
-        SoyJbcSrcFunction {
+        SoyJbcSrcFunction,
+        SoySwiftSrcFunction {
 
   @Override
   public ImmutableSet<String> getRequiredJsLibNames() {
@@ -110,5 +113,12 @@ public class ListContainsFunction extends TypedSoyFunction
     SoyExpression value = args.get(1);
     return SoyExpression.forBool(
         list.box().checkedCast(SoyList.class).invoke(Methods.LIST_CONTAINS_FN_REF, value.box()));
+  }
+
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    SwiftExpr list = args.get(0);
+    SwiftExpr elem = args.get(0);
+    return new SwiftExpr(list.getText() + ".contains(" + elem.getText() + ")", Integer.MAX_VALUE);
   }
 }

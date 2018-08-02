@@ -36,6 +36,9 @@ import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
+import com.google.template.soy.swiftsrc.restricted.SwiftListExpr;
 import com.google.template.soy.types.ListType;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.UnionType;
@@ -96,7 +99,7 @@ import java.util.List;
     })
 @SoyPureFunction
 public final class ConcatListsFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction {
+    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction, SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -144,5 +147,14 @@ public final class ConcatListsFunction extends TypedSoyFunction
     return SoyExpression.forList(
         ListType.of(UnionType.of(elementTypes.build())),
         Methods.CONCAT_LISTS_FN_REF.invoke(SoyExpression.asBoxedList(args)));
+  }
+
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    ImmutableList.Builder<String> expTexts = ImmutableList.builder();
+    for (SwiftExpr expr : args) {
+      expTexts.add(expr.getText());
+    }
+    return new SwiftListExpr("(" + Joiner.on('+').join(expTexts.build()) + ")", Integer.MAX_VALUE);
   }
 }

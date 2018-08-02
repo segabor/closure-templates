@@ -34,6 +34,8 @@ import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -45,7 +47,7 @@ import java.util.List;
     name = "randomInt",
     value = @Signature(returnType = "int", parameterTypes = "number"))
 public final class RandomIntFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction {
+    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction, SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -80,5 +82,14 @@ public final class RandomIntFunction extends TypedSoyFunction
   @Override
   public SoyExpression computeForJbcSrc(JbcSrcPluginContext context, List<SoyExpression> args) {
     return SoyExpression.forInt(Methods.RANDOM_INT_FN_REF.invoke(args.get(0).unboxAs(long.class)));
+  }
+
+  /**
+   * Swift 4.2 way of generating random number
+   */
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    SwiftExpr arg = args.get(0);
+    return new SwiftExpr("Int.random(in: 0..<" + arg.getText() + ")", Integer.MAX_VALUE);
   }
 }
