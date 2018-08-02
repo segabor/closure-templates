@@ -178,7 +178,7 @@ public class GenSwiftCallExprVisitor extends AbstractReturningSoyNodeVisitor<Swi
     } else if (callNode.isPassingData()) {
       dataToPass = translator.exec(callNode.getDataExpr()).getText();
     } else {
-      dataToPass = "{}";
+      dataToPass = "[:]";
     }
 
     // Case 1: No additional params.
