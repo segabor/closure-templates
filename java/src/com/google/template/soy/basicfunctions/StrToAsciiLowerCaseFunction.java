@@ -18,10 +18,6 @@ package com.google.template.soy.basicfunctions;
 
 import com.google.common.base.Ascii;
 import com.google.common.collect.ImmutableSet;
-import com.google.template.soy.jbcsrc.restricted.JbcSrcPluginContext;
-import com.google.template.soy.jbcsrc.restricted.MethodRef;
-import com.google.template.soy.jbcsrc.restricted.SoyExpression;
-import com.google.template.soy.jbcsrc.restricted.SoyJbcSrcFunction;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.JsExprUtils;
 import com.google.template.soy.jssrc.restricted.SoyLibraryAssistedJsSrcFunction;
@@ -49,11 +45,7 @@ import java.util.List;
             returnType = "string"))
 @SoyPureFunction
 public final class StrToAsciiLowerCaseFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction,
-        SoyLibraryAssistedJsSrcFunction,
-        SoyPySrcFunction,
-        SoyJbcSrcFunction,
-        SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyLibraryAssistedJsSrcFunction, SoyPySrcFunction, SoySwiftSrcFunction {
 
   @Override
   public ImmutableSet<String> getRequiredJsLibNames() {
@@ -76,19 +68,12 @@ public final class StrToAsciiLowerCaseFunction extends TypedSoyFunction
   private static final class Methods {
     static final Method ASCII_TO_LOWER_CASE_FN =
         JavaValueFactory.createMethod(Ascii.class, "toLowerCase", String.class);
-    static final MethodRef ASCII_TO_LOWER_CASE_FN_REF = MethodRef.create(ASCII_TO_LOWER_CASE_FN);
   }
 
   @Override
   public JavaValue applyForJavaSource(
       JavaValueFactory factory, List<JavaValue> args, JavaPluginContext context) {
     return factory.callStaticMethod(Methods.ASCII_TO_LOWER_CASE_FN, args.get(0));
-  }
-
-  @Override
-  public SoyExpression computeForJbcSrc(JbcSrcPluginContext context, List<SoyExpression> args) {
-    return SoyExpression.forString(
-        Methods.ASCII_TO_LOWER_CASE_FN_REF.invoke(args.get(0).unboxAs(String.class)));
   }
 
   @Override

@@ -85,6 +85,11 @@ final class JbcSrcValueErrorReporter {
                   + "while trying to call method: {3}."),
           StyleAllowance.NO_PUNCTUATION);
 
+  private static final SoyErrorKind INCOMPATIBLE_TYPES =
+      SoyErrorKind.of(
+          formatPlain("Invalid call to {2}, {3} is incompatible with {4}."),
+          StyleAllowance.NO_PUNCTUATION);
+
   private final ErrorReporter reporter;
   private final FunctionNode fnNode;
 
@@ -141,6 +146,21 @@ final class JbcSrcValueErrorReporter {
     }
   }
 
+  void incompatibleReturnType(Class<?> actualJavaType, @Nullable Method method) {
+    if (method == null) {
+      report(
+          INCOMPATIBLE_RETURN_TYPE_NO_METHOD,
+          "soy type of '" + fnNode.getType() + "'",
+          "java type of '" + actualJavaType.getName() + "'");
+    } else {
+      report(
+          INCOMPATIBLE_RETURN_TYPE_WITH_METHOD,
+          "soy type of '" + fnNode.getType() + "'",
+          "java type of '" + actualJavaType.getName() + "'",
+          simpleMethodName(method));
+    }
+  }
+
   void invalidParameterLength(Method method, JavaValue[] actualParams) {
     String expected =
         method.getParameterTypes().length == 1
@@ -163,6 +183,42 @@ final class JbcSrcValueErrorReporter {
         "'" + actualClass.getName() + "'",
         paramIdx + getOrdinalSuffix(paramIdx),
         simpleMethodName(method));
+  }
+
+  void invalidParameterType(
+      Method method, int paramIdx, Class<?> expectedType, SoyType allowedSoyType) {
+    report(
+        PARAM_MISMATCH,
+        "java type of '" + expectedType.getName() + "'",
+        "soy type of '" + allowedSoyType + "'",
+        paramIdx + getOrdinalSuffix(paramIdx),
+        simpleMethodName(method));
+  }
+
+  void nonSoyExpressionNotConvertible(Expression expr, SoyType newType, String methodName) {
+    Class<?> actualClass = BytecodeUtils.classFromAsmType(expr.resultType());
+    report(
+        INCOMPATIBLE_TYPES,
+        methodName,
+        "java type of '" + actualClass.getName() + "'",
+        "soy type of '" + newType + "'");
+  }
+
+  void nonSoyExpressionNotCoercible(Expression expr, SoyType newType, String methodName) {
+    Class<?> actualClass = BytecodeUtils.classFromAsmType(expr.resultType());
+    report(
+        INCOMPATIBLE_TYPES,
+        methodName,
+        "java type of '" + actualClass.getName() + "'",
+        "soy type of '" + newType + "'");
+  }
+
+  void incompatibleSoyType(SoyType allowedType, SoyType newType, String methodName) {
+    report(
+        INCOMPATIBLE_TYPES,
+        methodName,
+        "soy type of '" + allowedType + "'",
+        "soy type of '" + newType + "'");
   }
 
   void nullReturn() {

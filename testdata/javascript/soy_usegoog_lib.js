@@ -3922,7 +3922,7 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
   /**
    * Bootstraps the given namespaces and calls the callback once they are
    * available either via goog.require. This is a replacement for using
-   * `goog.require` to bootstrap Closure Javascript. Previously a `goog.require`
+   * `goog.require` to bootstrap Closure JavaScript. Previously a `goog.require`
    * in an HTML file would guarantee that the require'd namespace was available
    * in the next immediate script tag. With ES6 modules this no longer a
    * guarantee.
@@ -6769,7 +6769,6 @@ goog.string.newLineToBr = function(str, opt_xml) {
  * @return {string} An escaped copy of `str`.
  */
 goog.string.htmlEscape = function(str, opt_isLikelyToContainHtmlChars) {
-
   if (opt_isLikelyToContainHtmlChars) {
     str = str.replace(goog.string.AMP_RE_, '&amp;')
               .replace(goog.string.LT_RE_, '&lt;')
@@ -7412,7 +7411,7 @@ goog.string.buildString = function(var_args) {
 /**
  * Returns a string with at least 64-bits of randomness.
  *
- * Doesn't trust Javascript's random function entirely. Uses a combination of
+ * Doesn't trust JavaScript's random function entirely. Uses a combination of
  * random and current timestamp, and then encodes the string in base-36 to
  * make it shorter.
  *
@@ -7548,7 +7547,7 @@ goog.string.createUniqueString = function() {
  * This function strips whitespace: (toNumber(' 123') === 123)
  * This function accepts scientific notation: (toNumber('1e1') === 10)
  *
- * This is better than Javascript's built-in conversions because, sadly:
+ * This is better than JavaScript's built-in conversions because, sadly:
  *     (Number(' ') === 0) and (parseFloat('123a') === 123)
  *
  * @param {string} str The string to convert.
@@ -7599,8 +7598,9 @@ goog.string.isUpperCamelCase = function(str) {
  * @return {string} The string in camelCase form.
  */
 goog.string.toCamelCase = function(str) {
-  return String(str).replace(
-      /\-([a-z])/g, function(all, match) { return match.toUpperCase(); });
+  return String(str).replace(/\-([a-z])/g, function(all, match) {
+    return match.toUpperCase();
+  });
 };
 
 
@@ -7657,8 +7657,9 @@ goog.string.toTitleCase = function(str, opt_delimiters) {
   delimiters = delimiters ? '|[' + delimiters + ']+' : '';
 
   var regexp = new RegExp('(^' + delimiters + ')([a-z])', 'g');
-  return str.replace(
-      regexp, function(all, p1, p2) { return p1 + p2.toUpperCase(); });
+  return str.replace(regexp, function(all, p1, p2) {
+    return p1 + p2.toUpperCase();
+  });
 };
 
 
@@ -7843,21 +7844,6 @@ goog.string.editDistance = function(a, b) {
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/**
- * @fileoverview Utilities used by goog.labs.userAgent tools. These functions
- * should not be used outside of goog.labs.userAgent.*.
- *
- * @visibility {//javascript/abc/libs/objects3d:__subpackages__}
- * @visibility {//javascript/closure/bin/sizetests:__pkg__}
- * @visibility {//javascript/closure/dom:__subpackages__}
- * @visibility {//javascript/closure/style:__pkg__}
- * @visibility {//javascript/closure/testing:__pkg__}
- * @visibility {//javascript/closure/useragent:__subpackages__}
- * @visibility {//testing/puppet/modules:__pkg__}
- * @visibility {:util_legacy_users}
- *
- * @author nnaze@google.com (Nathan Naze)
- */
 
 goog.provide('goog.labs.userAgent.util');
 
@@ -13582,22 +13568,29 @@ goog.require('goog.string.TypedString');
  * `goog.string.Const.from` and not by invoking its constructor.  The
  * constructor intentionally takes no parameters and the type is immutable;
  * hence only a default instance corresponding to the empty string can be
- * obtained via constructor invocation.
+ * obtained via constructor invocation.  Use goog.string.Const.EMPTY
+ * instead of using this constructor to get an empty Const string.
  *
  * @see goog.string.Const#from
  * @constructor
  * @final
  * @struct
  * @implements {goog.string.TypedString}
+ * @param {Object=} opt_token package-internal implementation detail.
+ * @param {string=} opt_content package-internal implementation detail.
  */
-goog.string.Const = function() {
+goog.string.Const = function(opt_token, opt_content) {
   /**
    * The wrapped value of this Const object.  The field has a purposely ugly
    * name to make (non-compiled) code that attempts to directly access this
    * field stand out.
    * @private {string}
    */
-  this.stringConstValueWithSecurityContract__googStringSecurityPrivate_ = '';
+  this.stringConstValueWithSecurityContract__googStringSecurityPrivate_ =
+      ((opt_token ===
+        goog.string.Const.GOOG_STRING_CONSTRUCTOR_TOKEN_PRIVATE_) &&
+       opt_content) ||
+      '';
 
   /**
    * A type marker used to implement additional run-time type checking.
@@ -13698,9 +13691,9 @@ goog.string.Const.unwrap = function(stringConst) {
  * @return {!goog.string.Const} A Const object initialized to stringConst.
  */
 goog.string.Const.from = function(s) {
-  return goog.string.Const.create__googStringSecurityPrivate_(s);
+  return new goog.string.Const(
+      goog.string.Const.GOOG_STRING_CONSTRUCTOR_TOKEN_PRIVATE_, s);
 };
-
 
 /**
  * Type marker for the Const type, used to implement additional run-time
@@ -13710,20 +13703,12 @@ goog.string.Const.from = function(s) {
  */
 goog.string.Const.TYPE_MARKER_ = {};
 
-
 /**
- * Utility method to create Const instances.
- * @param {string} s The string to initialize the Const object with.
- * @return {!goog.string.Const} The initialized Const object.
+ * @type {!Object}
  * @private
+ * @const
  */
-goog.string.Const.create__googStringSecurityPrivate_ = function(s) {
-  var stringConst = new goog.string.Const();
-  stringConst.stringConstValueWithSecurityContract__googStringSecurityPrivate_ =
-      s;
-  return stringConst;
-};
-
+goog.string.Const.GOOG_STRING_CONSTRUCTOR_TOKEN_PRIVATE_ = {};
 
 /**
  * A Const instance wrapping the empty string.
@@ -15648,6 +15633,85 @@ goog.html.SafeUrl.fromTelUrl = function(telUrl) {
 
 
 /**
+ * Matches a sip/sips URL. We only allow urls that consist of an email address.
+ * The characters '?' and '#' are not allowed in the local part of the email
+ * address.
+ * @const
+ * @private
+ */
+goog.html.SIP_URL_PATTERN_ = new RegExp(
+    '^sip[s]?:[+a-z0-9_.!$%&\'*\\/=^`{|}~-]+@([a-z0-9-]+\\.)+[a-z0-9]{2,63}$',
+    'i');
+
+
+/**
+ * Creates a SafeUrl wrapping a sip: URL. We only allow urls that consist of an
+ * email address. The characters '?' and '#' are not allowed in the local part
+ * of the email address.
+ *
+ * @param {string} sipUrl A sip URL.
+ * @return {!goog.html.SafeUrl} A matching safe URL, or {@link INNOCUOUS_STRING}
+ *     wrapped as a SafeUrl if it does not pass.
+ */
+goog.html.SafeUrl.fromSipUrl = function(sipUrl) {
+  if (!goog.html.SIP_URL_PATTERN_.test(decodeURIComponent(sipUrl))) {
+    sipUrl = goog.html.SafeUrl.INNOCUOUS_STRING;
+  }
+  return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(
+      sipUrl);
+};
+
+
+/**
+ * Creates a SafeUrl wrapping a sms: URL.
+ *
+ * @param {string} smsUrl A sms URL.
+ * @return {!goog.html.SafeUrl} A matching safe URL, or {@link INNOCUOUS_STRING}
+ *     wrapped as a SafeUrl if it does not pass.
+ */
+goog.html.SafeUrl.fromSmsUrl = function(smsUrl) {
+  if (!goog.string.caseInsensitiveStartsWith(smsUrl, 'sms:') ||
+      !goog.html.SafeUrl.isSmsUrlBodyValid_(smsUrl)) {
+    smsUrl = goog.html.SafeUrl.INNOCUOUS_STRING;
+  }
+  return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(
+      smsUrl);
+};
+
+
+/**
+ * Validates SMS URL `body` parameter, which is optional and should appear at
+ * most once and should be percentage-encoded if present.
+ *
+ * @param {string} smsUrl A sms URL.
+ * @return {boolean} Whether SMS URL has a valid `body` parameter if it exists.
+ * @private
+ */
+goog.html.SafeUrl.isSmsUrlBodyValid_ = function(smsUrl) {
+  var bodyParams = smsUrl.match(/[?&]body=/gi);
+  // "body" param is optional
+  if (!bodyParams) {
+    return true;
+  }
+  // "body" MUST only appear once
+  if (bodyParams.length > 1) {
+    return false;
+  }
+  // Get the encoded `body` parameter value.
+  var bodyValue = smsUrl.match(/[?&]body=([^&]+)/)[1];
+  if (!bodyValue) {
+    return true;
+  }
+  try {
+    return goog.string.urlEncode(bodyValue) === bodyValue ||
+        goog.string.urlDecode(bodyValue) !== bodyValue;
+  } catch (error) {
+    return false;
+  }
+};
+
+
+/**
  * Creates a SafeUrl from TrustedResourceUrl. This is safe because
  * TrustedResourceUrl is more tightly restricted than SafeUrl.
  *
@@ -16123,12 +16187,12 @@ goog.html.SafeStyle.PropertyMap;
  * @param {goog.html.SafeStyle.PropertyMap} map Mapping of property names to
  *     their values, for example {'margin': '1px'}. Names must consist of
  *     [-_a-zA-Z0-9]. Values might be strings consisting of
- *     [-,.'"%_!# a-zA-Z0-9], where " and ' must be properly balanced. We also
- *     allow simple functions like rgb() and url() which sanitizes its contents.
- *     Other values must be wrapped in goog.string.Const. URLs might be passed
- *     as goog.html.SafeUrl which will be wrapped into url(""). We also support
- *     array whose elements are joined with ' '. Null value causes skipping the
- *     property.
+ *     [-,.'"%_!# a-zA-Z0-9[\]], where ", ', and [] must be properly balanced.
+ *     We also allow simple functions like rgb() and url() which sanitizes its
+ *     contents. Other values must be wrapped in goog.string.Const. URLs might
+ *     be passed as goog.html.SafeUrl which will be wrapped into url(""). We
+ *     also support array whose elements are joined with ' '. Null value causes
+ *     skipping the property.
  * @return {!goog.html.SafeStyle}
  * @throws {Error} If invalid name is provided.
  * @throws {goog.asserts.AssertionError} If invalid value is provided. With
@@ -16190,16 +16254,27 @@ goog.html.SafeStyle.sanitizePropertyValue_ = function(value) {
  * @private
  */
 goog.html.SafeStyle.sanitizePropertyValueString_ = function(value) {
+  // Some CSS property values permit nested functions. We allow one level of
+  // nesting, and all nested functions must also be in the FUNCTIONS_RE_ list.
   var valueWithoutFunctions =
       value.replace(goog.html.SafeStyle.FUNCTIONS_RE_, '$1')
+          .replace(goog.html.SafeStyle.FUNCTIONS_RE_, '$1')
           .replace(goog.html.SafeStyle.URL_RE_, 'url');
   if (!goog.html.SafeStyle.VALUE_RE_.test(valueWithoutFunctions)) {
     goog.asserts.fail(
         'String value allows only ' + goog.html.SafeStyle.VALUE_ALLOWED_CHARS_ +
         ' and simple functions, got: ' + value);
     return goog.html.SafeStyle.INNOCUOUS_STRING;
+  } else if (goog.html.SafeStyle.COMMENT_RE_.test(value)) {
+    goog.asserts.fail('String value disallows comments, got: ' + value);
+    return goog.html.SafeStyle.INNOCUOUS_STRING;
   } else if (!goog.html.SafeStyle.hasBalancedQuotes_(value)) {
     goog.asserts.fail('String value requires balanced quotes, got: ' + value);
+    return goog.html.SafeStyle.INNOCUOUS_STRING;
+  } else if (!goog.html.SafeStyle.hasBalancedSquareBrackets_(value)) {
+    goog.asserts.fail(
+        'String value requires balanced square brackets and one' +
+        ' identifier per pair of brackets, got: ' + value);
     return goog.html.SafeStyle.INNOCUOUS_STRING;
   }
   return goog.html.SafeStyle.sanitizeUrl_(value);
@@ -16232,10 +16307,41 @@ goog.html.SafeStyle.hasBalancedQuotes_ = function(value) {
 
 
 /**
+ * Checks that square brackets ([ and ]) are properly balanced inside a string,
+ * and that the content in the square brackets is one ident-token;
+ * see https://www.w3.org/TR/css-syntax-3/#ident-token-diagram.
+ * For practicality, and in line with other restrictions posed on SafeStyle
+ * strings, we restrict the character set allowable in the ident-token to
+ * [-_a-zA-Z0-9].
+ * @param {string} value Untrusted CSS property value.
+ * @return {boolean} True if property value is safe with respect to square
+ *     bracket balancedness.
+ * @private
+ */
+goog.html.SafeStyle.hasBalancedSquareBrackets_ = function(value) {
+  var outside = true;
+  var tokenRe = /^[-_a-zA-Z0-9]$/;
+  for (var i = 0; i < value.length; i++) {
+    var c = value.charAt(i);
+    if (c == ']') {
+      if (outside) return false;  // Unbalanced ].
+      outside = true;
+    } else if (c == '[') {
+      if (!outside) return false;  // No nesting.
+      outside = false;
+    } else if (!outside && !tokenRe.test(c)) {
+      return false;
+    }
+  }
+  return outside;
+};
+
+
+/**
  * Characters allowed in goog.html.SafeStyle.VALUE_RE_.
  * @private {string}
  */
-goog.html.SafeStyle.VALUE_ALLOWED_CHARS_ = '[-,."\'%_!# a-zA-Z0-9]';
+goog.html.SafeStyle.VALUE_ALLOWED_CHARS_ = '[-,."\'%_!# a-zA-Z0-9\\[\\]]';
 
 
 /**
@@ -16243,6 +16349,10 @@ goog.html.SafeStyle.VALUE_ALLOWED_CHARS_ = '[-,."\'%_!# a-zA-Z0-9]';
  *
  * Quotes (" and ') are allowed, but a check must be done elsewhere to ensure
  * they're balanced.
+ *
+ * Square brackets ([ and ]) are allowed, but a check must be done elsewhere
+ * to ensure they're balanced. The content inside a pair of square brackets must
+ * be one alphanumeric identifier.
  *
  * ',' allows multiple values to be assigned to the same property
  * (e.g. background-attachment or font-family) and hence could allow
@@ -16277,9 +16387,17 @@ goog.html.SafeStyle.URL_RE_ = new RegExp(
  * @private @const {!RegExp}
  */
 goog.html.SafeStyle.FUNCTIONS_RE_ = new RegExp(
-    '\\b(hsl|hsla|rgb|rgba|matrix|(rotate|scale|translate)(X|Y|Z|3d)?)' +
-        '\\([-0-9a-z.%, ]+\\)',
+    '\\b(hsl|hsla|rgb|rgba|matrix|calc|minmax|fit-content|repeat|' +
+        '(rotate|scale|translate)(X|Y|Z|3d)?)' +
+        '\\([-+*/0-9a-z.%\\[\\], ]+\\)',
     'g');
+
+
+/**
+ * Regular expression for comments. These are disallowed in CSS property values.
+ * @private @const {!RegExp}
+ */
+goog.html.SafeStyle.COMMENT_RE_ = /\/\*/;
 
 
 /**
@@ -21695,7 +21813,7 @@ goog.uri.utils.parseQueryData = function(encodedQuery, callback) {
  * @private
  */
 goog.uri.utils.splitQueryData_ = function(uri) {
-  // Find the query data and and hash.
+  // Find the query data and hash.
   var hashIndex = uri.indexOf('#');
   if (hashIndex < 0) {
     hashIndex = uri.length;
@@ -23791,10 +23909,10 @@ goog.soy.data.SanitizedContentKind = {
   HTML: goog.DEBUG ? {sanitizedContentKindHtml: true} : {},
 
   /**
-   * Executable Javascript code or expression, safe for insertion in a
+   * Executable JavaScript code or expression, safe for insertion in a
    * script-tag or event handler context, known to be free of any
    * attacker-controlled scripts. This can either be side-effect-free
-   * Javascript (such as JSON) or Javascript that's entirely under Google's
+   * JavaScript (such as JSON) or JavaScript that's entirely under Google's
    * control.
    */
   JS: goog.DEBUG ? {sanitizedContentJsChars: true} : {},
@@ -23987,8 +24105,7 @@ goog.soy.data.SanitizedHtml.prototype.contentKind =
  * @return {boolean}
  */
 goog.soy.data.SanitizedHtml.isCompatibleWith = function(value) {
-  return goog.isString(value) ||
-      value instanceof goog.soy.data.SanitizedHtml ||
+  return goog.isString(value) || value instanceof goog.soy.data.SanitizedHtml ||
       value instanceof goog.soy.data.UnsanitizedText ||
       value instanceof goog.html.SafeHtml;
 };
@@ -24022,8 +24139,7 @@ goog.soy.data.SanitizedJs.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
  * @return {boolean}
  */
 goog.soy.data.SanitizedJs.isCompatibleWith = function(value) {
-  return goog.isString(value) ||
-      value instanceof goog.soy.data.SanitizedJs ||
+  return goog.isString(value) || value instanceof goog.soy.data.SanitizedJs ||
       value instanceof goog.soy.data.UnsanitizedText ||
       value instanceof goog.html.SafeScript;
 };
@@ -24057,8 +24173,7 @@ goog.soy.data.SanitizedUri.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
  * @return {boolean}
  */
 goog.soy.data.SanitizedUri.isCompatibleWith = function(value) {
-  return goog.isString(value) ||
-      value instanceof goog.soy.data.SanitizedUri ||
+  return goog.isString(value) || value instanceof goog.soy.data.SanitizedUri ||
       value instanceof goog.soy.data.UnsanitizedText ||
       value instanceof goog.html.SafeUrl ||
       value instanceof goog.html.TrustedResourceUrl ||
@@ -24223,8 +24338,7 @@ goog.soy.data.SanitizedCss.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
  * @return {boolean}
  */
 goog.soy.data.SanitizedCss.isCompatibleWith = function(value) {
-  return goog.isString(value) ||
-      value instanceof goog.soy.data.SanitizedCss ||
+  return goog.isString(value) || value instanceof goog.soy.data.SanitizedCss ||
       value instanceof goog.soy.data.UnsanitizedText ||
       value instanceof goog.html.SafeStyle ||  // TODO(jakubvrana): Delete.
       value instanceof goog.html.SafeStyleSheet;

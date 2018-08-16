@@ -16,14 +16,9 @@
 
 package com.google.template.soy.basicfunctions;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.data.SoyList;
 import com.google.template.soy.data.SoyValue;
-import com.google.template.soy.jbcsrc.restricted.JbcSrcPluginContext;
-import com.google.template.soy.jbcsrc.restricted.MethodRef;
-import com.google.template.soy.jbcsrc.restricted.SoyExpression;
-import com.google.template.soy.jbcsrc.restricted.SoyJbcSrcFunction;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyLibraryAssistedJsSrcFunction;
 import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
@@ -60,11 +55,7 @@ import java.util.List;
             returnType = "bool"))
 @SoyPureFunction
 public class ListContainsFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction,
-        SoyLibraryAssistedJsSrcFunction,
-        SoyPySrcFunction,
-        SoyJbcSrcFunction,
-        SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyLibraryAssistedJsSrcFunction, SoyPySrcFunction, SoySwiftSrcFunction {
 
   @Override
   public ImmutableSet<String> getRequiredJsLibNames() {
@@ -80,10 +71,6 @@ public class ListContainsFunction extends TypedSoyFunction
 
   @Override
   public PyExpr computeForPySrc(List<PyExpr> args) {
-    ImmutableList.Builder<String> expTexts = ImmutableList.builder();
-    for (PyExpr expr : args) {
-      expTexts.add(expr.getText());
-    }
     return new PyListExpr(
         "any(runtime.type_safe_eq(el, "
             + args.get(1).getText()
@@ -98,21 +85,12 @@ public class ListContainsFunction extends TypedSoyFunction
     static final Method LIST_CONTAINS_FN =
         JavaValueFactory.createMethod(
             BasicFunctionsRuntime.class, "listContains", SoyList.class, SoyValue.class);
-    static final MethodRef LIST_CONTAINS_FN_REF = MethodRef.create(LIST_CONTAINS_FN);
   }
 
   @Override
   public JavaValue applyForJavaSource(
       JavaValueFactory factory, List<JavaValue> args, JavaPluginContext context) {
     return factory.callStaticMethod(Methods.LIST_CONTAINS_FN, args.get(0), args.get(1));
-  }
-
-  @Override
-  public SoyExpression computeForJbcSrc(JbcSrcPluginContext context, List<SoyExpression> args) {
-    SoyExpression list = args.get(0);
-    SoyExpression value = args.get(1);
-    return SoyExpression.forBool(
-        list.box().checkedCast(SoyList.class).invoke(Methods.LIST_CONTAINS_FN_REF, value.box()));
   }
 
   @Override

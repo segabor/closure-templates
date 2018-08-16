@@ -17,10 +17,6 @@
 package com.google.template.soy.basicfunctions;
 
 import com.google.common.collect.ImmutableSet;
-import com.google.template.soy.jbcsrc.restricted.JbcSrcPluginContext;
-import com.google.template.soy.jbcsrc.restricted.MethodRef;
-import com.google.template.soy.jbcsrc.restricted.SoyExpression;
-import com.google.template.soy.jbcsrc.restricted.SoyJbcSrcFunction;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyLibraryAssistedJsSrcFunction;
 import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
@@ -50,11 +46,7 @@ import java.util.List;
             parameterTypes = {"html"},
             returnType = "string"))
 final class HtmlToTextFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction,
-        SoyLibraryAssistedJsSrcFunction,
-        SoyPySrcFunction,
-        SoyJbcSrcFunction,
-        SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyLibraryAssistedJsSrcFunction, SoyPySrcFunction, SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -77,18 +69,12 @@ final class HtmlToTextFunction extends TypedSoyFunction
   private static final class Methods {
     static final Method HTML_TO_TEXT =
         JavaValueFactory.createMethod(HtmlToText.class, "convert", String.class);
-    static final MethodRef HTML_TO_TEXT_REF = MethodRef.create(HTML_TO_TEXT);
   }
 
   @Override
   public JavaValue applyForJavaSource(
       JavaValueFactory factory, List<JavaValue> args, JavaPluginContext context) {
     return factory.callStaticMethod(Methods.HTML_TO_TEXT, args.get(0));
-  }
-
-  @Override
-  public SoyExpression computeForJbcSrc(JbcSrcPluginContext context, List<SoyExpression> args) {
-    return SoyExpression.forString(Methods.HTML_TO_TEXT_REF.invoke(args.get(0).coerceToString()));
   }
 
   // FIXME soy, sanitizers

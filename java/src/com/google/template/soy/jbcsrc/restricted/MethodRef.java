@@ -26,6 +26,7 @@ import com.google.common.primitives.Ints;
 import com.google.common.primitives.UnsignedInts;
 import com.google.common.primitives.UnsignedLongs;
 import com.google.protobuf.Message;
+import com.google.protobuf.ProtocolMessageEnum;
 import com.google.template.soy.data.Dir;
 import com.google.template.soy.data.LogStatement;
 import com.google.template.soy.data.LoggingAdvisingAppendable;
@@ -374,6 +375,9 @@ public abstract class MethodRef {
   public static final MethodRef SOY_VALUE_LONG_VALUE =
       create(SoyValue.class, "longValue").asCheap();
 
+  public static final MethodRef SOY_VALUE_INTEGER_VALUE =
+      create(SoyValue.class, "integerValue").asCheap();
+
   public static final MethodRef SOY_VALUE_NUMBER_VALUE =
       create(SoyValue.class, "numberValue").asNonNullable();
 
@@ -419,6 +423,9 @@ public abstract class MethodRef {
 
   public static final MethodRef LEGACY_ADAPTER_COMPUTE =
       MethodRef.create(LegacyFunctionAdapter.METHOD);
+
+  public static final MethodRef PROTOCOL_ENUM_GET_NUMBER =
+      MethodRef.create(ProtocolMessageEnum.class, "getNumber").asCheap();
 
   public static MethodRef create(Class<?> clazz, String methodName, Class<?>... params) {
     java.lang.reflect.Method m;

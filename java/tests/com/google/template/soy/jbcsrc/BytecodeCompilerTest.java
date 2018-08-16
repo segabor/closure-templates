@@ -150,7 +150,11 @@ public class BytecodeCompilerTest {
     TemplateRegistry templateRegistry = new TemplateRegistry(soyTree, ErrorReporter.exploding());
     CompiledTemplates templates =
         BytecodeCompiler.compile(
-                templateRegistry, false, ErrorReporter.exploding(), parser.soyFileSuppliers())
+                templateRegistry,
+                false,
+                ErrorReporter.exploding(),
+                parser.soyFileSuppliers(),
+                parser.typeRegistry())
             .get();
     CompiledTemplate.Factory factory = templates.getTemplateFactory("ns1.callerTemplate");
     Predicate<String> activePackages = Predicates.alwaysFalse();
@@ -197,7 +201,11 @@ public class BytecodeCompilerTest {
     TemplateRegistry templateRegistry = new TemplateRegistry(soyTree, ErrorReporter.exploding());
     CompiledTemplates templates =
         BytecodeCompiler.compile(
-                templateRegistry, false, ErrorReporter.exploding(), parser.soyFileSuppliers())
+                templateRegistry,
+                false,
+                ErrorReporter.exploding(),
+                parser.soyFileSuppliers(),
+                parser.typeRegistry())
             .get();
 
     // HTML templates
@@ -937,7 +945,11 @@ public class BytecodeCompilerTest {
     TemplateRegistry templateRegistry = new TemplateRegistry(soyTree, ErrorReporter.exploding());
     CompiledTemplates templates =
         BytecodeCompiler.compile(
-                templateRegistry, false, ErrorReporter.exploding(), parser.soyFileSuppliers())
+                templateRegistry,
+                false,
+                ErrorReporter.exploding(),
+                parser.soyFileSuppliers(),
+                parser.typeRegistry())
             .get();
     CompiledTemplate.Factory caller = templates.getTemplateFactory("ns.callerTemplate");
     try {
@@ -1078,6 +1090,34 @@ public class BytecodeCompilerTest {
     tester.rendersAs("2", ImmutableMap.of("b", false));
   }
 
+  @SuppressWarnings("unused")
+  public static int acceptsInt(int x) {
+    throw new IllegalStateException("shouldn't call this");
+  }
+
+  @SoyFunctionSignature(
+      name = "overflow",
+      value = @Signature(parameterTypes = "int", returnType = "?"))
+  private static final class Overflow implements SoyJavaSourceFunction {
+    @Override
+    public JavaValue applyForJavaSource(
+        JavaValueFactory factory, List<JavaValue> args, JavaPluginContext context) {
+      return factory.callStaticMethod(
+          JavaValueFactory.createMethod(BytecodeCompilerTest.class, "acceptsInt", int.class),
+          args.get(0));
+    }
+  }
+
+  @Test
+  public void testJavaSourceFunction_overflow() {
+    long value = Integer.MAX_VALUE + 1L;
+    assertThatTemplateBody("{overflow(" + value + ")}")
+        .withSoySourceFunction(new Overflow())
+        .failsToRenderWithExceptionThat()
+        .hasMessageThat()
+        .isEqualTo("Casting long to integer results in overflow: " + value);
+  }
+
   private static int getTemplateLineNumber(String templateName, Throwable t) {
     for (StackTraceElement ste : t.getStackTrace()) {
       if (ste.getClassName().endsWith(templateName) && ste.getMethodName().equals("render")) {
@@ -1107,7 +1147,11 @@ public class BytecodeCompilerTest {
     TemplateRegistry templateRegistry = new TemplateRegistry(soyTree, ErrorReporter.exploding());
     CompiledTemplates templates =
         BytecodeCompiler.compile(
-                templateRegistry, false, ErrorReporter.exploding(), parser.soyFileSuppliers())
+                templateRegistry,
+                false,
+                ErrorReporter.exploding(),
+                parser.soyFileSuppliers(),
+                parser.typeRegistry())
             .get();
     return templates;
   }

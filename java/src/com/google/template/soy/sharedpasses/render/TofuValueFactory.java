@@ -21,10 +21,14 @@ import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.primitives.Primitives;
+import com.google.protobuf.Message;
+import com.google.protobuf.ProtocolMessageEnum;
 import com.google.template.soy.data.SoyDataException;
 import com.google.template.soy.data.SoyList;
+import com.google.template.soy.data.SoyProtoValue;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.SoyValueConverter;
+import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
 import com.google.template.soy.plugin.java.restricted.JavaValue;
 import com.google.template.soy.plugin.java.restricted.JavaValueFactory;
@@ -38,26 +42,26 @@ import java.util.List;
 /** Adapts JavaValueFactory to work with Tofu, wrapping the JavaValues in TofuJavaValues. */
 // TODO(b/19252021): Add unit tests after things shape up.
 class TofuValueFactory extends JavaValueFactory {
-  private final String fnName;
+  private final FunctionNode fn;
   private final ImmutableMap<String, Supplier<Object>> pluginInstances;
 
-  TofuValueFactory(String fnName, ImmutableMap<String, Supplier<Object>> pluginInstances) {
-    this.fnName = fnName;
+  TofuValueFactory(FunctionNode fn, ImmutableMap<String, Supplier<Object>> pluginInstances) {
+    this.fn = fn;
     this.pluginInstances = pluginInstances;
   }
 
   SoyValue computeForJava(
-      SoyJavaSourceFunction fn, List<SoyValue> args, TofuPluginContext context) {
+      SoyJavaSourceFunction srcFn, List<SoyValue> args, TofuPluginContext context) {
     List<JavaValue> javaArgs =
         Lists.transform(
             args,
             new Function<SoyValue, JavaValue>() {
               @Override
               public JavaValue apply(SoyValue soyArg) {
-                return TofuJavaValue.forSoyValue(soyArg);
+                return TofuJavaValue.forSoyValue(soyArg, fn.getSourceLocation());
               }
             });
-    TofuJavaValue result = (TofuJavaValue) fn.applyForJavaSource(this, javaArgs, context);
+    TofuJavaValue result = (TofuJavaValue) srcFn.applyForJavaSource(this, javaArgs, context);
     if (!result.hasSoyValue()) {
       throw RenderException.create(
           "applyForJavaSource must return either an 'args' parameter or the result of "
@@ -77,9 +81,10 @@ class TofuValueFactory extends JavaValueFactory {
 
   @Override
   public TofuJavaValue callInstanceMethod(Method method, JavaValue... params) {
-    Supplier<Object> instanceSupplier = pluginInstances.get(fnName);
+    Supplier<Object> instanceSupplier = pluginInstances.get(fn.getFunctionName());
     if (instanceSupplier == null) {
-      throw RenderException.create("No plugin instance registered for function '" + fnName + "'");
+      throw RenderException.create(
+          "No plugin instance registered for function '" + fn.getFunctionName() + "'");
     }
     try {
       return wrapInTofuValue(
@@ -106,15 +111,17 @@ class TofuValueFactory extends JavaValueFactory {
                 return tjv.soyValue();
               }
             });
-    return TofuJavaValue.forSoyValue(SoyValueConverter.INSTANCE.convert(values).resolve());
+    return TofuJavaValue.forSoyValue(
+        SoyValueConverter.INSTANCE.convert(values).resolve(), fn.getSourceLocation());
   }
 
-  private static TofuJavaValue wrapInTofuValue(Method method, Object object) {
+  private TofuJavaValue wrapInTofuValue(Method method, Object object) {
     if (object instanceof SoyValue) {
-      return TofuJavaValue.forSoyValue((SoyValue) object);
+      return TofuJavaValue.forSoyValue((SoyValue) object, fn.getSourceLocation());
     }
     try {
-      return TofuJavaValue.forSoyValue(SoyValueConverter.INSTANCE.convert(object).resolve());
+      return TofuJavaValue.forSoyValue(
+          SoyValueConverter.INSTANCE.convert(object).resolve(), fn.getSourceLocation());
     } catch (SoyDataException e) {
       throw RenderException.create("Invalid return value from `" + method + "`", e);
     }
@@ -164,6 +171,15 @@ class TofuValueFactory extends JavaValueFactory {
           params[i] = value.stringValue();
         } else if (type == List.class) {
           params[i] = ((SoyList) value).asJavaList();
+        } else if (Message.class.isAssignableFrom(type)) {
+          params[i] = type.cast(((SoyProtoValue) value).getProto());
+        } else if (type.isEnum() && ProtocolMessageEnum.class.isAssignableFrom(type)) {
+          try {
+            params[i] =
+                type.getDeclaredMethod("forNumber", int.class).invoke(null, value.integerValue());
+          } catch (ReflectiveOperationException roe) {
+            throw RenderException.create("Invalid parameter: " + tofuVal, roe);
+          }
         } else {
           // TODO(b/19252021): Map, Iterable, Future, SafeHtml, etc..?
           throw new UnsupportedOperationException(

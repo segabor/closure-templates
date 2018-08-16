@@ -59,7 +59,6 @@ import com.google.template.soy.jbcsrc.restricted.SoyExpression;
 import com.google.template.soy.jbcsrc.restricted.testing.ExpressionSubject;
 import com.google.template.soy.jbcsrc.shared.CompiledTemplate;
 import com.google.template.soy.jbcsrc.shared.RenderContext;
-import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
 import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.soyparse.PluginResolver;
 import com.google.template.soy.soyparse.PluginResolver.Mode;
@@ -74,6 +73,7 @@ import com.google.template.soy.types.ListType;
 import com.google.template.soy.types.RecordType;
 import com.google.template.soy.types.SanitizedType;
 import com.google.template.soy.types.SoyType;
+import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.SoyTypes;
 import com.google.template.soy.types.StringType;
 import com.google.template.soy.types.UnknownType;
@@ -152,11 +152,6 @@ public class ExpressionCompilerTest {
             }
 
             @Override
-            public JavaPluginContext getJavaPluginContext() {
-              return getRenderContext().asJavaPluginContext();
-            }
-
-            @Override
             public Expression getParamsRecord() {
               throw new UnsupportedOperationException();
             }
@@ -168,7 +163,8 @@ public class ExpressionCompilerTest {
           },
           new TemplateVariableManager(
               JbcSrcNameGenerators.forFieldNames(), null, null, getRenderMethod()),
-          ErrorReporter.exploding());
+          ErrorReporter.exploding(),
+          new SoyTypeRegistry());
 
   private static Method getRenderMethod() {
     try {
@@ -621,11 +617,11 @@ public class ExpressionCompilerTest {
 
   @Test
   public void testMaxAndMin() {
-    assertExpression("min(2, 3)").evaluatesTo(2L);
-    assertExpression("max(2, 3)").evaluatesTo(3L);
+    assertExpression("min(2, 3)").evaluatesTo(IntegerData.forValue(2L));
+    assertExpression("max(2, 3)").evaluatesTo(IntegerData.forValue(3L));
 
-    assertExpression("min(0.1, 1.1)").evaluatesTo(0.1);
-    assertExpression("max(0.1, 1.1)").evaluatesTo(1.1);
+    assertExpression("min(0.1, 1.1)").evaluatesTo(FloatData.forValue(0.1));
+    assertExpression("max(0.1, 1.1)").evaluatesTo(FloatData.forValue(1.1));
   }
 
   private void assertExprEquals(String left, String right) {

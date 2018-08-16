@@ -25,7 +25,9 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Maps;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.IdGenerator;
+import com.google.template.soy.basicfunctions.AugmentMapFunction;
 import com.google.template.soy.basicfunctions.ConcatListsFunction;
+import com.google.template.soy.basicfunctions.KeysFunction;
 import com.google.template.soy.basicfunctions.LegacyObjectMapToMapFunction;
 import com.google.template.soy.basicfunctions.MapKeysFunction;
 import com.google.template.soy.basicfunctions.MapToLegacyObjectMapFunction;
@@ -105,12 +107,14 @@ import com.google.template.soy.types.RecordType;
 import com.google.template.soy.types.SanitizedType;
 import com.google.template.soy.types.SoyProtoType;
 import com.google.template.soy.types.SoyType;
+import com.google.template.soy.types.SoyType.Kind;
 import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.SoyTypes;
 import com.google.template.soy.types.StringType;
 import com.google.template.soy.types.UnionType;
 import com.google.template.soy.types.UnknownType;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -786,9 +790,7 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
     protected void visitFunctionNode(FunctionNode node) {
       visitChildren(node);
       Object knownFunction = node.getSoyFunction();
-      if (visitInternalSoyFunction(knownFunction, node)) {
-        // Type successfully set!
-      } else if (knownFunction.getClass().isAnnotationPresent(SoyFunctionSignature.class)) {
+      if (knownFunction.getClass().isAnnotationPresent(SoyFunctionSignature.class)) {
         checkState(
             knownFunction instanceof TypedSoyFunction || knownFunction instanceof SoySourceFunction,
             "Classes annotated with @SoyFunctionSignature must either extend "
@@ -800,7 +802,15 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
       } else if (knownFunction instanceof BuiltinFunction) {
         visitBuiltinFunction((BuiltinFunction) knownFunction, node);
       }
+      // Always attempt to visit for internal soy functions, even if we already had a signature.
+      visitInternalSoyFunction(knownFunction, node);
       tryApplySubstitution(node);
+
+      // If we didn't set the allowed types for params above, then set them to unknown types.
+      if (node.getAllowedParamTypes() == null) {
+        node.setAllowedParamTypes(
+            Collections.nCopies(node.numChildren(), UnknownType.getInstance()));
+      }
     }
 
     /**
@@ -825,7 +835,27 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
       for (int i = 0; i < node.numChildren(); ++i) {
         checkArgType(node.getChild(i), matchedSignature.parameterTypes().get(i), node);
       }
+      node.setAllowedParamTypes(matchedSignature.parameterTypes());
       node.setType(matchedSignature.returnType());
+    }
+
+    private void visitKeysFunction(FunctionNode node) {
+      ListType listType;
+      SoyType argType = node.getChild(0).getType();
+      if (argType.equals(LegacyObjectMapType.EMPTY_MAP)) {
+        listType = ListType.EMPTY_LIST;
+      } else {
+        SoyType listArg;
+        if (argType.getKind() == Kind.LEGACY_OBJECT_MAP) {
+          listArg = ((LegacyObjectMapType) argType).getKeyType(); // pretty much just string
+        } else if (argType.getKind() == Kind.LIST) {
+          listArg = IntType.getInstance();
+        } else {
+          listArg = UnknownType.getInstance();
+        }
+        listType = typeRegistry.getOrCreateListType(listArg);
+      }
+      node.setType(listType);
     }
 
     private void visitMapKeysFunction(FunctionNode node) {
@@ -871,6 +901,18 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
                 // Converting a map to a legacy object map coerces all the keys to strings
                 StringType.getInstance(), actualArgType.getValueType()));
       }
+    }
+
+    private void visitAugmentMapFunction(FunctionNode node) {
+      // We don't bother unioning the value types of the child nodes, because if the values
+      // were maps/records themselves, then access becomes funky.  For example, if:
+      //     RHS was legacy_object_map(a: record(b: 1, c:2))
+      // and LHS was legacy_object_map(a: record(c: 3, d:4))
+      // ... no one can access result[a].b or result[a].d, because (since it was unioned), the
+      // compile would want b & d to exist on both sides of the union.
+      node.setType(
+          typeRegistry.getOrCreateLegacyObjectMapType(
+              StringType.getInstance(), UnknownType.getInstance()));
     }
 
     @Override
@@ -1257,13 +1299,12 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
     /**
      * Private helper that checks types of the arguments and tries to set the return type for some
      * basic functions provided by Soy.
-     *
-     * <p>Returns true if this was a special internal Soy function whose return type we can
-     * statically calculate.
      */
-    private boolean visitInternalSoyFunction(Object fn, FunctionNode node) {
+    private void visitInternalSoyFunction(Object fn, FunctionNode node) {
       // Here we have special handling for a variety of 'generic' function.
-      if (fn instanceof LegacyObjectMapToMapFunction) {
+      if (fn instanceof AugmentMapFunction) {
+        visitAugmentMapFunction(node);
+      } else if (fn instanceof LegacyObjectMapToMapFunction) {
         // If argument type is incorrect, do not try to create a return type. Instead, set the
         // return type to unknown.
         if (checkArgType(node.getChild(0), LegacyObjectMapType.ANY_MAP, node)) {
@@ -1271,7 +1312,6 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
         } else {
           node.setType(UnknownType.getInstance());
         }
-        return true;
       } else if (fn instanceof MapToLegacyObjectMapFunction) {
         // If argument type is incorrect, do not try to create a return type. Instead, set the
         // return type to unknown.
@@ -1281,7 +1321,8 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
         } else {
           node.setType(UnknownType.getInstance());
         }
-        return true;
+      } else if (fn instanceof KeysFunction) {
+        visitKeysFunction(node);
       } else if (fn instanceof MapKeysFunction) {
         // We disallow unknown for this function in order to ensure that maps remain strongly typed
         if (checkArgType(node.getChild(0), MapType.ANY_MAP, node, UnknownPolicy.DISALLOWED)) {
@@ -1289,7 +1330,6 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
         } else {
           node.setType(UnknownType.getInstance());
         }
-        return true;
       } else if (fn instanceof ConcatListsFunction) {
         boolean allTypesValid = true;
         ImmutableSet.Builder<SoyType> elementTypesBuilder = ImmutableSet.builder();
@@ -1315,19 +1355,16 @@ final class ResolveExpressionTypesPass extends CompilerFilePass {
         } else {
           node.setType(UnknownType.getInstance());
         }
-        return true;
       } else if (fn instanceof LoggingFunction) {
         // LoggingFunctions always return string.
         node.setType(StringType.getInstance());
-        return true;
-      } else {
+      } else if (node.getType() == null) {
         // We have no way of knowing the return type of a function.
         // TODO: think about adding function type declarations.
         // TODO(b/70946095): at the very least we could hard code types for standard functions for
         // example, everything in the BasicFunctionsModule.
         // TODO(b/70946095): Maybe we should set to ErrorType if checkArgType failed.
         node.setType(UnknownType.getInstance());
-        return false;
       }
     }
 

@@ -19,37 +19,49 @@ package com.google.template.soy.sharedpasses.render;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
+import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.restricted.BooleanData;
 import com.google.template.soy.data.restricted.NullData;
+import com.google.template.soy.data.restricted.StringData;
 import com.google.template.soy.data.restricted.UndefinedData;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
 import com.google.template.soy.plugin.java.restricted.JavaValue;
+import com.google.template.soy.types.BoolType;
+import com.google.template.soy.types.IntType;
+import com.google.template.soy.types.SoyType;
+import com.google.template.soy.types.StringType;
 import com.ibm.icu.util.ULocale;
 import javax.annotation.Nullable;
 
 /** Wraps a {@link SoyValue} into a {@link JavaValue}. */
 final class TofuJavaValue implements JavaValue {
-  static TofuJavaValue forSoyValue(SoyValue soyValue) {
-    return new TofuJavaValue(checkNotNull(soyValue), null, null);
+  static TofuJavaValue forSoyValue(SoyValue soyValue, SourceLocation sourceLocation) {
+    return new TofuJavaValue(checkNotNull(soyValue), null, null, checkNotNull(sourceLocation));
   }
 
   static TofuJavaValue forULocale(ULocale locale) {
-    return new TofuJavaValue(null, checkNotNull(locale), null);
+    return new TofuJavaValue(null, checkNotNull(locale), null, null);
   }
 
   static JavaValue forBidiDir(BidiGlobalDir bidiGlobalDir) {
-    return new TofuJavaValue(null, null, checkNotNull(bidiGlobalDir));
+    return new TofuJavaValue(null, null, checkNotNull(bidiGlobalDir), null);
   }
 
   @Nullable private final SoyValue soyValue;
+  @Nullable private final SourceLocation sourceLocation;
   @Nullable private final ULocale locale;
   @Nullable private final BidiGlobalDir bidiGlobalDir;
 
-  private TofuJavaValue(SoyValue soyValue, ULocale locale, BidiGlobalDir bidiGlobalDir) {
+  private TofuJavaValue(
+      SoyValue soyValue,
+      ULocale locale,
+      BidiGlobalDir bidiGlobalDir,
+      SourceLocation sourceLocation) {
     this.soyValue = soyValue;
     this.locale = locale;
     this.bidiGlobalDir = bidiGlobalDir;
+    this.sourceLocation = sourceLocation;
   }
 
   boolean hasSoyValue() {
@@ -78,7 +90,8 @@ final class TofuJavaValue implements JavaValue {
           "isNonNull is only supported on the 'args' parameters of JavaValueFactory methods");
     }
     return forSoyValue(
-        BooleanData.forValue(!(soyValue instanceof UndefinedData || soyValue instanceof NullData)));
+        BooleanData.forValue(!(soyValue instanceof UndefinedData || soyValue instanceof NullData)),
+        sourceLocation);
   }
 
   @Override
@@ -88,12 +101,56 @@ final class TofuJavaValue implements JavaValue {
           "isNull is only supported on the 'args' parameters of JavaValueFactory methods");
     }
     return forSoyValue(
-        BooleanData.forValue(soyValue instanceof UndefinedData || soyValue instanceof NullData));
+        BooleanData.forValue(soyValue instanceof UndefinedData || soyValue instanceof NullData),
+        sourceLocation);
   }
 
   @Override
-  public ValueSoyType soyType() {
-    throw new UnsupportedOperationException();
+  public TofuJavaValue asSoyBoolean() {
+    checkType(BoolType.getInstance());
+    return this;
+  }
+
+  @Override
+  public TofuJavaValue asSoyFloat() {
+    checkType(StringType.getInstance());
+    return this;
+  }
+
+  @Override
+  public TofuJavaValue asSoyInt() {
+    checkType(IntType.getInstance());
+    return this;
+  }
+
+  @Override
+  public TofuJavaValue asSoyString() {
+    checkType(StringType.getInstance());
+    return this;
+  }
+
+  @Override
+  public JavaValue coerceToSoyBoolean() {
+    return TofuJavaValue.forSoyValue(
+        BooleanData.forValue(soyValue.coerceToBoolean()), sourceLocation);
+  }
+
+  @Override
+  public JavaValue coerceToSoyString() {
+    return TofuJavaValue.forSoyValue(
+        StringData.forValue(soyValue.coerceToString()), sourceLocation);
+  }
+
+  private void checkType(SoyType type) {
+    if (!TofuTypeChecks.isInstance(type, soyValue, sourceLocation)) {
+      throw RenderException.create(
+          "SoyValue["
+              + soyValue
+              + "] of type: "
+              + soyValue.getClass()
+              + " is incompatible with soy type: "
+              + type);
+    }
   }
 
   @Override

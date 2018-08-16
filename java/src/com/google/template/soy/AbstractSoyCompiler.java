@@ -28,12 +28,14 @@ import com.google.template.soy.conformance.ValidatedConformanceConfig;
 import com.google.template.soy.error.SoyCompilationException;
 import com.google.template.soy.logging.LoggingConfig;
 import com.google.template.soy.logging.ValidatedLoggingConfig;
+import com.google.template.soy.plugin.restricted.SoySourceFunction;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.PrintStream;
 import java.io.StringWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashSet;
@@ -108,6 +110,12 @@ abstract class AbstractSoyCompiler {
   private List<Module> pluginModules = new ArrayList<>();
 
   @Option(
+      name = "--pluginFunctions",
+      usage = "Specifies the full class names of SoySourceFunction plugins (comma-delimited list).",
+      handler = SoyCmdLineParser.SourceFunctionListOptionHandler.class)
+  private List<SoySourceFunction> sourceFunctions = new ArrayList<>();
+
+  @Option(
     name = "--protoFileDescriptors",
     usage =
         "Location of protocol buffer definitions in the form of a file descriptor set."
@@ -152,10 +160,17 @@ abstract class AbstractSoyCompiler {
   /** The remaining arguments after parsing command-line flags. */
   @Argument private final List<String> arguments = new ArrayList<>();
 
+  private final SoyCompilerFileReader soyCompilerFileReader;
+
   final ClassLoader pluginClassLoader;
 
-  AbstractSoyCompiler(ClassLoader pluginClassLoader) {
+  AbstractSoyCompiler(ClassLoader pluginClassLoader, SoyCompilerFileReader soyCompilerFileReader) {
     this.pluginClassLoader = pluginClassLoader;
+    this.soyCompilerFileReader = soyCompilerFileReader;
+  }
+
+  AbstractSoyCompiler(ClassLoader pluginClassLoader) {
+    this(pluginClassLoader, new FileSystemSoyFileReader());
   }
 
   AbstractSoyCompiler() {
@@ -212,20 +227,26 @@ abstract class AbstractSoyCompiler {
       exitWithError("Must provide list of source Soy files (--srcs).");
     }
 
-    List<Module> modules = new ArrayList<>();
-    modules.add(new SoyModule());
-    modules.addAll(pluginModules);
-    // TODO(lukes): Stage.PRODUCTION?
-    Injector injector = Guice.createInjector(modules);
+    SoyFileSet.Builder sfsBuilder;
+    if (!pluginModules.isEmpty()) {
+      // Only create the Builder through an Injector if the user passed pluginModules.
+      // Otherwise, we don't need to go through Guice at all.
+      List<Module> modules = new ArrayList<>();
+      modules.add(new SoyModule());
+      modules.addAll(pluginModules);
+      Injector injector = Guice.createInjector(modules);
+      sfsBuilder = injector.getInstance(SoyFileSet.Builder.class);
+    } else {
+      sfsBuilder = SoyFileSet.builder();
+    }
     ValidatedConformanceConfig conformanceConfig = parseConformanceConfig();
-    SoyFileSet.Builder sfsBuilder =
-        injector
-            .getInstance(SoyFileSet.Builder.class)
-            .setWarningSink(err)
-            .setConformanceConfig(conformanceConfig)
-            .setValidatedLoggingConfig(parseLoggingConfig())
-            // Set experimental features that are not generally available.
-            .setExperimentalFeatures(experimentalFeatures);
+    sfsBuilder
+        .addSourceFunctions(sourceFunctions)
+        .setWarningSink(err)
+        .setConformanceConfig(conformanceConfig)
+        .setValidatedLoggingConfig(parseLoggingConfig())
+        // Set experimental features that are not generally available.
+        .setExperimentalFeatures(experimentalFeatures);
 
     for (File protoFileDescriptor : protoFileDescriptors) {
       try {
@@ -246,7 +267,7 @@ abstract class AbstractSoyCompiler {
     if (disableOptimizer) {
       sfsBuilder.disableOptimizer();
     }
-    compile(sfsBuilder, injector);
+    compile(sfsBuilder);
   }
 
   private ValidatedConformanceConfig parseConformanceConfig() {
@@ -298,19 +319,6 @@ abstract class AbstractSoyCompiler {
    *
    * @param sfsBuilder The builder, already populated with sources, globals (if set) and plugins.
    *     subclasses may set additional compilation options on the builder.
-   * @param injector The injector
-   * @throws IOException
-   */
-  @ForOverride
-  void compile(SoyFileSet.Builder sfsBuilder, Injector injector) throws IOException {
-    compile(sfsBuilder);
-  }
-
-  /**
-   * Performs the actual compilation.
-   *
-   * @param sfsBuilder The builder, already populated with sources, globals (if set) and plugins.
-   *     subclasses may set additional compilation options on the builder.
    * @throws IOException
    */
   @ForOverride
@@ -335,7 +343,7 @@ abstract class AbstractSoyCompiler {
    * @param deps The deps from the --deps flag, or empty list if not applicable.
    * @param indirectDeps The deps from the --indirectDeps flag, or empty list if not applicable.
    */
-  private static void addSoyFilesToBuilder(
+  private void addSoyFilesToBuilder(
       SoyFileSet.Builder sfsBuilder,
       Collection<String> srcs,
       Collection<String> deps,
@@ -351,14 +359,12 @@ abstract class AbstractSoyCompiler {
     addAllIfNotPresent(sfsBuilder, SoyFileKind.INDIRECT_DEP, indirectDeps, soFar);
   }
 
-  private static void addAllIfNotPresent(
-      SoyFileSet.Builder builder,
-      SoyFileKind kind,
-      Collection<String> files,
-      Set<String> soFar) {
+  private void addAllIfNotPresent(
+      SoyFileSet.Builder builder, SoyFileKind kind, Collection<String> files, Set<String> soFar) {
     for (String file : files) {
       if (soFar.add(file)) {
-        builder.addWithKind(new File(file), kind);
+        builder.addWithKind(
+            soyCompilerFileReader.read(file).asCharSource(StandardCharsets.UTF_8), kind, file);
       }
     }
   }

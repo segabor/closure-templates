@@ -25,6 +25,7 @@ import com.google.template.soy.data.SoyDict;
 import com.google.template.soy.data.SoyLegacyObjectMap;
 import com.google.template.soy.data.SoyList;
 import com.google.template.soy.data.SoyMap;
+import com.google.template.soy.data.SoyMaps;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.SoyValueProvider;
 import com.google.template.soy.data.internal.DictImpl;
@@ -39,8 +40,13 @@ import java.util.Map;
 
 /** static functions for implementing the basic functions for java. */
 public final class BasicFunctionsRuntime {
-  /** Combine the two maps. */
-  public static SoyDict augmentMap(SoyDict first, SoyDict second) {
+  /**
+   * Combine the two maps -- for the JavaSource variant while the function signature is still ?
+   * instead of map.
+   */
+  public static SoyDict augmentMap(SoyValue sv1, SoyValue sv2) {
+    SoyDict first = (SoyDict) sv1;
+    SoyDict second = (SoyDict) sv2;
     Map<String, SoyValueProvider> map =
         Maps.newHashMapWithExpectedSize(first.getItemCnt() + second.getItemCnt());
     map.putAll(first.asJavaStringMap());
@@ -86,8 +92,12 @@ public final class BasicFunctionsRuntime {
     }
   }
 
-  /** Returns a list of all the keys in the given map. */
-  public static List<SoyValue> keys(SoyLegacyObjectMap map) {
+  /**
+   * Returns a list of all the keys in the given map. For the JavaSource variant, while the function
+   * signature is ? instead of legacy_object_map.
+   */
+  public static List<SoyValue> keys(SoyValue sv) {
+    SoyLegacyObjectMap map = (SoyLegacyObjectMap) sv;
     List<SoyValue> list = new ArrayList<>(map.getItemCnt());
     Iterables.addAll(list, map.getItemKeys());
     return list;
@@ -201,29 +211,37 @@ public final class BasicFunctionsRuntime {
     return list;
   }
 
-  public static boolean strContains(String left, SoyValue right) {
-    return left.contains(right.coerceToString());
+  public static boolean strContains(SoyValue left, String right) {
+    // TODO(b/74259210) -- Change the first param to String & avoid using stringValue().
+    return left.stringValue().contains(right);
   }
 
-  public static int strIndexOf(String left, String right) {
-    return left.indexOf(right);
+  public static int strIndexOf(SoyValue left, SoyValue right) {
+    // TODO(b/74259210) -- Change the params to String & avoid using stringValue().
+    return left.stringValue().indexOf(right.stringValue());
   }
 
-  public static int strLen(String str) {
-    return str.length();
+  public static int strLen(SoyValue str) {
+    // TODO(b/74259210) -- Change the param to String & avoid using stringValue().
+    return str.stringValue().length();
   }
 
-  public static String strSub(String str, int start) {
-    return str.substring(start);
+  public static String strSub(SoyValue str, int start) {
+    // TODO(b/74259210) -- Change the first param to String & avoid using stringValue().
+    return str.stringValue().substring(start);
   }
 
-  public static String strSub(String str, int start, int end) {
-    return str.substring(start, end);
+  public static String strSub(SoyValue str, int start, int end) {
+    // TODO(b/74259210) -- Change the first param to String & avoid using stringValue().
+    return str.stringValue().substring(start, end);
   }
 
-  // Note: This takes a SoyList (not a List), because for some reason we get compilation errors
-  // (when commenting out the jbcsrc variant) that inputs aren't a list:
-  public static int length(SoyList list) {
-    return list.length();
+  public static int length(List<?> list) {
+    return list.size();
+  }
+
+  @SuppressWarnings("deprecation")
+  public static SoyMap legacyObjectMapToMap(SoyValue value) {
+    return SoyMaps.legacyObjectMapToMap((SoyLegacyObjectMap) value);
   }
 }

@@ -16,17 +16,10 @@
 
 package com.google.template.soy.basicfunctions;
 
-import static com.google.template.soy.types.SoyTypes.NUMBER_TYPE;
-
 import com.google.common.collect.Lists;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.exprtree.Operator;
 import com.google.template.soy.internal.targetexpr.TargetExpr;
-import com.google.template.soy.jbcsrc.restricted.BytecodeUtils;
-import com.google.template.soy.jbcsrc.restricted.JbcSrcPluginContext;
-import com.google.template.soy.jbcsrc.restricted.MethodRef;
-import com.google.template.soy.jbcsrc.restricted.SoyExpression;
-import com.google.template.soy.jbcsrc.restricted.SoyJbcSrcFunction;
 import com.google.template.soy.jssrc.dsl.SoyJsPluginUtils;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcFunction;
@@ -44,7 +37,6 @@ import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
-import org.objectweb.asm.Type;
 
 /**
  * Soy function that rounds a number to a specified number of digits before or after the decimal
@@ -62,7 +54,7 @@ import org.objectweb.asm.Type;
     })
 @SoyPureFunction
 public final class RoundFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction, SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -165,18 +157,12 @@ public final class RoundFunction extends TypedSoyFunction
 
   // lazy singleton pattern, allows other backends to avoid the work.
   private static final class Methods {
-    static final MethodRef MATH_ROUND_REF =
-        MethodRef.create(Math.class, "round", double.class).asCheap();
-
     static final Method BOXED_ROUND_FN =
         JavaValueFactory.createMethod(BasicFunctionsRuntime.class, "round", SoyValue.class);
-    static final MethodRef BOXED_ROUND_FN_REF = MethodRef.create(BOXED_ROUND_FN).asNonNullable();
 
     static final Method BOXED_ROUND_WITH_NUM_DIGITS_AFTER_POINT_FN =
         JavaValueFactory.createMethod(
             BasicFunctionsRuntime.class, "round", SoyValue.class, int.class);
-    static final MethodRef BOXED_ROUND_WITH_NUM_DIGITS_AFTER_POINT_FN_REF =
-        MethodRef.create(BOXED_ROUND_WITH_NUM_DIGITS_AFTER_POINT_FN).asNonNullable();
   }
 
   @Override
@@ -186,16 +172,8 @@ public final class RoundFunction extends TypedSoyFunction
       return factory.callStaticMethod(Methods.BOXED_ROUND_FN, args.get(0));
     } else {
       return factory.callStaticMethod(
-          Methods.BOXED_ROUND_WITH_NUM_DIGITS_AFTER_POINT_FN, args.get(0), args.get(1));
+          Methods.BOXED_ROUND_WITH_NUM_DIGITS_AFTER_POINT_FN, args.get(0), args.get(1).asSoyInt());
     }
-  }
-
-  @Override
-  public SoyExpression computeForJbcSrc(JbcSrcPluginContext context, List<SoyExpression> args) {
-    if (args.size() == 1) {
-      return invokeRoundFunction(args.get(0));
-    }
-    return invokeRoundFunction(args.get(0), args.get(1));
   }
 
   /**
@@ -211,24 +189,5 @@ public final class RoundFunction extends TypedSoyFunction
     // FIXME implement the whole feature
 
     return new SwiftExpr("round(" + value.getText() + ")", Integer.MAX_VALUE);
-  }
-
-  private SoyExpression invokeRoundFunction(SoyExpression soyExpression) {
-    if (soyExpression.assignableToNullableInt()) {
-      return soyExpression;
-    }
-    if (soyExpression.assignableToNullableFloat()) {
-      return SoyExpression.forInt(
-          Methods.MATH_ROUND_REF.invoke(soyExpression.unboxAs(double.class)));
-    }
-    return SoyExpression.forInt(Methods.BOXED_ROUND_FN_REF.invoke(soyExpression.box()));
-  }
-
-  private SoyExpression invokeRoundFunction(SoyExpression value, SoyExpression digitsAfterPoint) {
-    return SoyExpression.forSoyValue(
-        NUMBER_TYPE,
-        Methods.BOXED_ROUND_WITH_NUM_DIGITS_AFTER_POINT_FN_REF.invoke(
-            value.box(),
-            BytecodeUtils.numericConversion(digitsAfterPoint.unboxAs(long.class), Type.INT_TYPE)));
   }
 }

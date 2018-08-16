@@ -16,11 +16,7 @@
 
 package com.google.template.soy.basicfunctions;
 
-import com.google.template.soy.jbcsrc.restricted.BytecodeUtils;
-import com.google.template.soy.jbcsrc.restricted.JbcSrcPluginContext;
-import com.google.template.soy.jbcsrc.restricted.MethodRef;
-import com.google.template.soy.jbcsrc.restricted.SoyExpression;
-import com.google.template.soy.jbcsrc.restricted.SoyJbcSrcFunction;
+import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.JsExprUtils;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcFunction;
@@ -38,7 +34,6 @@ import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
-import org.objectweb.asm.Type;
 
 /**
  * A function that determines the length of a string.
@@ -60,7 +55,7 @@ import org.objectweb.asm.Type;
     })
 @SoyPureFunction
 final class StrLenFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoyJbcSrcFunction, SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -77,22 +72,14 @@ final class StrLenFunction extends TypedSoyFunction
 
   // lazy singleton pattern, allows other backends to avoid the work.
   private static final class Methods {
-    static final MethodRef STRING_LENGTH_REF = MethodRef.create(String.class, "length");
     static final Method STR_LEN =
-        JavaValueFactory.createMethod(BasicFunctionsRuntime.class, "strLen", String.class);
+        JavaValueFactory.createMethod(BasicFunctionsRuntime.class, "strLen", SoyValue.class);
   }
 
   @Override
   public JavaValue applyForJavaSource(
       JavaValueFactory factory, List<JavaValue> args, JavaPluginContext context) {
     return factory.callStaticMethod(Methods.STR_LEN, args.get(0));
-  }
-
-  @Override
-  public SoyExpression computeForJbcSrc(JbcSrcPluginContext context, List<SoyExpression> args) {
-    return SoyExpression.forInt(
-        BytecodeUtils.numericConversion(
-            args.get(0).unboxAs(String.class).invoke(Methods.STRING_LENGTH_REF), Type.LONG_TYPE));
   }
 
   @Override

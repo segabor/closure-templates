@@ -28,7 +28,7 @@ import javax.annotation.concurrent.Immutable;
  *
  */
 @Immutable
-public abstract class TemplateParam extends AbstractVarDefn {
+public abstract class TemplateParam extends AbstractVarDefn implements TemplateHeaderVarDefn {
   /** Enum for the location of the declaration. */
   public static enum DeclLoc {
     // Declaration in template SoyDoc, e.g.
@@ -39,16 +39,14 @@ public abstract class TemplateParam extends AbstractVarDefn {
     HEADER,
   }
 
+  private final SourceLocation nameLocation;
+  private final String desc;
+
   /** Whether the param is required. */
   private final boolean isRequired;
 
-  private final SourceLocation nameLocation;
-
   /** Whether the param is an injected param. */
   private final boolean isInjected;
-
-  /** The parameter description. */
-  private final String desc;
 
   public TemplateParam(
       String name,
@@ -77,30 +75,24 @@ public abstract class TemplateParam extends AbstractVarDefn {
     return Kind.PARAM;
   }
 
-  /**
-   * Returns the location of the name.
-   *
-   * <p>May be null if this is a param from a {@link #copyEssential()} call.
-   */
-  public SourceLocation nameLocation() {
-    return nameLocation;
-  }
-
-  /** Returns the location of the parameter declaration. */
-  public abstract DeclLoc declLoc();
-
-  /** Returns whether the param is required. */
-  public boolean isRequired() {
-    return isRequired;
-  }
-
-  /** Returns whether the param is required. */
+  /** Returns whether the param is an injected (declared with {@code @inject}) or not. */
   @Override
   public boolean isInjected() {
     return isInjected;
   }
 
-  public String desc() {
+  @Override
+  public @Nullable SourceLocation nameLocation() {
+    return nameLocation;
+  }
+
+  @Override
+  public boolean isRequired() {
+    return isRequired;
+  }
+
+  @Override
+  public @Nullable String desc() {
     return desc;
   }
 
@@ -108,6 +100,9 @@ public abstract class TemplateParam extends AbstractVarDefn {
   public String toString() {
     return getClass().getSimpleName() + "{name = " + name() + ", desc = " + desc + "}";
   }
+
+  /** Returns the location of the parameter declaration. */
+  public abstract DeclLoc declLoc();
 
   public abstract TemplateParam copyEssential();
 }

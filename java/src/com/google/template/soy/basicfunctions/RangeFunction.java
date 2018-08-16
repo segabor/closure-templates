@@ -19,12 +19,6 @@ import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
-import com.google.template.soy.jbcsrc.restricted.BytecodeUtils;
-import com.google.template.soy.jbcsrc.restricted.Expression;
-import com.google.template.soy.jbcsrc.restricted.JbcSrcPluginContext;
-import com.google.template.soy.jbcsrc.restricted.MethodRef;
-import com.google.template.soy.jbcsrc.restricted.SoyExpression;
-import com.google.template.soy.jbcsrc.restricted.SoyJbcSrcFunction;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyLibraryAssistedJsSrcFunction;
 import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
@@ -39,11 +33,8 @@ import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
 import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
-import com.google.template.soy.types.IntType;
-import com.google.template.soy.types.ListType;
 import java.lang.reflect.Method;
 import java.util.List;
-import org.objectweb.asm.Type;
 
 /**
  * The Range function takes 1-3 arguments and generates a sequence of integers, like the python
@@ -58,6 +49,7 @@ import org.objectweb.asm.Type;
  */
 @SoyFunctionSignature(
     name = "range",
+    // TODO(b/70946095): params should be an 'int', not a 'number'
     value = {
       @Signature(
           parameterTypes = {"number"},
@@ -70,25 +62,18 @@ import org.objectweb.asm.Type;
           returnType = "list<int>")
     })
 public final class RangeFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction,
-        SoyLibraryAssistedJsSrcFunction,
-        SoyPySrcFunction,
-        SoyJbcSrcFunction,
-        SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyLibraryAssistedJsSrcFunction, SoyPySrcFunction, SoySwiftSrcFunction {
 
   private static final class Methods {
     static final Method RANGE_1 =
         JavaValueFactory.createMethod(BasicFunctionsRuntime.class, "range", int.class);
-    static final MethodRef RANGE_1_REF = MethodRef.create(RANGE_1).asNonNullable();
 
     static final Method RANGE_2 =
         JavaValueFactory.createMethod(BasicFunctionsRuntime.class, "range", int.class, int.class);
-    static final MethodRef RANGE_2_REF = MethodRef.create(RANGE_2).asNonNullable();
 
     static final Method RANGE_3 =
         JavaValueFactory.createMethod(
             BasicFunctionsRuntime.class, "range", int.class, int.class, int.class);
-    static final MethodRef RANGE_3_REF = MethodRef.create(RANGE_3).asNonNullable();
   }
 
   @Override
@@ -96,36 +81,19 @@ public final class RangeFunction extends TypedSoyFunction
       JavaValueFactory factory, List<JavaValue> args, JavaPluginContext context) {
     switch (args.size()) {
       case 1:
-        return factory.callStaticMethod(Methods.RANGE_1, args.get(0));
+        return factory.callStaticMethod(Methods.RANGE_1, args.get(0).asSoyInt());
       case 2:
-        return factory.callStaticMethod(Methods.RANGE_2, args.get(0), args.get(1));
+        return factory.callStaticMethod(
+            Methods.RANGE_2, args.get(0).asSoyInt(), args.get(1).asSoyInt());
       case 3:
-        return factory.callStaticMethod(Methods.RANGE_3, args.get(0), args.get(1), args.get(2));
+        return factory.callStaticMethod(
+            Methods.RANGE_3,
+            args.get(0).asSoyInt(),
+            args.get(1).asSoyInt(),
+            args.get(2).asSoyInt());
       default:
         throw new AssertionError();
     }
-  }
-
-  @Override
-  public SoyExpression computeForJbcSrc(JbcSrcPluginContext context, List<SoyExpression> args) {
-    ListType intList = ListType.of(IntType.getInstance());
-    switch (args.size()) {
-      case 1:
-        return SoyExpression.forList(intList, Methods.RANGE_1_REF.invoke(asInt(args.get(0))));
-      case 2:
-        return SoyExpression.forList(
-            intList, Methods.RANGE_2_REF.invoke(asInt(args.get(0)), asInt(args.get(1))));
-      case 3:
-        return SoyExpression.forList(
-            intList,
-            Methods.RANGE_3_REF.invoke(asInt(args.get(0)), asInt(args.get(1)), asInt(args.get(2))));
-      default:
-        throw new AssertionError();
-    }
-  }
-
-  private static Expression asInt(SoyExpression soyExpression) {
-    return BytecodeUtils.numericConversion(soyExpression.unboxAs(long.class), Type.INT_TYPE);
   }
 
   @Override
