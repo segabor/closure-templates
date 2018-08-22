@@ -11,7 +11,6 @@ import com.google.template.soy.base.internal.SanitizedContentKind;
 import com.google.template.soy.data.internalutils.NodeContentKinds;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.ExprRootNode;
-import com.google.template.soy.pysrc.restricted.SoyPySrcPrintDirective;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
 import com.google.template.soy.soytree.AbstractReturningSoyNodeVisitor;
 import com.google.template.soy.soytree.CallBasicNode;
@@ -190,7 +189,7 @@ public class GenSwiftCallExprVisitor extends AbstractReturningSoyNodeVisitor<Swi
     Map<SwiftExpr, SwiftExpr> additionalParams = new LinkedHashMap<>();
 
     for (CallParamNode child : callNode.getChildren()) {
-      SwiftExpr key = new SwiftStringExpr("'" + child.getKey().identifier() + "'");
+      SwiftExpr key = new SwiftStringExpr("\"" + child.getKey().identifier() + "\"");
 
       if (child instanceof CallParamValueNode) {
         CallParamValueNode cpvn = (CallParamValueNode) child;
@@ -260,7 +259,7 @@ public class GenSwiftCallExprVisitor extends AbstractReturningSoyNodeVisitor<Swi
     // Successively wrap each escapedExpr in various directives.
     for (SoyPrintDirective directive : directives) {
       Preconditions.checkState(
-          directive instanceof SoyPySrcPrintDirective,
+          directive instanceof SoySwiftSrcPrintDirective,
           "Autoescaping produced a bogus directive: %s",
           directive.getName());
       escapedExpr =
