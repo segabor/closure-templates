@@ -31,6 +31,8 @@ import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -61,7 +63,7 @@ import java.util.List;
     })
 @SoyPureFunction
 final class StrSubFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction {
+    implements SoyJavaSourceFunction, SoyJsSrcFunction, SoyPySrcFunction, SoySwiftSrcFunction {
 
   @Override
   public JsExpr computeForJsSrc(List<JsExpr> args) {
@@ -109,5 +111,19 @@ final class StrSubFunction extends TypedSoyFunction
     }
     return factory.callStaticMethod(
         Methods.STR_SUB_START_END, args.get(0), args.get(1).asSoyInt(), args.get(2).asSoyInt());
+  }
+
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    String base = args.get(0).toSwiftString().getText();
+    SwiftExpr start = args.get(1);
+    SwiftExpr end = args.size() == 3 ? args.get(2) : null;
+
+    String subStringExprTemplate =
+        "%s[%s.index(%s.startIndex, offsetBy: %d) ..< %s.index(%s.startIndex, offsetBy: %d)]";
+
+    return new SwiftExpr(
+        String.format(subStringExprTemplate, base, base, base, start, base, base, end),
+        Integer.MAX_VALUE);
   }
 }
