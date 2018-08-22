@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.SortedSet;
 import java.util.TreeSet;
-
 import com.google.auto.value.AutoValue;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -15,7 +14,6 @@ import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.Operator;
-import com.google.template.soy.pysrc.restricted.PyExprUtils;
 import com.google.template.soy.shared.internal.FindCalleesNotInFileVisitor;
 import com.google.template.soy.soytree.AbstractSoyNodeVisitor;
 import com.google.template.soy.soytree.CallBasicNode;
@@ -46,6 +44,7 @@ import com.google.template.soy.soytree.VeLogNode;
 import com.google.template.soy.swiftsrc.SoySwiftSrcOptions;
 import com.google.template.soy.swiftsrc.internal.GenSwiftExprsVisitor.GenSwiftExprsVisitorFactory;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
+import com.google.template.soy.swiftsrc.restricted.SwiftExprUtils;
 import com.google.template.soy.swiftsrc.restricted.SwiftFunctionExprBuilder;
 
 public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
@@ -212,7 +211,9 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       // Add code to define Python namespaces and add import calls for libraries.
       swiftCodeBuilder.appendLine();
       addCodeToRequireGeneralDeps();
-      addCodeToRequireSoyNamespaces(node);
+      //addCodeToRequireSoyNamespaces(node);
+
+      // Add debug support
       /* if (SoyTreeUtils.hasNodesOfType(node, DebuggerNode.class)) {
         swiftCodeBuilder.appendLine("import pdb");
       } */
@@ -277,6 +278,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
      * runtime.register_delegate_fn('delname', 'delvariant', 0, myfunc, 'myfunc')
      * </pre>
      */
+    // FIXME
     @Override
     protected void visitTemplateDelegateNode(TemplateDelegateNode node) {
       // Generate the template first, before registering the delegate function.
@@ -338,9 +340,9 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
           SwiftExpr condPyExpr = translator.exec(icn.getExpr());
 
           if (icn.getCommandName().equals("if")) {
-            swiftCodeBuilder.appendLine("if ", condPyExpr.getText(), ":");
+            swiftCodeBuilder.appendLine("if ", condPyExpr.getText(), " {");
           } else {
-            swiftCodeBuilder.appendLine("elif ", condPyExpr.getText(), ":");
+            swiftCodeBuilder.appendLine("} else if ", condPyExpr.getText(), " {");
           }
 
           swiftCodeBuilder.increaseIndent();
@@ -348,7 +350,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
           swiftCodeBuilder.decreaseIndent();
 
         } else if (child instanceof IfElseNode) {
-          swiftCodeBuilder.appendLine("else:");
+          swiftCodeBuilder.appendLine("} else {");
           swiftCodeBuilder.increaseIndent();
           visitChildren((IfElseNode) child);
           swiftCodeBuilder.decreaseIndent();
@@ -390,6 +392,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
      *     ...
      * </pre>
      */
+    // FIXME
     @Override
     protected void visitSwitchNode(SwitchNode node) {
       // Run the switch value creation first to ensure side effects always occur.
@@ -483,14 +486,15 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       // Define list variable
       TranslateToSwiftExprVisitor translator =
           new TranslateToSwiftExprVisitor(localVarExprs, errorReporter);
+      
       SwiftExpr dataRefPyExpr = translator.exec(node.getExpr());
-      swiftCodeBuilder.appendLine(listVarName, " = ", dataRefPyExpr.getText());
+      // swiftCodeBuilder.appendLine(listVarName, " = ", dataRefPyExpr.getText());
 
       // If has 'ifempty' node, add the wrapper 'if' statement.
       boolean hasIfemptyNode = node.numChildren() == 2;
       if (hasIfemptyNode) {
         // Empty lists are falsy in Python.
-        swiftCodeBuilder.appendLine("if ", listVarName, ":");
+        swiftCodeBuilder.appendLine("if let ", listVarName, " = " + dataRefPyExpr.getText() + " {");
         swiftCodeBuilder.increaseIndent();
       }
 
@@ -500,7 +504,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       // If has 'ifempty' node, add the 'else' block of the wrapper 'if' statement.
       if (hasIfemptyNode) {
         swiftCodeBuilder.decreaseIndent();
-        swiftCodeBuilder.appendLine("else:");
+        swiftCodeBuilder.appendLine("} else {");
         swiftCodeBuilder.increaseIndent();
 
         // Generate code for empty case.
@@ -508,6 +512,8 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
         swiftCodeBuilder.decreaseIndent();
       }
+
+      swiftCodeBuilder.appendLine("}");
     }
 
     /**
@@ -544,18 +550,18 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
       // Create the loop with an enumeration.
       swiftCodeBuilder.appendLine(
-          "for ", indexVarName, ", ", dataVarName, " in enumerate(", listVarName, "):");
+          "for (", indexVarName, ", ", dataVarName, ") in ", listVarName, ".enumerated() {");
       swiftCodeBuilder.increaseIndent();
 
       // Add a new localVarExprs frame and populate it with the translations from this loop.
-      int eqPrecedence = PyExprUtils.pyPrecedenceForOperator(Operator.EQUAL);
+      int eqPrecedence = SwiftExprUtils.swiftPrecedenceForOperator(Operator.EQUAL);
       localVarExprs.pushFrame();
       localVarExprs
           .addVariable(baseVarName, new SwiftExpr(dataVarName, Integer.MAX_VALUE))
-          .addVariable(baseVarName + "__isFirst", new SwiftExpr(indexVarName + " == 0", eqPrecedence))
+          .addVariable(baseVarName + "__isFirst", new SwiftExpr(indexVarName + " == " + listVarName + ".startIndex", eqPrecedence))
           .addVariable(
               baseVarName + "__isLast",
-              new SwiftExpr(indexVarName + " == len(" + listVarName + ") - 1", eqPrecedence))
+              new SwiftExpr(indexVarName + " == " + listVarName + ".endIndex-1", eqPrecedence))
           .addVariable(baseVarName + "__index", new SwiftExpr(indexVarName, Integer.MAX_VALUE));
 
       // Generate the code for the loop body.
@@ -566,6 +572,9 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
       // The end of the Python 'for' loop.
       swiftCodeBuilder.decreaseIndent();
+
+      // close for loop
+      swiftCodeBuilder.appendLine("}");
     }
 
     @Override
@@ -686,6 +695,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       swiftCodeBuilder.popOutputVar();
     }
 
+    // FIXME
     @Override
     protected void visitVeLogNode(VeLogNode node) {
       if (node.getLogonlyExpression() != null) {
@@ -822,22 +832,23 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
       localVarExprs.popFrame();
     }
-	  }
+  }
 
-	  @AutoValue
-	  abstract static class NamespaceAndName {
-	    static NamespaceAndName fromModule(String moduleName) {
-	      String namespace = moduleName;
-	      String name = moduleName;
-	      int lastDotIndex = moduleName.lastIndexOf('.');
-	      if (lastDotIndex != -1) {
-	        namespace = moduleName.substring(0, lastDotIndex);
-	        name = moduleName.substring(lastDotIndex + 1);
-	      }
-	      return new AutoValue_GenSwiftCodeVisitor_NamespaceAndName(namespace, name);
-	    }
+  @AutoValue
+  abstract static class NamespaceAndName {
+    static NamespaceAndName fromModule(String moduleName) {
+      String namespace = moduleName;
+      String name = moduleName;
+      int lastDotIndex = moduleName.lastIndexOf('.');
+      if (lastDotIndex != -1) {
+        namespace = moduleName.substring(0, lastDotIndex);
+        name = moduleName.substring(lastDotIndex + 1);
+      }
+      return new AutoValue_GenSwiftCodeVisitor_NamespaceAndName(namespace, name);
+    }
 
-	    abstract String namespace();
+    abstract String namespace();
 
-	    abstract String name();
-	  }}
+    abstract String name();
+  }
+}
