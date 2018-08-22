@@ -117,7 +117,7 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
    * generates
    *
    * <pre>
-   *   'I\'m feeling lucky!'
+   *   "I\'m feeling lucky!"
    * </pre>
    */
   @Override
@@ -193,6 +193,7 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
       SwiftExpr fallbackMsg = generateMsgFunc(node.getFallbackMsg());
 
       // Build Python ternary expression: a if cond else c
+      // FIXME
       pyExprTextSb.append(msg.getText()).append(" if ");
 
       // The fallback message is only used if the first message is not available, but the fallback

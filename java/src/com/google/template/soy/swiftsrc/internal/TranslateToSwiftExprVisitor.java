@@ -365,6 +365,7 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
     }
   }
 
+  // FIXME
   private SwiftExpr visitNonPluginFunction(FunctionNode node, BuiltinFunction nonpluginFn) {
     switch (nonpluginFn) {
       case IS_FIRST:
