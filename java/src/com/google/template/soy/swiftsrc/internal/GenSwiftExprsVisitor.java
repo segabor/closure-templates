@@ -256,7 +256,9 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
         // <conditional> ? <true> : <false> to
         // <true> if <conditional> else <false>
         SwiftExpr condBlock = SwiftExprUtils.concatSwiftExprs(genSwiftExprsVisitor.exec(icn)).toSwiftString();
+        translator.flipConditionalMode();
         SwiftExpr condPyExpr = translator.exec(icn.getExpr());
+        translator.flipConditionalMode();
 //            SwiftExprUtils.maybeProtect(
 //                condBlock, SwiftExprUtils.swiftPrecedenceForOperator(Operator.CONDITIONAL));
         // swiftExprTextSb.append(condBlock.getText());
