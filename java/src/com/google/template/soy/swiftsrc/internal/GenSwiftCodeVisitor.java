@@ -337,12 +337,15 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       for (SoyNode child : node.getChildren()) {
         if (child instanceof IfCondNode) {
           IfCondNode icn = (IfCondNode) child;
-          SwiftExpr condPyExpr = translator.exec(icn.getExpr());
+
+          translator.flipConditionalMode();
+          SwiftExpr condSwiftExpr = translator.exec(icn.getExpr());
+          translator.flipConditionalMode();
 
           if (icn.getCommandName().equals("if")) {
-            swiftCodeBuilder.appendLine("if ", condPyExpr.getText(), " {");
+            swiftCodeBuilder.appendLine("if ", condSwiftExpr.getText(), " {");
           } else {
-            swiftCodeBuilder.appendLine("} else if ", condPyExpr.getText(), " {");
+            swiftCodeBuilder.appendLine("} else if ", condSwiftExpr.getText(), " {");
           }
 
           swiftCodeBuilder.increaseIndent();
