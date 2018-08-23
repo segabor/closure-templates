@@ -284,10 +284,6 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
       }
     }
 
-    if (!hasElse) {
-    	  swiftExprTextSb.append("\"\"");
-    }
-
     // By their nature, inline'd conditionals can only contain output strings, so they can be
     // treated as a string type with a conditional precedence.
     swiftExprs.add(
