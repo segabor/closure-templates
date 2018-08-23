@@ -6,6 +6,8 @@ import java.util.List;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
+import com.google.template.soy.base.internal.BaseUtils;
+import com.google.template.soy.base.internal.QuoteStyle;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.exprtree.ExprRootNode;
@@ -123,8 +125,7 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
   @Override
   protected void visitRawTextNode(RawTextNode node) {
     // Escape special characters in the text before writing as a string.
-	// FIXME: proper escaping due to https://developer.apple.com/library/content/documentation/Swift/Conceptual/Swift_Programming_Language/StringsAndCharacters.html#//apple_ref/doc/uid/TP40014097-CH7-ID295
-    String exprText = "\""+node.getRawText()+"\"";
+    String exprText = BaseUtils.escapeToSoyString(node.getRawText(), false, QuoteStyle.DOUBLE);
     swiftExprs.add(new SwiftStringExpr(exprText));
   }
 
