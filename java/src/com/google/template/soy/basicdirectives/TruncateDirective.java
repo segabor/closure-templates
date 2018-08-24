@@ -166,6 +166,7 @@ final class TruncateDirective
     return fnBuilder.asPyStringExpr();
   }
 
+  // FIXME
   @Override
   public SwiftExpr applyForSwiftSrc(SwiftExpr value, List<SwiftExpr> args) {
     SwiftExpr input = value.toSwiftString();

@@ -134,6 +134,7 @@ public class GenSwiftCallExprVisitor extends AbstractReturningSoyNodeVisitor<Swi
    * @param node The delegate call node.
    * @return The call Python expression.
    */
+  // FIXME
   @Override
   protected SwiftExpr visitCallDelegateNode(CallDelegateNode node) {
     ExprRootNode variantSoyExpr = node.getDelCalleeVariantExpr();
@@ -224,6 +225,7 @@ public class GenSwiftCallExprVisitor extends AbstractReturningSoyNodeVisitor<Swi
 
     // Cases 2 and 3: Additional params with and without original data to pass.
     if (callNode.isPassingData()) {
+      // FIXME
       // make a shallow copy so we don't accidentally modify the param
       dataToPass = "dict(" + dataToPass + ")";
       return "runtime.merge_into_dict(" + dataToPass + ", " + additionalParamsExpr.getText() + ")";
