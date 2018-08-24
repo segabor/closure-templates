@@ -27,6 +27,7 @@ import com.google.template.soy.soytree.PrintNode;
 import com.google.template.soy.soytree.RawTextNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
+import com.google.template.soy.swiftsrc.internal.TranslateToSwiftExprVisitor.ConditionalEvaluationMode;
 import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcPrintDirective;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.google.template.soy.swiftsrc.restricted.SwiftExprUtils;
@@ -244,7 +245,7 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
     GenSwiftExprsVisitor genSwiftExprsVisitor =
         genSwiftExprsVisitorFactory.create(localVarExprs, errorReporter);
     TranslateToSwiftExprVisitor translator =
-        new TranslateToSwiftExprVisitor(localVarExprs, errorReporter);
+        new TranslateToSwiftExprVisitor(localVarExprs, errorReporter, ConditionalEvaluationMode.CONDITIONAL);
 
     StringBuilder swiftExprTextSb = new StringBuilder();
 
@@ -258,9 +259,8 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
         // <conditional> ? <true> : <false> to
         // <true> if <conditional> else <false>
         SwiftExpr condBlock = SwiftExprUtils.concatSwiftExprs(genSwiftExprsVisitor.exec(icn)).toSwiftString();
-        translator.flipConditionalMode();
         SwiftExpr condPyExpr = translator.exec(icn.getExpr());
-        translator.flipConditionalMode();
+
 //            SwiftExprUtils.maybeProtect(
 //                condBlock, SwiftExprUtils.swiftPrecedenceForOperator(Operator.CONDITIONAL));
         // swiftExprTextSb.append(condBlock.getText());

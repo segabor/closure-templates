@@ -66,7 +66,7 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
     NO
   }
 
-  private enum ConditionalEvaluationMode {
+  protected enum ConditionalEvaluationMode {
 	  NORMAL, CONDITIONAL, CONDITIONAL_NOT
   }
 
@@ -103,8 +103,13 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
   private ConditionalEvaluationMode conditionalEvaluationMode = ConditionalEvaluationMode.NORMAL;
   
   TranslateToSwiftExprVisitor(LocalVariableStack localVarExprs, ErrorReporter errorReporter) {
+    this(localVarExprs, errorReporter, ConditionalEvaluationMode.NORMAL);
+  }
+
+  TranslateToSwiftExprVisitor(LocalVariableStack localVarExprs, ErrorReporter errorReporter, ConditionalEvaluationMode conditionalEvaluationMode) {
     this.errorReporter = errorReporter;
     this.localVarExprs = localVarExprs;
+    this.conditionalEvaluationMode = conditionalEvaluationMode;
   }
 
   protected void flipConditionalMode() {
@@ -548,8 +553,6 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
    * @return a ternary conditional expression
    */
   private SwiftExpr genTernaryConditional(SwiftExpr conditionalExpr, SwiftExpr trueExpr, SwiftExpr falseExpr) {
-    // Python's ternary operator switches the order from <conditional> ? <true> : <false> to
-    // <true> if <conditional> else <false>.
     int conditionalPrecedence = SwiftExprUtils.swiftPrecedenceForOperator(Operator.CONDITIONAL);
     StringBuilder exprSb =
         new StringBuilder()
