@@ -106,14 +106,14 @@ public final class MsgFuncGenerator {
   }
 
   private SwiftStringExpr swiftFuncForRawTextMsg() {
-    String pyMsgText = processMsgPartsHelper(msgParts, escaperForPyFormatString);
+    String pyMsgText = processMsgPartsHelper(msgParts, escaperForSwiftormatString);
 
     prepareFunc.addArg(msgId).addArg(pyMsgText);
     return renderFunc.addArg(prepareFunc.asSwiftExpr()).asSwiftStringExpr();
   }
 
   private SwiftStringExpr swiftFuncForGeneralMsg() {
-    String pyMsgText = processMsgPartsHelper(msgParts, escaperForPyFormatString);
+    String pyMsgText = processMsgPartsHelper(msgParts, escaperForSwiftormatString);
     Map<SwiftExpr, SwiftExpr> nodePyVarToPyExprMap = collectVarNameListAndToPyExprMap();
 
     prepareFunc
@@ -135,8 +135,8 @@ public final class MsgFuncGenerator {
 
     for (Case<SoyMsgPluralCaseSpec> pluralCase : pluralPart.getCases()) {
       caseSpecStrToMsgTexts.put(
-          new SwiftStringExpr("'" + pluralCase.spec() + "'"),
-          new SwiftStringExpr("'" + processMsgPartsHelper(pluralCase.parts(), nullEscaper) + "'"));
+          new SwiftStringExpr("\"" + pluralCase.spec() + "\""),
+          new SwiftStringExpr("\"" + processMsgPartsHelper(pluralCase.parts(), nullEscaper) + "\""));
     }
 
     prepareFunc
@@ -213,7 +213,7 @@ public final class MsgFuncGenerator {
       }
 
       if (substPyExpr != null) {
-        nodePyVarToPyExprMap.put(new SwiftStringExpr("'" + entry.getKey() + "'"), substPyExpr);
+        nodePyVarToPyExprMap.put(new SwiftStringExpr("\"" + entry.getKey() + "\""), substPyExpr);
       }
     }
 
@@ -257,7 +257,7 @@ public final class MsgFuncGenerator {
    *
    * @see "https://docs.python.org/2/library/string.html#formatstrings"
    */
-  private static final Function<String, String> escaperForPyFormatString =
+  private static final Function<String, String> escaperForSwiftormatString =
       new Function<String, String>() {
         @Override
         public String apply(String str) {
