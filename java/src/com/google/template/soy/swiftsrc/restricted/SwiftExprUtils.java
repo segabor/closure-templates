@@ -14,7 +14,6 @@ import com.google.template.soy.exprtree.Operator.Spacer;
 import com.google.template.soy.exprtree.Operator.SyntaxElement;
 import com.google.template.soy.exprtree.Operator.Token;
 import com.google.template.soy.internal.targetexpr.TargetExpr;
-import com.google.template.soy.pysrc.restricted.PyExprUtils;
 
 public final class SwiftExprUtils {
   /** The variable name used to reference the current translator instance. */

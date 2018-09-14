@@ -309,7 +309,7 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
 
   @Override
   protected SwiftExpr visitOperatorNode(OperatorNode node) {
-    return genSwiftExprUsingSoySyntax(node);
+    return genSwiftExprUsingSoySyntax(node, null);
   }
 
   @Override
@@ -535,11 +535,10 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
    * @param opNode the OperatorNode whose subtree to generate a Python expression for
    * @return the generated Swift expression
    */
-  private SwiftExpr genSwiftExprUsingSoySyntax(OperatorNode opNode) {
+  private SwiftExpr genSwiftExprUsingSoySyntax(OperatorNode opNode, String tokenToOverride) {
     List<SwiftExpr> operandSwiftExprs = visitChildren(opNode);
-    String newExpr = SwiftExprUtils.genExprWithNewToken(opNode.getOperator(), operandSwiftExprs, null);
+    String newExpr = SwiftExprUtils.genExprWithNewToken(opNode.getOperator(), operandSwiftExprs, tokenToOverride);
 
-    // FIXME
     return new SwiftExpr(newExpr, SwiftExprUtils.swiftPrecedenceForOperator(opNode.getOperator()));
   }
 
@@ -577,7 +576,9 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
   @Override
   protected SwiftExpr visitNotOpNode(NotOpNode node) {
 	flipConditionalMode();
-    SwiftExpr expr = visitOperatorNode(node);
+
+    SwiftExpr expr = genSwiftExprUsingSoySyntax(node, "!");
+
 	flipConditionalMode();
 	return expr;
   }
