@@ -256,7 +256,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
           funcName,
           // These defaults are safe because soy only ever reads from these parameters.  If that
           // changes, bad things could happen.
-          "(_ data: [String:Any] = [:], _ ijData: [String:Any] = [:]) -> String {");
+          "(_ data: [String:CustomStringConvertible] = [:], _ ijData: [String:CustomStringConvertible] = [:]) -> String {");
       swiftCodeBuilder.increaseIndent();
 
       generateFunctionBody(node);
