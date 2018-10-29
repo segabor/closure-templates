@@ -46,6 +46,7 @@ import com.google.template.soy.swiftsrc.internal.GenSwiftExprsVisitor.GenSwiftEx
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.google.template.soy.swiftsrc.restricted.SwiftExprUtils;
 import com.google.template.soy.swiftsrc.restricted.SwiftFunctionExprBuilder;
+import com.google.template.soy.types.SoyType;
 
 public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
   private static final SoyErrorKind NON_NAMESPACED_TEMPLATE =
@@ -495,11 +496,19 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
       // If has 'ifempty' node, add the wrapper 'if' statement.
       boolean hasIfemptyNode = node.numChildren() == 2;
-      if (hasIfemptyNode) {
-        // Empty lists are falsy in Python.
-        swiftCodeBuilder.appendLine("if let ", listVarName, " = " + dataRefPyExpr.getText() + " {");
-        swiftCodeBuilder.increaseIndent();
+
+      // HACK - figure out what's being iterated
+      // TODO: infer correct Swift type from SoyType
+      ForNonemptyNode loopNode = (ForNonemptyNode) node.getChild(0);
+      String loopVarTypeSwift = "CustomStringConvertible"; // fall-back
+      SoyType loopVarType = loopNode.getVar().type();
+      if (loopVarType.getKind().isKnownStringOrSanitizedContent()) {
+        // Only string types are supported
+        loopVarTypeSwift = "String";
       }
+      
+      swiftCodeBuilder.appendLine("if let ", listVarName, " = " + dataRefPyExpr.getText() + " as? ["+loopVarTypeSwift+"] {");
+      swiftCodeBuilder.increaseIndent();
 
       // Generate code for nonempty case.
       visit(nonEmptyNode);
