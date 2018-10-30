@@ -329,6 +329,8 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     @Override
     protected void visitIfNode(IfNode node) {
       if (isComputableAsSwiftExprVisitor.exec(node)) {
+        // FIXME: it generates ugly result!
+        // This flag has been also turned off: IsComputableAsSwiftExprVisitor#visitIfCondNode
         swiftCodeBuilder.addToOutputVar(genSwiftExprsVisitor.exec(node));
         return;
       }
@@ -361,6 +363,8 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
         } else {
           throw new AssertionError("Unexpected if child node type. Child: " + child);
         }
+        
+        swiftCodeBuilder.appendLine("}");
       }
     }
 
