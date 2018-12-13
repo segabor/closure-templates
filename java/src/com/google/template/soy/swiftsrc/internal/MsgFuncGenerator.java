@@ -99,7 +99,7 @@ public final class MsgFuncGenerator {
    */
   SwiftStringExpr getSwiftExpr() {
     if (this.msgNode.isPlrselMsg()) {
-      return this.msgNode.isPluralMsg() ? swiftFuncForPluralMsg() : pyFuncForSelectMsg();
+      return this.msgNode.isPluralMsg() ? swiftFuncForPluralMsg() : swiftFuncForSelectMsg();
     } else {
       return this.msgNode.isRawTextMsg() ? swiftFuncForRawTextMsg() : swiftFuncForGeneralMsg();
     }
@@ -155,7 +155,7 @@ public final class MsgFuncGenerator {
         .asSwiftStringExpr();
   }
 
-  private SwiftStringExpr pyFuncForSelectMsg() {
+  private SwiftStringExpr swiftFuncForSelectMsg() {
     Map<SwiftExpr, SwiftExpr> nodeSwiftVarToPyExprMap = collectVarNameListAndToPyExprMap();
 
     ImmutableList<SoyMsgPart> msgPartsInIcuSyntax =

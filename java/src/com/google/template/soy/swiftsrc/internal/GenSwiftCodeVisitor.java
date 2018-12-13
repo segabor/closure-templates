@@ -650,6 +650,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
      *   boo3 = sanitize.SanitizedHtml(''.join(['Hello ', sanitize.escape_html(data.get('name'))])
      * </pre>
      */
+    // FIXME: type of sanitized content is undecided whether it is SoyValue or StringConvertible
     @Override
     protected void visitLetContentNode(LetContentNode node) {
       String generatedVarName = node.getUniqueVarName();
@@ -731,17 +732,12 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
     @Override
     protected void visitDebuggerNode(DebuggerNode node) {
-      swiftCodeBuilder.appendLine("pdb.set_trace()");
+      // TODO no debug option is designed yet
     }
 
     @Override
     protected void visitLogNode(LogNode node) {
-      String outputVarName = "logger_" + node.getId();
-      swiftCodeBuilder.pushOutputVar(outputVarName);
-      swiftCodeBuilder.initOutputVarIfNecessary();
-      visitChildren(node);
-      swiftCodeBuilder.popOutputVar();
-      swiftCodeBuilder.appendLine("print " + outputVarName);
+      // TODO
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -764,8 +760,6 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     /** Helper for visitSoyFileNode(SoyFileNode) to add code to require general dependencies. */
     private void addCodeToRequireGeneralDeps() {
       swiftCodeBuilder.appendLine("import Foundation");
-      swiftCodeBuilder.appendLine();
-
       swiftCodeBuilder.appendLine("import Soy");
       swiftCodeBuilder.appendLine();
 

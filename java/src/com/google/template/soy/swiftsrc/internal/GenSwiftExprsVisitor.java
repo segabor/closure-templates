@@ -195,7 +195,7 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
       SwiftExpr fallbackMsg = generateMsgFunc(node.getFallbackMsg());
 
       // Build Python ternary expression: a if cond else c
-      // FIXME
+      // FIXME transform python expression to swift analogue
       pyExprTextSb.append(msg.getText()).append(" if ");
 
       // The fallback message is only used if the first message is not available, but the fallback
