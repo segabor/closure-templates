@@ -200,14 +200,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       swiftCodeBuilder.appendLine(
           "//This file was automatically generated from ", node.getFileName(), ".");
       swiftCodeBuilder.appendLine("//Please don't edit this file by hand.");
-      swiftCodeBuilder.appendLine("//");
-      swiftCodeBuilder.appendLine("// SOY_NAMESPACE: '" + node.getNamespace() + "'.");
-
-      // Output a section containing optionally-parsed compiler directives in comments.
-      swiftCodeBuilder.appendLine("//");
-      if (node.getNamespace() != null) {
-        swiftCodeBuilder.appendLine("//Templates in namespace ", node.getNamespace(), ".");
-      }
+      swiftCodeBuilder.appendLine("");
 
       // Add code to define Python namespaces and add import calls for libraries.
       swiftCodeBuilder.appendLine();
@@ -219,12 +212,16 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
         swiftCodeBuilder.appendLine("import pdb");
       } */
 
+      swiftCodeBuilder.appendLine("fileprivate let SOY_SOURCE = \"" + node.getFileName() + "\"");
+      swiftCodeBuilder.appendLine("fileprivate let SOY_NAMESPACE = \"" + node.getNamespace() + "\"");
+      swiftCodeBuilder.appendLine("");
+
       // Add code for each template.
       for (TemplateNode template : node.getChildren()) {
         swiftCodeBuilder.appendLine().appendLine();
         visit(template);
       }
-
+      
       swiftFilesContents.add(swiftCodeBuilder.getCode());
       swiftCodeBuilder = null;
     }
