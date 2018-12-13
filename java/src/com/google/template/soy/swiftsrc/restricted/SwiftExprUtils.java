@@ -77,22 +77,18 @@ public final class SwiftExprUtils {
 
     StringBuilder resultSb = new StringBuilder();
 
-    // Use Python's list joining mechanism to speed up concatenation.
-    resultSb.append("[");
-
     boolean isFirst = true;
     for (SwiftExpr pyExpr : swiftExprs) {
 
       if (isFirst) {
         isFirst = false;
       } else {
-        resultSb.append(", ");
+        resultSb.append("+");
       }
 
       resultSb.append(pyExpr.toSwiftString().getText());
     }
 
-    resultSb.append("]");
     return new SwiftListExpr(resultSb.toString(), Integer.MAX_VALUE);
   }
 
