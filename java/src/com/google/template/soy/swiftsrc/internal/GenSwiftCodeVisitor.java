@@ -247,16 +247,20 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       localVarExprs = new LocalVariableStack();
       genSwiftExprsVisitor = genSwiftExprsVisitorFactory.create(localVarExprs, errorReporter);
 
-      // Generate function definition up to colon.
-      // FIXME: generate name for function like namespace_templName
-      final String funcName = GenSwiftCallExprVisitor.getLocalTemplateName(node);
+      final String swiftFuncName = GenSoyTemplateRendererName.makeFuncName(node);
 
+      // append doc
+      if (node.getSoyDoc() != null) {
+        swiftCodeBuilder.appendLine(node.getSoyDoc());
+      }
+      
       swiftCodeBuilder.appendLine(
-          "public func ",
-          funcName,
+          node.getVisibility().getAttributeValue() + " ",
+          "func ",
+          swiftFuncName,
           // These defaults are safe because soy only ever reads from these parameters.  If that
           // changes, bad things could happen.
-          "(_ data: [String:CustomStringConvertible] = [:], _ ijData: [String:CustomStringConvertible] = [:]) -> String {");
+          "(_ data: [String:SoyValue] = [:], _ ijData: [String:SoyValue] = [:]) -> String {");
       swiftCodeBuilder.increaseIndent();
 
       generateFunctionBody(node);

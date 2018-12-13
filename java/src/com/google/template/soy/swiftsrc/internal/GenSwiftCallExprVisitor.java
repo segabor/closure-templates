@@ -109,20 +109,8 @@ public class GenSwiftCallExprVisitor extends AbstractReturningSoyNodeVisitor<Swi
    */
   @Override
   protected SwiftExpr visitCallBasicNode(CallBasicNode node) {
-    String calleeName = node.getCalleeName();
-
-    // Build the Python expr text for the callee.
-    String calleeExprText;
-    TemplateBasicNode template = getTemplateIfInSameFile(node);
-    if (template != null) {
-      // If in the same module no namespace is required.
-      calleeExprText = getLocalTemplateName(template);
-    } else {
-      // If in another module, the module name is required along with the function name.
-      int secondToLastDotIndex = calleeName.lastIndexOf('.', calleeName.lastIndexOf('.') - 1);
-      calleeExprText = calleeName.substring(secondToLastDotIndex + 1);
-    }
-
+    String calleeExprText = GenSoyTemplateRendererName.makeFuncName(node);
+    
     String callExprText = calleeExprText + "(" + genObjToPass(node) + ", ijData)";
     return escapeCall(callExprText, node.getEscapingDirectives());
   }
