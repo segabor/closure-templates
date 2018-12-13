@@ -441,30 +441,23 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
 
   @Override
   protected SwiftExpr visitEqualOpNode(EqualOpNode node) {
-    // Python has stricter type casting rules during equality comparison. To get around this we
-    // use our custom utility to emulate the behavior of Soy/JS.
     List<SwiftExpr> operandPyExprs = visitChildren(node);
 
     return new SwiftExpr(
-        "runtime.type_safe_eq("
-            + operandPyExprs.get(0).getText()
-            + ", "
-            + operandPyExprs.get(1).getText()
-            + ")",
+            operandPyExprs.get(0).getText()
+            + " == "
+            + operandPyExprs.get(1).getText(),
         Integer.MAX_VALUE);
   }
 
   @Override
   protected SwiftExpr visitNotEqualOpNode(NotEqualOpNode node) {
-    // Invert type_safe_eq.
     List<SwiftExpr> operandPyExprs = visitChildren(node);
 
     return new SwiftExpr(
-        "not runtime.type_safe_eq("
-            + operandPyExprs.get(0).getText()
-            + ", "
-            + operandPyExprs.get(1).getText()
-            + ")",
+            operandPyExprs.get(0).getText()
+            + " != "
+            + operandPyExprs.get(1).getText(),
         SwiftExprUtils.swiftPrecedenceForOperator(Operator.NOT));
   }
   
