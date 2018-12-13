@@ -622,7 +622,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       // Generate code to define the local var.
       TranslateToSwiftExprVisitor translator = new TranslateToSwiftExprVisitor(localVarExprs, errorReporter);
       SwiftExpr valuePyExpr = translator.exec(node.getExpr());
-      swiftCodeBuilder.appendLine(generatedVarName, " = ", valuePyExpr.getText());
+      swiftCodeBuilder.appendLine("let ", generatedVarName, ": SoyValue = ", valuePyExpr.getText());
 
       // Add a mapping for generating future references to this local var.
       localVarExprs.addVariable(
@@ -667,8 +667,9 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
       // Mark the result as being escaped to the appropriate kind (e.g., "sanitize.SanitizedHtml").
       swiftCodeBuilder.appendLine(
+          "let ",
           generatedVarName,
-          " = ",
+          ": SoyValue = ",
           InternalSwiftExprUtils.wrapAsSanitizedContent(node.getContentKind(), generatedContent)
               .getText());
 
