@@ -364,9 +364,9 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
         } else {
           throw new AssertionError("Unexpected if child node type. Child: " + child);
         }
-        
-        swiftCodeBuilder.appendLine("}");
       }
+
+      swiftCodeBuilder.appendLine("}");
     }
 
     /**
