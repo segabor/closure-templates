@@ -521,10 +521,9 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
         // Generate code for empty case.
         visit(node.getChild(1));
-
-        swiftCodeBuilder.decreaseIndent();
       }
 
+      swiftCodeBuilder.decreaseIndent();
       swiftCodeBuilder.appendLine("}");
     }
 
