@@ -31,6 +31,8 @@ import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -53,7 +55,7 @@ import java.util.List;
           parameterTypes = {"?", "?"})
     })
 final class BidiDirAttrFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyLibraryAssistedJsSrcFunction, SoyPySrcFunction {
+    implements SoyJavaSourceFunction, SoyLibraryAssistedJsSrcFunction, SoyPySrcFunction, SoySwiftSrcFunction {
 
   /** Supplier for the current bidi global directionality. */
   private final Supplier<BidiGlobalDir> bidiGlobalDirProvider;
@@ -132,5 +134,22 @@ final class BidiDirAttrFunction extends TypedSoyFunction
             + ")";
 
     return new PyExpr(callText, Integer.MAX_VALUE);
+  }
+
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    // TODO
+    SwiftExpr value = args.get(0);
+    SwiftExpr isHtml = (args.size() == 2) ? args.get(1) : null;
+
+    String callText =
+        "soy.bidiDirAttr("
+            + bidiGlobalDirProvider.get().getCodeSnippet()
+            + ", "
+            + value.getText()
+            + (isHtml != null ? ", " + isHtml.getText() : "")
+            + ")";
+
+    return new SwiftExpr(callText, Integer.MAX_VALUE);
   }
 }

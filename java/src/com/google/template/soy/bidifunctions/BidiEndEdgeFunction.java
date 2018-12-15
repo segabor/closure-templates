@@ -32,6 +32,8 @@ import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -42,7 +44,7 @@ import java.util.List;
  */
 @SoyFunctionSignature(name = "bidiEndEdge", value = @Signature(returnType = "string"))
 final class BidiEndEdgeFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyLibraryAssistedJsSrcFunction, SoyPySrcFunction {
+    implements SoyJavaSourceFunction, SoyLibraryAssistedJsSrcFunction, SoyPySrcFunction, SoySwiftSrcFunction {
 
   /** Supplier for the current bidi global directionality. */
   private final Supplier<BidiGlobalDir> bidiGlobalDirProvider;
@@ -88,5 +90,18 @@ final class BidiEndEdgeFunction extends TypedSoyFunction
     return new PyExpr(
         "'left' if (" + bidiGlobalDir.getCodeSnippet() + ") < 0 else 'right'",
         PyExprUtils.pyPrecedenceForOperator(Operator.CONDITIONAL));
+  }
+
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    // TODO
+    BidiGlobalDir bidiGlobalDir = bidiGlobalDirProvider.get();
+    if (bidiGlobalDir.isStaticValue()) {
+      return new SwiftExpr(
+          (bidiGlobalDir.getStaticValue() < 0) ? "'left'" : "'right'", Integer.MAX_VALUE);
+    }
+    return new SwiftExpr(
+        "(" + bidiGlobalDir.getCodeSnippet() + ") < 0 ? 'left' : 'right'",
+        Operator.CONDITIONAL.getPrecedence());
   }
 }

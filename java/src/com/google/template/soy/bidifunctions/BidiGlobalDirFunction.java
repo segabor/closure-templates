@@ -32,6 +32,9 @@ import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
+import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
+import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
+import com.google.template.soy.swiftsrc.restricted.SwiftExprUtils;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -41,7 +44,7 @@ import java.util.List;
  */
 @SoyFunctionSignature(name = "bidiGlobalDir", value = @Signature(returnType = "int"))
 final class BidiGlobalDirFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyLibraryAssistedJsSrcFunction, SoyPySrcFunction {
+    implements SoyJavaSourceFunction, SoyLibraryAssistedJsSrcFunction, SoyPySrcFunction, SoySwiftSrcFunction {
 
   /** Supplier for the current bidi global directionality. */
   private final Supplier<BidiGlobalDir> bidiGlobalDirProvider;
@@ -82,5 +85,13 @@ final class BidiGlobalDirFunction extends TypedSoyFunction
     return new PyExpr(
         bidiGlobalDirProvider.get().getCodeSnippet(),
         PyExprUtils.pyPrecedenceForOperator(Operator.CONDITIONAL));
+  }
+  
+  @Override
+  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+    // TODO
+    return new SwiftExpr(
+        bidiGlobalDirProvider.get().getCodeSnippet(),
+        SwiftExprUtils.swiftPrecedenceForOperator(Operator.CONDITIONAL));
   }
 }

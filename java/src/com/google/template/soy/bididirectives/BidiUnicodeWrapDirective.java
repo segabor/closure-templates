@@ -132,7 +132,9 @@ final class BidiUnicodeWrapDirective
 
   @Override
   public SwiftExpr applyForSwiftSrc(SwiftExpr value, List<SwiftExpr> args) {
-    // TODO Auto-generated method stub
-    return null;
+    // TODO
+    String codeSnippet = bidiGlobalDirProvider.get().getCodeSnippet();
+    return new SwiftExpr(
+        "soy.bidiUnicodeWrap(" + codeSnippet + ", " + value.getText() + ")", Integer.MAX_VALUE);
   }
 }

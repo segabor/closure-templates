@@ -141,7 +141,9 @@ final class BidiSpanWrapDirective
 
   @Override
   public SwiftExpr applyForSwiftSrc(SwiftExpr value, List<SwiftExpr> args) {
-    // TODO Auto-generated method stub
-    return null;
+    // TODO
+    String codeSnippet = bidiGlobalDirProvider.get().getCodeSnippet();
+    return new SwiftExpr(
+        "soy.bidiSpanWrap(" + codeSnippet + ", " + value.getText() + ")", Integer.MAX_VALUE);
   }
 }
