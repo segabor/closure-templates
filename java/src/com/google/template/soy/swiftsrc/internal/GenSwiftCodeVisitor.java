@@ -2,9 +2,6 @@ package com.google.template.soy.swiftsrc.internal;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.SortedSet;
-import java.util.TreeSet;
 import com.google.auto.value.AutoValue;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -14,9 +11,7 @@ import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.Operator;
-import com.google.template.soy.shared.internal.FindCalleesNotInFileVisitor;
 import com.google.template.soy.soytree.AbstractSoyNodeVisitor;
-import com.google.template.soy.soytree.CallBasicNode;
 import com.google.template.soy.soytree.CallNode;
 import com.google.template.soy.soytree.CallParamContentNode;
 import com.google.template.soy.soytree.CallParamNode;
@@ -774,50 +769,6 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
             "from ", namespaceAndName.namespace(), " import ", translationName);
         swiftCodeBuilder.appendLine(PyExprUtils.TRANSLATOR_NAME, " = ", translationName, "()");
       } **/
-    }
-
-    /**
-     * Helper for visitSoyFileNode(SoyFileNode) to add code to require Soy namespaces.
-     *
-     * @param soyFile The node we're visiting.
-     */
-    private void addCodeToRequireSoyNamespaces(SoyFileNode soyFile) {
-      SortedSet<String> calleeModules = new TreeSet<>();
-      for (CallBasicNode node : new FindCalleesNotInFileVisitor().exec(soyFile)) {
-        String calleeNotInFile = node.getCalleeName();
-        int lastDotIndex = calleeNotInFile.lastIndexOf('.');
-        if (lastDotIndex == -1) {
-          errorReporter.report(node.getSourceLocation(), NON_NAMESPACED_TEMPLATE);
-          continue;
-        }
-        String calleeModule = calleeNotInFile.substring(0, lastDotIndex);
-        if (!calleeModule.isEmpty()) {
-          calleeModules.add(calleeModule);
-        }
-      }
-
-      for (String calleeModule : calleeModules) {
-        NamespaceAndName namespaceAndName = NamespaceAndName.fromModule(calleeModule);
-        // FIXME
-      }
-
-      // Store the entire manifest for use at runtime.
-      // FIXME: work out a better mapping
-      // now namespaces are mapped to sources
-      // but we want namespace + template name to be mapped to a renderer function
-      // like
-      // ```swift
-      //    var registry = [String: ([String:Any]) -> String]
-      //    registry["example.simple.HelloWorld"] = renderHelloWorld
-      // ```
-      swiftCodeBuilder.appendLine("let NAMESPACE_MANIFEST : [String:String] = [");
-      swiftCodeBuilder.increaseIndentTwice();
-      for (Map.Entry<String, String> entry : namespaceManifest.entrySet()) {
-        swiftCodeBuilder.appendLine("\"", entry.getKey(), "\": \"", entry.getValue(), "\",");
-      }
-      swiftCodeBuilder.decreaseIndentTwice();
-      swiftCodeBuilder.appendLine("]");
-      swiftCodeBuilder.appendLine();
     }
 
     /** Helper for visitTemplateNode which generates the function body. */
