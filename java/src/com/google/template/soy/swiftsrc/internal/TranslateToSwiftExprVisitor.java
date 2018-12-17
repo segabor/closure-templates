@@ -194,15 +194,21 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
   @Override
   protected SwiftExpr visitVarRefNode(VarRefNode node) {
     SwiftExpr expr = visitNullSafeNode(node);
-    switch (conditionalEvaluationMode) {
-    case CONDITIONAL:
-    	expr = new SwiftExpr(expr.getText() + " != nil", expr.getPrecedence());
-    	break;
-    case CONDITIONAL_NOT:
-    	expr = new SwiftExpr(expr.getText() + " == nil", expr.getPrecedence());
-    	break;
-    default:
+
+    OperatorNode opNode = node.getNearestAncestor(OperatorNode.class);
+    // FIXME should ternary operator be included
+    if (opNode == null || (opNode.getOperator() == Operator.NOT || opNode.getOperator() == Operator.AND || opNode.getOperator() == Operator.OR )) {
+      switch (conditionalEvaluationMode) {
+        case CONDITIONAL:
+          expr = new SwiftExpr(expr.getText() + ".notNull", expr.getPrecedence());
+          break;
+        case CONDITIONAL_NOT:
+          expr = new SwiftExpr(expr.getText() + ".notNull", expr.getPrecedence());
+          break;
+        default:
+      }
     }
+
     return expr;
   }
 

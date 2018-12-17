@@ -38,6 +38,7 @@ import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.VeLogNode;
 import com.google.template.soy.swiftsrc.SoySwiftSrcOptions;
 import com.google.template.soy.swiftsrc.internal.GenSwiftExprsVisitor.GenSwiftExprsVisitorFactory;
+import com.google.template.soy.swiftsrc.internal.TranslateToSwiftExprVisitor.ConditionalEvaluationMode;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.google.template.soy.swiftsrc.restricted.SwiftExprUtils;
 import com.google.template.soy.swiftsrc.restricted.SwiftFunctionExprBuilder;
@@ -332,7 +333,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       }
 
       // Not computable as Python expressions, so generate full code.
-      TranslateToSwiftExprVisitor translator = new TranslateToSwiftExprVisitor(localVarExprs, errorReporter);
+      TranslateToSwiftExprVisitor translator = new TranslateToSwiftExprVisitor(localVarExprs, errorReporter, ConditionalEvaluationMode.CONDITIONAL);
       for (SoyNode child : node.getChildren()) {
         if (child instanceof IfCondNode) {
           IfCondNode icn = (IfCondNode) child;
