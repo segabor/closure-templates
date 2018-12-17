@@ -241,9 +241,10 @@ public final class SwiftExprUtils {
         }
 
       } else if (syntaxEl instanceof Spacer) {
-        // Spacer is just one space.
-        exprSb.append(' ');
-
+        if (op != Operator.NOT) {
+          // Spacer is just one space.
+          exprSb.append(' ');
+        }
       } else {
         throw new AssertionError();
       }
