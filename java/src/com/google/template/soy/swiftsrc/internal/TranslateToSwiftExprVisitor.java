@@ -497,8 +497,7 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
           .addArg(key)
           .build();
     } else {
-      return new SwiftStringExpr(containerExpr + "[" + key.getText() + "]").getText();
-      // return new SwiftFunctionExprBuilder(containerExpr + ".get").addArg(key).build();
+      return new SwiftFunctionExprBuilder(containerExpr + ".get").addArg(key).build();
     }
   }
 
