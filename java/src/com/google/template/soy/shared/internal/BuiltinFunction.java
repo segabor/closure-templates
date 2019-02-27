@@ -44,7 +44,10 @@ public enum BuiltinFunction implements SoyFunction {
   V1_EXPRESSION("v1Expression"),
   REMAINDER("remainder"),
   MSG_WITH_ID("msgWithId"),
+  VE_DATA("ve_data"),
   IS_PRIMARY_MSG_IN_USE("$$isPrimaryMsgInUse"),
+  TO_FLOAT("$$toFloat"),
+  DEBUG_SOY_TEMPLATE_INFO("$$debugSoyTemplateInfo"),
   ;
 
   public static ImmutableSet<String> names() {
@@ -88,9 +91,12 @@ public enum BuiltinFunction implements SoyFunction {
   public Set<Integer> getValidArgsSizes() {
     switch (this) {
       case CSS:
+      case VE_DATA:
         return ImmutableSet.of(1, 2);
       case IS_PRIMARY_MSG_IN_USE:
         return ImmutableSet.of(3);
+      case DEBUG_SOY_TEMPLATE_INFO:
+        return ImmutableSet.of(0);
       default:
         return ImmutableSet.of(1);
     }

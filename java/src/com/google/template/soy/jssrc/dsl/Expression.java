@@ -17,14 +17,13 @@ package com.google.template.soy.jssrc.dsl;
 
 import static com.google.common.base.Preconditions.checkArgument;
 
+import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.annotations.Immutable;
-import com.google.template.soy.base.internal.BaseUtils;
-import com.google.template.soy.base.internal.QuoteStyle;
 import com.google.template.soy.exprtree.IntegerNode;
 import com.google.template.soy.exprtree.Operator;
 import com.google.template.soy.exprtree.Operator.Associativity;
@@ -50,6 +49,8 @@ public abstract class Expression extends CodeChunk {
   public static final Expression LITERAL_NULL = id("null");
   public static final Expression LITERAL_EMPTY_STRING = Leaf.create("''", /* isCheap= */ true);
   public static final Expression EMPTY_OBJECT_LITERAL = Leaf.create("{}", /* isCheap= */ false);
+  public static final Expression THIS = id("this");
+
   // Do not put public static constants or methods on this class.  If you do then this can trigger
   // classloading deadlocks due to cyclic references between this class, CodeChunk and the
   // implementation class of the constant.
@@ -130,16 +131,7 @@ public abstract class Expression extends CodeChunk {
    *     and embedded inside single quotes.
    */
   public static Expression stringLiteral(String contents) {
-    // Escape non-ASCII characters since browsers are inconsistent in how they interpret utf-8 in
-    // JS source files.
-    String escaped =
-        BaseUtils.escapeToSoyString(contents, /* shouldEscapeToAscii= */ true, QuoteStyle.SINGLE);
-
-    // </script in a JavaScript string will end the current script tag in most browsers. Escape the
-    // forward slash in the string to get around this issue.
-    escaped = escaped.replace("</script", "<\\/script");
-
-    return Leaf.create(escaped, /* isCheap= */ true);
+    return StringLiteral.create(contents);
   }
 
   /**
@@ -172,6 +164,11 @@ public abstract class Expression extends CodeChunk {
   /** Creates a code chunk representing an anonymous function literal. */
   public static Expression function(JsDoc parameters, Statement body) {
     return FunctionDeclaration.create(parameters, body);
+  }
+
+  /** Creates a code chunk representing an arrow function. */
+  public static Expression arrowFunction(JsDoc parameters, Statement body) {
+    return FunctionDeclaration.createArrowFunction(parameters, body);
   }
 
   /** Creates a code chunk representing the logical negation {@code !} of the given chunk. */
@@ -268,6 +265,11 @@ public abstract class Expression extends CodeChunk {
   public final Expression tripleEquals(Expression rhs) {
     return BinaryOperation.create(
         "===", Operator.EQUAL.getPrecedence(), Operator.EQUAL.getAssociativity(), this, rhs);
+  }
+
+  public final Expression tripleNotEquals(Expression rhs) {
+    return BinaryOperation.create(
+        "!==", Operator.EQUAL.getPrecedence(), Operator.EQUAL.getAssociativity(), this, rhs);
   }
 
   public final Expression doubleEqualsNull() {
@@ -416,5 +418,10 @@ public abstract class Expression extends CodeChunk {
    */
   public boolean isCheap() {
     return false;
+  }
+
+  /** Returns the string literal value of this Expression if it is a string literal. */
+  public Optional<String> asStringLiteral() {
+    return Optional.absent();
   }
 }

@@ -28,6 +28,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.SettableFuture;
 import com.google.template.soy.SoyFileSetParser;
+import com.google.template.soy.SoyFileSetParser.ParseResult;
 import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.data.ForwardingLoggingAdvisingAppendable;
 import com.google.template.soy.data.LogStatement;
@@ -286,16 +287,13 @@ public final class StreamingPrintDirectivesTest {
             "",
             "{template .nested kind=\"text\"}",
             "  {@param p : ?}",
-            // escapeHtml is not closeable and it is streaming
-            "  {$p|escapeHtml|streamingCloseable:'(close)'}",
+            "  {$p|streamingCloseable:'(c1)'|streamingCloseable:'(close)'}",
             "{/template}",
             "",
             "{template .nestedDeeper kind=\"text\"}",
             "  {@param p : ?}",
-            "  {$p|escapeHtml",
-            "     |streamingCloseable:'(c1)'",
+            "  {$p|streamingCloseable:'(c1)'",
             "     |streamingCloseable:'(c2)'",
-            "     |escapeHtml",
             "     |streamingCloseable:'(c3)'}",
             "{/template}",
             "");
@@ -303,7 +301,7 @@ public final class StreamingPrintDirectivesTest {
     assertThat(renderToString("ns.basic", ImmutableMap.of("p", "hello"), templates, context))
         .isEqualTo("hello closed!");
     assertThat(renderToString("ns.nested", ImmutableMap.of("p", "hello"), templates, context))
-        .isEqualTo("hello(close)");
+        .isEqualTo("hello(c1)(close)");
     assertThat(renderToString("ns.nestedDeeper", ImmutableMap.of("p", "hello"), templates, context))
         .isEqualTo("hello(c1)(c2)(c3)");
   }
@@ -333,9 +331,11 @@ public final class StreamingPrintDirectivesTest {
             .addPrintDirective(new StreamingCloseableDirective())
             .runAutoescaper(true)
             .build();
+    ParseResult parseResult = parser.parse();
     return BytecodeCompiler.compile(
-            parser.parse().registry(),
-            false,
+            parseResult.registry(),
+            parseResult.fileSet(),
+            /*developmentMode=*/ false,
             ErrorReporter.exploding(),
             parser.soyFileSuppliers(),
             parser.typeRegistry())
@@ -357,11 +357,6 @@ public final class StreamingPrintDirectivesTest {
     @Override
     public Set<Integer> getValidArgsSizes() {
       return ImmutableSet.of(0, 1);
-    }
-
-    @Override
-    public boolean shouldCancelAutoescape() {
-      return false;
     }
 
     @Override
@@ -395,11 +390,6 @@ public final class StreamingPrintDirectivesTest {
     @Override
     public Set<Integer> getValidArgsSizes() {
       return ImmutableSet.of(0);
-    }
-
-    @Override
-    public boolean shouldCancelAutoescape() {
-      return false;
     }
   }
 
@@ -475,11 +465,6 @@ public final class StreamingPrintDirectivesTest {
     @Override
     public Set<Integer> getValidArgsSizes() {
       return ImmutableSet.of(1);
-    }
-
-    @Override
-    public boolean shouldCancelAutoescape() {
-      return false;
     }
 
     @Override

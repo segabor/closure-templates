@@ -21,7 +21,6 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Multimap;
 import com.google.common.io.Files;
 import com.google.template.soy.error.ErrorReporter;
@@ -103,7 +102,7 @@ public class JsSrcMain {
       }
       // Combine raw text nodes before codegen.
       new CombineConsecutiveRawTextNodesPass().run(soyTree);
-      return createVisitor(jsSrcOptions, typeRegistry)
+      return createVisitor(jsSrcOptions, typeRegistry, inScope.getBidiGlobalDir(), errorReporter)
           .gen(soyTree, templateRegistry, errorReporter);
     }
   }
@@ -136,9 +135,7 @@ public class JsSrcMain {
     List<String> jsFileContents =
         genJsSrc(soyTree, templateRegistry, jsSrcOptions, msgBundle, errorReporter);
 
-    ImmutableList<SoyFileNode> srcsToCompile =
-        ImmutableList.copyOf(
-            Iterables.filter(soyTree.getChildren(), SoyFileNode.MATCH_SRC_FILENODE));
+    ImmutableList<SoyFileNode> srcsToCompile = ImmutableList.copyOf(soyTree.getChildren());
 
     if (srcsToCompile.size() != jsFileContents.size()) {
       throw new AssertionError(
@@ -172,10 +169,15 @@ public class JsSrcMain {
   }
 
   static GenJsCodeVisitor createVisitor(
-      final SoyJsSrcOptions options, SoyTypeRegistry typeRegistry) {
+      final SoyJsSrcOptions options,
+      SoyTypeRegistry typeRegistry,
+      BidiGlobalDir dir,
+      ErrorReporter errorReporter) {
     final DelTemplateNamer delTemplateNamer = new DelTemplateNamer();
     final IsComputableAsJsExprsVisitor isComputableAsJsExprsVisitor =
         new IsComputableAsJsExprsVisitor();
+    final JavaScriptValueFactoryImpl javaScriptValueFactory =
+        new JavaScriptValueFactoryImpl(options, dir, errorReporter);
     CanInitOutputVarVisitor canInitOutputVarVisitor =
         new CanInitOutputVarVisitor(isComputableAsJsExprsVisitor);
     // This supplier is used to break a circular dependency between GenCallCodeUtils and
@@ -192,11 +194,13 @@ public class JsSrcMain {
     }
     GenCallCodeUtilsSupplier supplier = new GenCallCodeUtilsSupplier();
     GenJsExprsVisitorFactory genJsExprsVisitorFactory =
-        new GenJsExprsVisitorFactory(supplier, isComputableAsJsExprsVisitor);
+        new GenJsExprsVisitorFactory(
+            javaScriptValueFactory, supplier, isComputableAsJsExprsVisitor);
     supplier.factory = genJsExprsVisitorFactory;
 
     return new GenJsCodeVisitor(
         options,
+        javaScriptValueFactory,
         delTemplateNamer,
         supplier.get(),
         isComputableAsJsExprsVisitor,

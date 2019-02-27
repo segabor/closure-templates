@@ -16,7 +16,6 @@
 
 package com.google.template.soy.passes;
 
-import com.google.common.base.Equivalence;
 import com.google.common.collect.ImmutableList;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.base.internal.SanitizedContentKind;
@@ -28,14 +27,11 @@ import com.google.template.soy.soytree.CallDelegateNode;
 import com.google.template.soy.soytree.CallParamContentNode;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
-import com.google.template.soy.soytree.TemplateBasicNode;
-import com.google.template.soy.soytree.TemplateDelegateNode;
+import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
-import com.google.template.soy.soytree.defn.TemplateParam;
 import java.util.Collection;
 import java.util.HashSet;
-import java.util.Objects;
 import java.util.Set;
 import javax.annotation.Nullable;
 
@@ -74,7 +70,7 @@ final class CheckDelegatesPass extends CompilerFileSetPass {
   }
 
   @Override
-  public void run(
+  public Result run(
       ImmutableList<SoyFileNode> sourceFiles, IdGenerator idGenerator, TemplateRegistry registry) {
     // Perform checks that only involve templates (uses templateRegistry only, no traversal).
     checkTemplates(registry);
@@ -93,24 +89,25 @@ final class CheckDelegatesPass extends CompilerFileSetPass {
         }
       }
     }
+    return Result.CONTINUE;
   }
 
   /** Performs checks that only involve templates (uses templateRegistry only). */
   private void checkTemplates(TemplateRegistry templateRegistry) {
 
-    DelTemplateSelector<TemplateDelegateNode> selector = templateRegistry.getDelTemplateSelector();
+    DelTemplateSelector<TemplateMetadata> selector = templateRegistry.getDelTemplateSelector();
 
     // Check that all delegate templates with the same name have the same declared params,
     // content kind, and strict html mode.
-    for (Collection<TemplateDelegateNode> delTemplateGroup :
+    for (Collection<TemplateMetadata> delTemplateGroup :
         selector.delTemplateNameToValues().asMap().values()) {
-      TemplateDelegateNode firstDelTemplate = null;
-      Set<Equivalence.Wrapper<TemplateParam>> firstRequiredParamSet = null;
+      TemplateMetadata firstDelTemplate = null;
+      Set<TemplateMetadata.Parameter> firstRequiredParamSet = null;
       SanitizedContentKind firstContentKind = null;
       boolean firstStrictHtml = false;
 
       // loop over all members of the deltemplate group.
-      for (TemplateDelegateNode delTemplate : delTemplateGroup) {
+      for (TemplateMetadata delTemplate : delTemplateGroup) {
         if (firstDelTemplate == null) {
           // First template encountered.
           firstDelTemplate = delTemplate;
@@ -120,8 +117,7 @@ final class CheckDelegatesPass extends CompilerFileSetPass {
               delTemplate.isStrictHtml() && firstContentKind == SanitizedContentKind.HTML;
         } else {
           // Not first template encountered.
-          Set<Equivalence.Wrapper<TemplateParam>> currRequiredParamSet =
-              getRequiredParamSet(delTemplate);
+          Set<TemplateMetadata.Parameter> currRequiredParamSet = getRequiredParamSet(delTemplate);
           if (!currRequiredParamSet.equals(firstRequiredParamSet)) {
             errorReporter.report(
                 delTemplate.getSourceLocation(),
@@ -160,31 +156,11 @@ final class CheckDelegatesPass extends CompilerFileSetPass {
     }
   }
 
-  // A specific equivalence relation for seeing if the params of 2 difference templates are
-  // effectively the same.
-  private static final class ParamEquivalence extends Equivalence<TemplateParam> {
-    static final ParamEquivalence INSTANCE = new ParamEquivalence();
-
-    @Override
-    protected boolean doEquivalent(TemplateParam a, TemplateParam b) {
-      return a.name().equals(b.name())
-          && a.isRequired() == b.isRequired()
-          && a.isInjected() == b.isInjected()
-          && a.type().equals(b.type());
-    }
-
-    @Override
-    protected int doHash(TemplateParam t) {
-      return Objects.hash(t.name(), t.isInjected(), t.isRequired(), t.type());
-    }
-  }
-
-  private static Set<Equivalence.Wrapper<TemplateParam>> getRequiredParamSet(
-      TemplateDelegateNode delTemplate) {
-    Set<Equivalence.Wrapper<TemplateParam>> paramSet = new HashSet<>();
-    for (TemplateParam param : delTemplate.getParams()) {
-      if (param.isRequired()) {
-        paramSet.add(ParamEquivalence.INSTANCE.wrap(param));
+  private static Set<TemplateMetadata.Parameter> getRequiredParamSet(TemplateMetadata delTemplate) {
+    Set<TemplateMetadata.Parameter> paramSet = new HashSet<>();
+    for (TemplateMetadata.Parameter param : delTemplate.getParameters()) {
+      if (param.isRequired() && !param.isInjected()) {
+        paramSet.add(param);
       }
     }
     return paramSet;
@@ -204,7 +180,7 @@ final class CheckDelegatesPass extends CompilerFileSetPass {
     }
 
     // Check that the callee is either not in a delegate package or in the same delegate package.
-    TemplateBasicNode callee = templateRegistry.getBasicTemplate(calleeName);
+    TemplateMetadata callee = templateRegistry.getBasicTemplateOrElement(calleeName);
     if (callee != null) {
       String calleeDelPackageName = callee.getDelPackageName();
       if (calleeDelPackageName != null && !calleeDelPackageName.equals(currDelPackageName)) {
@@ -234,7 +210,7 @@ final class CheckDelegatesPass extends CompilerFileSetPass {
     String delCalleeName = node.getDelCalleeName();
 
     // Check that the callee name is not a basic template name.
-    if (templateRegistry.getBasicTemplate(delCalleeName) != null) {
+    if (templateRegistry.getBasicTemplateOrElement(delCalleeName) != null) {
       errorReporter.report(node.getSourceLocation(), DELCALL_TO_BASIC_TEMPLATE, delCalleeName);
     }
   }

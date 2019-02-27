@@ -16,6 +16,8 @@
 
 package com.google.template.soy.tofu.internal;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+
 import com.google.common.base.Ascii;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Predicate;
@@ -32,12 +34,15 @@ import com.google.template.soy.msgs.SoyMsgBundle;
 import com.google.template.soy.parseinfo.SoyTemplateInfo;
 import com.google.template.soy.shared.SoyCssRenamingMap;
 import com.google.template.soy.shared.SoyIdRenamingMap;
+import com.google.template.soy.shared.internal.DelTemplateSelector;
 import com.google.template.soy.shared.internal.SoyScopedData;
 import com.google.template.soy.sharedpasses.render.EvalVisitorFactoryImpl;
 import com.google.template.soy.sharedpasses.render.RenderException;
 import com.google.template.soy.sharedpasses.render.RenderVisitor;
+import com.google.template.soy.soytree.SoyFileNode;
+import com.google.template.soy.soytree.SoyFileSetNode;
+import com.google.template.soy.soytree.TemplateDelegateNode;
 import com.google.template.soy.soytree.TemplateNode;
-import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.Visibility;
 import com.google.template.soy.tofu.SoyTofu;
 import com.google.template.soy.tofu.SoyTofuException;
@@ -55,18 +60,44 @@ public final class BaseTofu implements SoyTofu {
   /** The scope object that manages the API call scope. */
   private final SoyScopedData.Enterable apiCallScope;
 
-  private final TemplateRegistry templateRegistry;
+  private final ImmutableMap<String, TemplateNode> basicTemplates;
+  private final DelTemplateSelector<TemplateDelegateNode> delTemplates;
 
   private final ImmutableMap<String, ImmutableSortedSet<String>> templateToIjParamsInfoMap;
+
+  private final ImmutableMap<String, Supplier<Object>> pluginInstances;
 
   /** @param apiCallScope The scope object that manages the API call scope. */
   public BaseTofu(
       SoyScopedData.Enterable apiCallScope,
-      TemplateRegistry templates,
-      ImmutableMap<String, ImmutableSortedSet<String>> templateToIjParamsInfoMap) {
+      SoyFileSetNode fileSet,
+      ImmutableMap<String, ImmutableSortedSet<String>> templateToIjParamsInfoMap,
+      Map<String, Supplier<Object>> pluginInstances) {
     this.apiCallScope = apiCallScope;
-    this.templateRegistry = templates;
+    ImmutableMap.Builder<String, TemplateNode> basicTemplates = ImmutableMap.builder();
+    DelTemplateSelector.Builder<TemplateDelegateNode> delTemplates =
+        new DelTemplateSelector.Builder<>();
+    for (SoyFileNode fileNode : fileSet.getChildren()) {
+      for (TemplateNode template : fileNode.getChildren()) {
+        if (template instanceof TemplateDelegateNode) {
+          TemplateDelegateNode delegateNode = (TemplateDelegateNode) template;
+          String delTemplateName = delegateNode.getDelTemplateName();
+          String delPackageName = delegateNode.getDelPackageName();
+          String variant = delegateNode.getDelTemplateVariant();
+          if (delPackageName == null) {
+            delTemplates.addDefault(delTemplateName, variant, delegateNode);
+          } else {
+            delTemplates.add(delTemplateName, delPackageName, variant, delegateNode);
+          }
+        } else {
+          basicTemplates.put(template.getTemplateName(), template);
+        }
+      }
+    }
+    this.basicTemplates = basicTemplates.build();
+    this.delTemplates = delTemplates.build();
     this.templateToIjParamsInfoMap = templateToIjParamsInfoMap;
+    this.pluginInstances = ImmutableMap.copyOf(pluginInstances);
   }
 
   /**
@@ -146,7 +177,6 @@ public final class BaseTofu implements SoyTofu {
     try (SoyScopedData.InScope inScope = apiCallScope.enter(msgBundle)) {
       // Do the rendering.
       return renderMainHelper(
-          templateRegistry,
           outputBuf,
           templateName,
           data,
@@ -175,7 +205,6 @@ public final class BaseTofu implements SoyTofu {
    * @return The template that was rendered.
    */
   private TemplateNode renderMainHelper(
-      TemplateRegistry templateRegistry,
       Appendable outputBuf,
       String templateName,
       @Nullable SoyRecord data,
@@ -187,7 +216,9 @@ public final class BaseTofu implements SoyTofu {
       boolean debugSoyTemplateInfo,
       ImmutableMap<String, Supplier<Object>> pluginInstances) {
 
-    TemplateNode template = templateRegistry.getBasicTemplate(templateName);
+    // templateNode is always guaranteed to be non-null because for a tofu compile all templates are
+    // considered source files
+    TemplateNode template = basicTemplates.get(templateName);
     if (template == null) {
       throw new SoyTofuException("Attempting to render undefined template '" + templateName + "'.");
     } else if (template.getVisibility() == Visibility.PRIVATE) {
@@ -206,7 +237,8 @@ public final class BaseTofu implements SoyTofu {
           new RenderVisitor(
               new EvalVisitorFactoryImpl(),
               outputBuf,
-              templateRegistry,
+              basicTemplates,
+              delTemplates,
               data,
               ijData,
               activeDelPackageNames,
@@ -242,7 +274,7 @@ public final class BaseTofu implements SoyTofu {
     private SanitizedContent.ContentKind expectedContentKind;
     private boolean contentKindExplicitlySet;
     private boolean debugSoyTemplateInfo;
-    private ImmutableMap<String, Supplier<Object>> pluginInstances = ImmutableMap.of();
+    private Map<String, Supplier<Object>> perRenderPluginInstances;
 
     /**
      * Constructs a {@code Renderer} instance for Tofu backends. By default, the content kind should
@@ -283,7 +315,7 @@ public final class BaseTofu implements SoyTofu {
 
     @Override
     public Renderer setPluginInstances(Map<String, Supplier<Object>> pluginInstances) {
-      this.pluginInstances = ImmutableMap.copyOf(pluginInstances);
+      this.perRenderPluginInstances = checkNotNull(pluginInstances);
       return this;
     }
 
@@ -331,6 +363,17 @@ public final class BaseTofu implements SoyTofu {
       return sb.toString();
     }
 
+    private ImmutableMap<String, Supplier<Object>> getPluginInstances() {
+
+      if (perRenderPluginInstances != null) {
+        return ImmutableMap.<String, Supplier<Object>>builder()
+            .putAll(baseTofu.pluginInstances)
+            .putAll(perRenderPluginInstances)
+            .build();
+      }
+      return baseTofu.pluginInstances;
+    }
+
     @Override
     public SanitizedContent.ContentKind render(Appendable out) {
       TemplateNode template =
@@ -344,7 +387,7 @@ public final class BaseTofu implements SoyTofu {
               idRenamingMap,
               cssRenamingMap,
               debugSoyTemplateInfo,
-              pluginInstances);
+              getPluginInstances());
       if (contentKindExplicitlySet || template.getContentKind() != null) {
         // Enforce the content kind if:
         // - The caller explicitly set a content kind to validate.
@@ -371,7 +414,7 @@ public final class BaseTofu implements SoyTofu {
               idRenamingMap,
               cssRenamingMap,
               debugSoyTemplateInfo,
-              pluginInstances);
+              getPluginInstances());
       enforceContentKind(template);
       // Use the expected instead of actual content kind; that way, if an HTML template is rendered
       // as TEXT, we will return TEXT.

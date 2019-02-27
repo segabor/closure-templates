@@ -22,8 +22,8 @@ import com.google.common.base.Joiner;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.SoyFileSetParser;
+import com.google.template.soy.SoyFileSetParser.ParseResult;
 import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.data.LogStatement;
 import com.google.template.soy.data.LoggingFunctionInvocation;
@@ -37,12 +37,11 @@ import com.google.template.soy.logging.LoggingConfig;
 import com.google.template.soy.logging.LoggingFunction;
 import com.google.template.soy.logging.SoyLogger;
 import com.google.template.soy.logging.ValidatedLoggingConfig;
-import com.google.template.soy.soytree.SoyFileSetNode;
-import com.google.template.soy.soytree.TemplateRegistry;
+import com.google.template.soy.shared.restricted.Signature;
+import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.types.SoyTypeRegistry;
 import java.io.IOException;
 import java.util.Map;
-import java.util.Set;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -104,17 +103,8 @@ public final class VeLoggingTest {
     }
   }
 
+  @SoyFunctionSignature(name = "depth", value = @Signature(returnType = "string"))
   private static final class DepthFunction implements LoggingFunction {
-    @Override
-    public String getName() {
-      return "depth";
-    }
-
-    @Override
-    public Set<Integer> getValidArgsSizes() {
-      return ImmutableSet.of(0);
-    }
-
     @Override
     public String getPlaceholder() {
       return "depth_placeholder";
@@ -267,14 +257,14 @@ public final class VeLoggingTest {
                     + "\n{/template}")
             .typeRegistry(typeRegistry)
             .setLoggingConfig(config)
-            .addSoyFunction(new DepthFunction())
+            .addSoySourceFunction(new DepthFunction())
             .runAutoescaper(true)
             .build();
-    SoyFileSetNode soyTree = parser.parse().fileSet();
-    TemplateRegistry templateRegistry = new TemplateRegistry(soyTree, ErrorReporter.exploding());
+    ParseResult parseResult = parser.parse();
     CompiledTemplates templates =
         BytecodeCompiler.compile(
-                templateRegistry,
+                parseResult.registry(),
+                parseResult.fileSet(),
                 false,
                 ErrorReporter.exploding(),
                 parser.soyFileSuppliers(),

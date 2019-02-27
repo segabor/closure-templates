@@ -16,21 +16,31 @@
 
 package com.google.template.soy.soytree;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.common.base.Optional;
-import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.ListMultimap;
 import com.google.common.collect.Multimap;
+import com.google.common.collect.MultimapBuilder;
 import com.google.template.soy.base.internal.SanitizedContentKind;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.error.SoyErrorKind.StyleAllowance;
 import com.google.template.soy.shared.internal.DelTemplateSelector;
-import com.google.template.soy.soytree.TemplateDelegateNode.DelTemplateKey;
+import com.google.template.soy.soytree.TemplateMetadata.CallSituation;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javax.annotation.Nullable;
 
 /**
@@ -42,9 +52,9 @@ import javax.annotation.Nullable;
 public final class TemplateRegistry {
 
   private static final SoyErrorKind DUPLICATE_TEMPLATES =
-      SoyErrorKind.of("Template ''{0}'' already defined at {1}.");
-  private static final SoyErrorKind BASIC_AND_DELTEMPLATE_WITH_SAME_NAME =
-      SoyErrorKind.of("Found deltemplate {0} with the same name as a basic template at {1}.");
+      SoyErrorKind.of("Template/element ''{0}'' already defined at {1}.");
+  private static final SoyErrorKind TEMPLATE_OR_ELEMENT_AND_DELTEMPLATE_WITH_SAME_NAME =
+      SoyErrorKind.of("Found deltemplate {0} with the same name as a template/element at {1}.");
   private static final SoyErrorKind DUPLICATE_DEFAULT_DELEGATE_TEMPLATES =
       SoyErrorKind.of("Delegate template ''{0}'' already has a default defined at {1}.");
   private static final SoyErrorKind DUPLICATE_DELEGATE_TEMPLATES_IN_DELPACKAGE =
@@ -52,32 +62,36 @@ public final class TemplateRegistry {
           "Delegate template ''{0}'' already defined in delpackage {1}: {2}",
           StyleAllowance.NO_PUNCTUATION);
 
-  /** Map from basic template name to node. */
-  private final ImmutableMap<String, TemplateBasicNode> basicTemplatesMap;
+  /** Map from basic template or element name to node. */
+  private final ImmutableMap<String, TemplateMetadata> basicTemplatesOrElementsMap;
 
-  private final DelTemplateSelector<TemplateDelegateNode> delTemplateSelector;
-  private final ImmutableList<TemplateNode> allTemplates;
+  private final DelTemplateSelector<TemplateMetadata> delTemplateSelector;
+  private final ImmutableMap<String, TemplateMetadata> allTemplates;
+
+  /** Lazily allocated. */
+  private final Map<TemplateMetadata, CallGraphNode> callGraphs = new HashMap<>();
 
   /**
    * Constructor.
    *
    * @param soyTree The Soy tree from which to build a template registry.
    */
-  public TemplateRegistry(SoyFileSetNode soyTree, ErrorReporter errorReporter) {
+  public TemplateRegistry(List<TemplateMetadata> templates, ErrorReporter errorReporter) {
 
     // ------ Iterate through all templates to collect data. ------
-    ImmutableList.Builder<TemplateNode> allTemplatesBuilder = ImmutableList.builder();
-    DelTemplateSelector.Builder<TemplateDelegateNode> delTemplateSelectorBuilder =
+    Map<String, TemplateMetadata> allTemplatesBuilder = new LinkedHashMap<>();
+    DelTemplateSelector.Builder<TemplateMetadata> delTemplateSelectorBuilder =
         new DelTemplateSelector.Builder<>();
-    Map<String, TemplateBasicNode> basicTemplates = new LinkedHashMap<>();
-    Multimap<String, TemplateDelegateNode> delegateTemplates = HashMultimap.create();
-    for (SoyFileNode soyFile : soyTree.getChildren()) {
-      for (TemplateNode template : soyFile.getChildren()) {
-        allTemplatesBuilder.add(template);
-        if (template instanceof TemplateBasicNode) {
-          // Case 1: Basic template.
-          TemplateBasicNode prev =
-              basicTemplates.put(template.getTemplateName(), (TemplateBasicNode) template);
+    Map<String, TemplateMetadata> basicTemplatesOrElementsMap = new LinkedHashMap<>();
+    Multimap<String, TemplateMetadata> delegateTemplates = HashMultimap.create();
+    for (TemplateMetadata template : templates) {
+      allTemplatesBuilder.put(template.getTemplateName(), template);
+      switch (template.getTemplateKind()) {
+        case BASIC:
+        case ELEMENT:
+          // Case 1: Basic Template or Element node
+          TemplateMetadata prev =
+              basicTemplatesOrElementsMap.put(template.getTemplateName(), template);
           if (prev != null) {
             errorReporter.report(
                 template.getSourceLocation(),
@@ -85,106 +99,105 @@ public final class TemplateRegistry {
                 template.getTemplateName(),
                 prev.getSourceLocation());
           }
-        } else {
+          break;
+        case DELTEMPLATE:
           // Case 2: Delegate template.
-          TemplateDelegateNode delTemplate = (TemplateDelegateNode) template;
-          String delTemplateName = delTemplate.getDelTemplateName();
-          String delPackageName = delTemplate.getDelPackageName();
-          String variant = delTemplate.getDelTemplateVariant();
-          TemplateDelegateNode previous;
+          String delTemplateName = template.getDelTemplateName();
+          String delPackageName = template.getDelPackageName();
+          String variant = template.getDelTemplateVariant();
+          TemplateMetadata previous;
           if (delPackageName == null) {
             // default delegate
-            previous = delTemplateSelectorBuilder.addDefault(delTemplateName, variant, delTemplate);
+            previous = delTemplateSelectorBuilder.addDefault(delTemplateName, variant, template);
             if (previous != null) {
               errorReporter.report(
-                  delTemplate.getSourceLocation(),
+                  template.getSourceLocation(),
                   DUPLICATE_DEFAULT_DELEGATE_TEMPLATES,
                   delTemplateName,
                   previous.getSourceLocation());
             }
           } else {
             previous =
-                delTemplateSelectorBuilder.add(
-                    delTemplateName, delPackageName, variant, delTemplate);
+                delTemplateSelectorBuilder.add(delTemplateName, delPackageName, variant, template);
             if (previous != null) {
               errorReporter.report(
-                  delTemplate.getSourceLocation(),
+                  template.getSourceLocation(),
                   DUPLICATE_DELEGATE_TEMPLATES_IN_DELPACKAGE,
                   delTemplateName,
                   delPackageName,
                   previous.getSourceLocation());
             }
           }
-          delegateTemplates.put(delTemplateName, delTemplate);
-        }
+          delegateTemplates.put(delTemplateName, template);
+          break;
       }
     }
     // make sure no basic nodes conflict with deltemplates
-    for (Map.Entry<String, TemplateDelegateNode> entry : delegateTemplates.entries()) {
-      TemplateBasicNode basicNode = basicTemplates.get(entry.getKey());
-      if (basicNode != null) {
+    for (Map.Entry<String, TemplateMetadata> entry : delegateTemplates.entries()) {
+      TemplateMetadata node = basicTemplatesOrElementsMap.get(entry.getKey());
+      if (node != null) {
         errorReporter.report(
             entry.getValue().getSourceLocation(),
-            BASIC_AND_DELTEMPLATE_WITH_SAME_NAME,
+            TEMPLATE_OR_ELEMENT_AND_DELTEMPLATE_WITH_SAME_NAME,
             entry.getKey(),
-            basicNode.getSourceLocation());
+            node.getSourceLocation());
       }
     }
 
     // ------ Build the final data structures. ------
 
-    basicTemplatesMap = ImmutableMap.copyOf(basicTemplates);
-    delTemplateSelector = delTemplateSelectorBuilder.build();
-    this.allTemplates = allTemplatesBuilder.build();
+    this.basicTemplatesOrElementsMap = ImmutableMap.copyOf(basicTemplatesOrElementsMap);
+    this.delTemplateSelector = delTemplateSelectorBuilder.build();
+    this.allTemplates = ImmutableMap.copyOf(allTemplatesBuilder);
   }
 
-  /** Returns a map from basic template name to node. */
-  public ImmutableMap<String, TemplateBasicNode> getBasicTemplatesMap() {
-    return basicTemplatesMap;
+  /** Returns all basic template names. */
+  public ImmutableSet<String> getBasicTemplateOrElementNames() {
+    return basicTemplatesOrElementsMap.keySet();
+  }
+
+  /** Look up possible targets for a call. */
+  public ImmutableList<TemplateMetadata> getTemplates(CallNode node) {
+    if (node instanceof CallBasicNode) {
+      String calleeName = ((CallBasicNode) node).getCalleeName();
+      TemplateMetadata template = basicTemplatesOrElementsMap.get(calleeName);
+      return template == null ? ImmutableList.of() : ImmutableList.of(template);
+    } else {
+      String calleeName = ((CallDelegateNode) node).getDelCalleeName();
+      return delTemplateSelector.delTemplateNameToValues().get(calleeName);
+    }
   }
 
   /**
-   * Retrieves a basic template given the template name.
+   * Retrieves a template or element given the template name.
    *
    * @param templateName The basic template name to retrieve.
-   * @return The corresponding basic template, or null if the template name is not defined.
+   * @return The corresponding template/element, or null if the name is not defined.
    */
   @Nullable
-  public TemplateBasicNode getBasicTemplate(String templateName) {
-    return basicTemplatesMap.get(templateName);
+  public TemplateMetadata getBasicTemplateOrElement(String templateName) {
+    return basicTemplatesOrElementsMap.get(templateName);
   }
 
   /** Returns a multimap from delegate template name to set of keys. */
-  public DelTemplateSelector<TemplateDelegateNode> getDelTemplateSelector() {
+  public DelTemplateSelector<TemplateMetadata> getDelTemplateSelector() {
     return delTemplateSelector;
+  }
+
+  public TemplateMetadata getMetadata(TemplateNode node) {
+    return checkNotNull(
+        allTemplates.get(checkNotNull(node.getTemplateName())),
+        "couldn't find metadata for %s in %s",
+        node,
+        allTemplates);
   }
 
   /**
    * Returns all registered templates ({@link TemplateBasicNode basic} and {@link
    * TemplateDelegateNode delegate} nodes), in no particular order.
    */
-  public ImmutableList<TemplateNode> getAllTemplates() {
-    return allTemplates;
-  }
-
-  /**
-   * Selects a delegate template based on the rendering rules, given the delegate template key (name
-   * and variant) and the set of active delegate package names.
-   *
-   * @param delTemplateKey The delegate template key (name and variant) to select an implementation
-   *     for.
-   * @param activeDelPackageNameSelector The predicate for testing whether a given delpackage is
-   *     active.
-   * @return The selected delegate template, or null if there are no active implementations.
-   * @throws IllegalArgumentException If there are two or more active implementations with equal
-   *     priority (unable to select one over the other).
-   */
-  @Nullable
-  public TemplateDelegateNode selectDelTemplate(
-      DelTemplateKey delTemplateKey, Predicate<String> activeDelPackageNameSelector) {
-    // TODO(lukes): eliminate this method and DelTemplateKey
-    return delTemplateSelector.selectTemplate(
-        delTemplateKey.name(), delTemplateKey.variant(), activeDelPackageNameSelector);
+  public ImmutableList<TemplateMetadata> getAllTemplates() {
+    return allTemplates.values().asList();
   }
 
   /**
@@ -196,31 +209,140 @@ public final class TemplateRegistry {
    * @return The kind of content that the call results in.
    */
   public Optional<SanitizedContentKind> getCallContentKind(CallNode node) {
-    TemplateNode templateNode = null;
-
-    if (node instanceof CallBasicNode) {
-      String calleeName = ((CallBasicNode) node).getCalleeName();
-      templateNode = getBasicTemplate(calleeName);
-    } else {
-      String calleeName = ((CallDelegateNode) node).getDelCalleeName();
-      ImmutableList<TemplateDelegateNode> templateNodes =
-          getDelTemplateSelector().delTemplateNameToValues().get(calleeName);
-      // For per-file compilation, we may not have any of the delegate templates in the compilation
-      // unit.
-      if (!templateNodes.isEmpty()) {
-        templateNode = templateNodes.get(0);
-      }
+    ImmutableList<TemplateMetadata> templateNodes = getTemplates(node);
+    // For per-file compilation, we may not have any of the delegate templates in the compilation
+    // unit.
+    if (!templateNodes.isEmpty()) {
+      return Optional.fromNullable(templateNodes.get(0).getContentKind());
     }
     // The template node may be null if the template is being compiled in isolation.
-    if (templateNode == null) {
-      return Optional.absent();
-    }
-    Preconditions.checkState(
-        templateNode instanceof TemplateBasicNode
-            || templateNode.getAutoescapeMode() == AutoescapeMode.STRICT,
-        "Cannot determine the content kind for a delegate template that does not use strict "
-            + "autoescaping.");
+    return Optional.absent();
+  }
 
-    return Optional.of(templateNode.getContentKind());
+  /** Returns the callgraph for a template. */
+  public CallGraphNode getCallGraph(TemplateMetadata template) {
+    checkNotNull(template);
+    CallGraphNode callGraph = callGraphs.get(template);
+    if (callGraph != null) {
+      return callGraph;
+    }
+    callGraph = new CallGraphNode(template);
+    // Place the partially constructed callgraph into the map to short circuit following recursive
+    // template calls.
+    callGraphs.put(template, callGraph);
+    for (CallSituation call : template.getCallSituations()) {
+
+      if (call.isDelCall()) {
+        for (TemplateMetadata callee :
+            delTemplateSelector.delTemplateNameToValues().get(call.getTemplateName())) {
+          callGraph.addDelCallee(call, getCallGraph(callee));
+        }
+      } else {
+        TemplateMetadata callee = getBasicTemplateOrElement(call.getTemplateName());
+        if (callee != null) {
+          callGraph.putBasicCallee(call, getCallGraph(callee));
+        }
+      }
+    }
+    callGraph.finishConstruction();
+    return callGraph;
+  }
+
+  /**
+   * Represents a call graph of templates.
+   *
+   * <p>Note that callgraphs are directed but not acyclic. Self edges are possible. So code
+   * traversing this data structure should protect against reentrancy.
+   */
+  public static final class CallGraphNode {
+    // We can't make this object immutable because the graph may have cycles.
+    // So instead we use this field to force that all mutations happen before any queries occur.
+    private boolean frozen = false;
+    private final TemplateMetadata template;
+    private final Map<CallSituation, CallGraphNode> basicCallees = new LinkedHashMap<>();
+    private final ListMultimap<CallSituation, CallGraphNode> delCallees =
+        MultimapBuilder.linkedHashKeys().arrayListValues().build();
+    // lazily caches the set of transitive callees.
+    private Set<TemplateMetadata> transiveCallees;
+
+    private CallGraphNode(TemplateMetadata template) {
+      this.template = checkNotNull(template);
+    }
+
+    public TemplateMetadata template() {
+      return template;
+    }
+
+    private void addDelCallee(CallSituation call, CallGraphNode callee) {
+      checkState(!frozen);
+      checkArgument(call.isDelCall());
+      boolean changed = delCallees.put(call, checkNotNull(callee));
+      if (!changed) {
+        throw new IllegalArgumentException(
+            "a callgraph mapping was already assigned for: " + call + " -> " + callee);
+      }
+    }
+
+    private void putBasicCallee(CallSituation call, CallGraphNode callee) {
+      checkState(!frozen);
+      checkArgument(!call.isDelCall());
+      CallGraphNode prev = basicCallees.put(call, checkNotNull(callee));
+      if (prev != null) {
+        throw new IllegalArgumentException("a callgraph was already assigned for: " + call);
+      }
+    }
+
+    private void finishConstruction() {
+      checkState(!frozen);
+      frozen = true;
+    }
+
+    public Set<TemplateMetadata> transitiveCallees() {
+      checkState(frozen);
+      Set<TemplateMetadata> callees = transiveCallees;
+      if (callees != null) {
+        return callees;
+      }
+      callees = new LinkedHashSet<>();
+      collectTransitiveCallees(callees);
+      // only return unmodifiable views
+      transiveCallees = Collections.unmodifiableSet(callees);
+      return transiveCallees;
+    }
+
+    private void collectTransitiveCallees(Set<TemplateMetadata> callees) {
+      if (callees.add(template)) {
+        if (transiveCallees != null) {
+          callees.addAll(transiveCallees);
+        } else {
+          for (CallGraphNode callee : basicCallees.values()) {
+            callee.collectTransitiveCallees(callees);
+          }
+          for (CallGraphNode callee : delCallees.values()) {
+            callee.collectTransitiveCallees(callees);
+          }
+        }
+      }
+    }
+
+    /**
+     * Returns the call graph for the callee, or nuill. if null is returned, then it means we could
+     * not resolve the target. This can happen for delcalls or regular calls when allowExternalCalls
+     * is enabled. (or temporarily while building).
+     */
+    public CallGraphNode getBasicCallee(CallSituation call) {
+      checkArgument(!call.isDelCall());
+      return basicCallees.get(checkNotNull(call));
+    }
+
+    /**
+     * Returns the call graph for the potential callees, or an empty collection. if null is
+     * returned, then it means we could not resolve the target. This can happen for delcalls or
+     * regular calls when allowExternalCalls is enabled. (or temporarily while building).
+     */
+    public List<CallGraphNode> getDelCallees(CallSituation call) {
+      checkArgument(call.isDelCall());
+      return delCallees.get(checkNotNull(call));
+    }
   }
 }

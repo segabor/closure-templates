@@ -26,6 +26,7 @@ import com.google.template.soy.soytree.SoyNode.LocalVarNode;
 import com.google.template.soy.soytree.defn.InjectedParam;
 import com.google.template.soy.soytree.defn.LocalVar;
 import com.google.template.soy.soytree.defn.TemplateParam;
+import com.google.template.soy.soytree.defn.TemplatePropVar;
 
 /**
  * An abstract base class that adds extra visitor methods for unpacking varrefs and functions based
@@ -65,6 +66,9 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
         return visitParam(node, (TemplateParam) defn);
       case IJ_PARAM:
         return visitIjParam(node, (InjectedParam) defn);
+        // Prop is inlined since it is always a constant
+      case PROP:
+        return visitPropNode(node, (TemplatePropVar) defn);
       case UNDECLARED:
         throw new RuntimeException("undeclared params are not supported by jbcsrc");
       default:
@@ -93,6 +97,13 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
           return visitXidFunction(node);
         case IS_PRIMARY_MSG_IN_USE:
           return visitIsPrimaryMsgInUse(node);
+        case TO_FLOAT:
+          return visitToFloatFunction(node);
+        case DEBUG_SOY_TEMPLATE_INFO:
+          return visitDebugSoyTemplateInfoFunction(node);
+        case VE_DATA:
+          // TODO(b/71641483): Implement this once we have ve runtime objects.
+          throw new UnsupportedOperationException();
         case MSG_WITH_ID:
         case REMAINDER:
           // should have been removed earlier in the compiler
@@ -115,6 +126,10 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
 
   T visitParam(VarRefNode varRef, TemplateParam param) {
     return visitExprNode(varRef);
+  }
+
+  T visitPropNode(VarRefNode node, TemplatePropVar prop) {
+    return visitExprNode(node);
   }
 
   T visitIjParam(VarRefNode varRef, InjectedParam ij) {
@@ -149,7 +164,16 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
     return visitExprNode(node);
   }
 
+  T visitToFloatFunction(FunctionNode node) {
+    return visitExprNode(node);
+  }
+
+  T visitDebugSoyTemplateInfoFunction(FunctionNode node) {
+    return visitExprNode(node);
+  }
+
   T visitPluginFunction(FunctionNode node) {
     return visitExprNode(node);
   }
+
 }

@@ -22,6 +22,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
+import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -36,7 +37,6 @@ import com.google.template.soy.base.internal.SoyFileSupplier;
 import com.google.template.soy.base.internal.TriState;
 import com.google.template.soy.base.internal.VolatileSoyFileSupplier;
 import com.google.template.soy.basetree.CopyState;
-import com.google.template.soy.basetree.SyntaxVersion;
 import com.google.template.soy.conformance.ValidatedConformanceConfig;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyCompilationException;
@@ -58,9 +58,9 @@ import com.google.template.soy.msgs.SoyMsgPlugin;
 import com.google.template.soy.msgs.internal.ExtractMsgsVisitor;
 import com.google.template.soy.parseinfo.passes.GenerateParseInfoVisitor;
 import com.google.template.soy.passes.ClearSoyDocStringsVisitor;
-import com.google.template.soy.passes.FindIjParamsVisitor;
-import com.google.template.soy.passes.FindIjParamsVisitor.IjParamsInfo;
 import com.google.template.soy.passes.PassManager;
+import com.google.template.soy.passes.PassManager.PassContinuationRule;
+import com.google.template.soy.passes.TransitiveIjParamsCalculator;
 import com.google.template.soy.plugin.restricted.SoySourceFunction;
 import com.google.template.soy.pysrc.SoyPySrcOptions;
 import com.google.template.soy.pysrc.internal.PySrcMain;
@@ -74,7 +74,8 @@ import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
 import com.google.template.soy.soyparse.PluginResolver;
 import com.google.template.soy.soytree.SoyFileSetNode;
-import com.google.template.soy.soytree.TemplateNode;
+import com.google.template.soy.soytree.TemplateMetadata;
+import com.google.template.soy.soytree.TemplateMetadata.Kind;
 import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.swiftsrc.SoySwiftSrcOptions;
 import com.google.template.soy.swiftsrc.internal.SwiftSrcMain;
@@ -674,6 +675,11 @@ public final class SoyFileSet {
     return soyFileSuppliers;
   }
 
+  @VisibleForTesting
+  SoyTypeRegistry getTypeRegistryForTesting() {
+    return typeRegistry;
+  }
+
   /**
    * Generates Java classes containing parse info (param names, template names, meta info). There
    * will be one Java class per Soy file.
@@ -702,8 +708,9 @@ public final class SoyFileSet {
             passManagerBuilder().allowUnknownGlobals().optimize(false),
             typeRegistry,
             new PluginResolver(
+                // TODO(lukes): make it required, for now, warn
                 // we allow undefined plugins since they typically aren't provided :(
-                PluginResolver.Mode.ALLOW_UNDEFINED,
+                PluginResolver.Mode.ALLOW_UNDEFINED_AND_WARN,
                 printDirectives,
                 soyFunctionMap,
                 soySourceFunctionMap,
@@ -719,6 +726,18 @@ public final class SoyFileSet {
     throwIfErrorsPresent();
     reportWarnings();
     return parseInfo;
+  }
+
+  /** A simple tool to enforce conformance and only conformance. */
+  void checkConformance() {
+    resetErrorReporter();
+    // to check conformance we only need to run as much as it takes to execute the SoyConformance
+    // pass.
+    parse(
+        passManagerBuilder()
+            .addPassContinuationRule("SoyConformance", PassContinuationRule.STOP_AFTER_PASS));
+    throwIfErrorsPresent();
+    reportWarnings();
   }
 
   /**
@@ -757,14 +776,11 @@ public final class SoyFileSet {
   private SoyMsgBundle doExtractMsgs() {
     // extractMsgs disables a bunch of passes since it is typically not configured with things
     // like global definitions, type definitions, etc.
-    // TODO(b/32091399): Message Extraction doesn't have a way to configure the version and it needs
-    // to support all soy files so we assume the worst and configure v1.0.  This can go away when
-    // jssrc no longer supports v1.0
-    generalOptions.setDeclaredSyntaxVersionName("1.0");
     SoyFileSetNode soyTree =
         parse(
                 passManagerBuilder()
                     .allowUnknownGlobals()
+                    .allowV1Expression()
                     .setTypeRegistry(SoyTypeRegistry.DEFAULT_UNKNOWN)
                     .disableAllTypeChecking(),
                 // override the type registry so that the parser doesn't report errors when it
@@ -791,21 +807,33 @@ public final class SoyFileSet {
    * @throws SoyCompilationException If compilation fails.
    */
   public SoyTofu compileToTofu() {
+    return compileToTofu(ImmutableMap.of());
+  }
+  /**
+   * Compiles this Soy file set into a Java object (type {@code SoyTofu}) capable of rendering the
+   * compiled templates.
+   *
+   * @return The resulting {@code SoyTofu} object.
+   * @throws SoyCompilationException If compilation fails.
+   */
+  public SoyTofu compileToTofu(Map<String, Supplier<Object>> pluginInstances) {
     resetErrorReporter();
     ServerCompilationPrimitives primitives = compileForServerRendering();
     throwIfErrorsPresent();
-    SoyTofu tofu = doCompileToTofu(primitives);
+    SoyTofu tofu = doCompileToTofu(primitives, pluginInstances);
 
     reportWarnings();
     return tofu;
   }
 
   /** Helper method to compile SoyTofu from {@link ServerCompilationPrimitives} */
-  private SoyTofu doCompileToTofu(ServerCompilationPrimitives primitives) {
+  private SoyTofu doCompileToTofu(
+      ServerCompilationPrimitives primitives, Map<String, Supplier<Object>> pluginInstances) {
     return new BaseTofu(
         scopedData.enterable(),
-        primitives.registry,
-        getTransitiveIjs(primitives.soyTree, primitives.registry));
+        primitives.soyTree,
+        getTransitiveIjs(primitives.registry),
+        pluginInstances);
   }
 
   /**
@@ -822,11 +850,27 @@ public final class SoyFileSet {
    * @throws SoyCompilationException If compilation fails.
    */
   public SoySauce compileTemplates() {
+    return compileTemplates(ImmutableMap.of());
+  }
+  /**
+   * Compiles this Soy file set into a set of java classes implementing the {@link SoySauce}
+   * interface.
+   *
+   * <p>This is useful for implementing 'edit refresh' workflows. Most production usecases should
+   * use the command line interface to 'ahead of time' compile templates to jar files and then use
+   * {@code PrecompiledSoyModule} or {@code SoySauceBuilder} to get access to a {@link SoySauce}
+   * object without invoking the compiler. This will allow applications to avoid invoking the soy
+   * compiler at runtime which can be relatively slow.
+   *
+   * @return A set of compiled templates
+   * @throws SoyCompilationException If compilation fails.
+   */
+  public SoySauce compileTemplates(Map<String, Supplier<Object>> pluginInstances) {
     resetErrorReporter();
     disallowExternalCalls();
     ServerCompilationPrimitives primitives = compileForServerRendering();
     throwIfErrorsPresent();
-    SoySauce sauce = doCompileSoySauce(primitives);
+    SoySauce sauce = doCompileSoySauce(primitives, pluginInstances);
 
     reportWarnings();
     return sauce;
@@ -842,19 +886,22 @@ public final class SoyFileSet {
     resetErrorReporter();
     disallowExternalCalls();
     ServerCompilationPrimitives primitives = compileForServerRendering();
-    BytecodeCompiler.compileToJar(primitives.registry, errorReporter, typeRegistry, jarTarget);
+    BytecodeCompiler.compileToJar(
+        primitives.registry, primitives.soyTree, errorReporter, typeRegistry, jarTarget);
     if (srcJarTarget.isPresent()) {
-      BytecodeCompiler.writeSrcJar(primitives.registry, soyFileSuppliers, srcJarTarget.get());
+      BytecodeCompiler.writeSrcJar(primitives.soyTree, soyFileSuppliers, srcJarTarget.get());
     }
     throwIfErrorsPresent();
     reportWarnings();
   }
 
   /** Helper method to compile SoySauce from {@link ServerCompilationPrimitives} */
-  private SoySauce doCompileSoySauce(ServerCompilationPrimitives primitives) {
+  private SoySauce doCompileSoySauce(
+      ServerCompilationPrimitives primitives, Map<String, Supplier<Object>> pluginInstances) {
     Optional<CompiledTemplates> templates =
         BytecodeCompiler.compile(
             primitives.registry,
+            primitives.soyTree,
             // if there is an AST cache, assume we are in 'dev mode' and trigger lazy compilation.
             cache != null,
             errorReporter,
@@ -864,7 +911,11 @@ public final class SoyFileSet {
     throwIfErrorsPresent();
 
     return new SoySauceImpl(
-        templates.get(), scopedData.enterable(), soyFunctionMap, printDirectives);
+        templates.get(),
+        scopedData.enterable(),
+        soyFunctionMap,
+        printDirectives,
+        ImmutableMap.copyOf(pluginInstances));
   }
 
   /**
@@ -899,14 +950,18 @@ public final class SoyFileSet {
   }
 
   private ImmutableMap<String, ImmutableSortedSet<String>> getTransitiveIjs(
-      SoyFileSetNode soyTree, TemplateRegistry registry) {
-    ImmutableMap<TemplateNode, IjParamsInfo> templateToIjParamsInfoMap =
-        new FindIjParamsVisitor(registry).execOnAllTemplates(soyTree);
+      TemplateRegistry registry) {
+    TransitiveIjParamsCalculator transitiveIjParamsCalculator =
+        new TransitiveIjParamsCalculator(registry);
     ImmutableMap.Builder<String, ImmutableSortedSet<String>> templateToTransitiveIjParams =
         ImmutableMap.builder();
-    for (Map.Entry<TemplateNode, IjParamsInfo> entry : templateToIjParamsInfoMap.entrySet()) {
-      templateToTransitiveIjParams.put(
-          entry.getKey().getTemplateName(), entry.getValue().ijParamSet);
+    for (TemplateMetadata entry : registry.getAllTemplates()) {
+      // We don't need a transitive set for deltemplates because they cannot be called from the top
+      // level.
+      if (entry.getTemplateKind() != Kind.DELTEMPLATE) {
+        templateToTransitiveIjParams.put(
+            entry.getTemplateName(), transitiveIjParamsCalculator.calculateIjs(entry).ijParamSet);
+      }
     }
     return templateToTransitiveIjParams.build();
   }
@@ -948,7 +1003,7 @@ public final class SoyFileSet {
   @SuppressWarnings("deprecation")
   public List<String> compileToJsSrc(
       SoyJsSrcOptions jsSrcOptions, @Nullable SoyMsgBundle msgBundle) {
-    ParseResult result = preprocessJsSrcResults(jsSrcOptions);
+    ParseResult result = preprocessJsSrcResults();
     TemplateRegistry registry = result.registry();
     SoyFileSetNode fileSet = result.fileSet();
     List<String> generatedSrcs =
@@ -980,7 +1035,7 @@ public final class SoyFileSet {
       @Nullable SoyMsgPlugin msgPlugin,
       @Nullable String messageFilePathFormat)
       throws IOException {
-    ParseResult result = preprocessJsSrcResults(jsSrcOptions);
+    ParseResult result = preprocessJsSrcResults();
 
     SoyFileSetNode soyTree = result.fileSet();
     TemplateRegistry registry = result.registry();
@@ -1029,18 +1084,14 @@ public final class SoyFileSet {
   }
 
   @SuppressWarnings("deprecation")
-  private ParseResult preprocessJsSrcResults(SoyJsSrcOptions jsSrcOptions) {
+  private ParseResult preprocessJsSrcResults() {
     resetErrorReporter();
 
-    // Synchronize old and new ways to declare syntax version V1.
-    if (jsSrcOptions.shouldAllowDeprecatedSyntax()) {
-      generalOptions.setDeclaredSyntaxVersionName("1.0");
-    }
     // JS has traditionally allowed unknown globals, as a way for soy to reference normal js enums
     // and constants. For consistency/reusability of templates it would be nice to not allow that
     // but the cat is out of the bag.
     PassManager.Builder builder =
-        passManagerBuilder().allowUnknownGlobals().desugarHtmlNodes(false);
+        passManagerBuilder().allowUnknownGlobals().allowV1Expression().desugarHtmlNodes(false);
     ParseResult parseResult = parse(builder);
     throwIfErrorsPresent();
     return parseResult;
@@ -1049,11 +1100,6 @@ public final class SoyFileSet {
   /** Prepares the parsed result for use in generating Incremental DOM source code. */
   @SuppressWarnings("deprecation")
   private ParseResult preprocessIncrementalDOMResults() {
-    SyntaxVersion declaredSyntaxVersion = generalOptions.getDeclaredSyntaxVersion();
-
-    Preconditions.checkState(
-        declaredSyntaxVersion == SyntaxVersion.V2_0,
-        "Incremental DOM code generation only supports syntax version of V2");
     requireStrictAutoescaping();
     // For incremental dom backend, we don't desugar HTML nodes since it requires HTML context.
     ParseResult result = parse(passManagerBuilder().desugarHtmlNodes(false));
@@ -1098,6 +1144,43 @@ public final class SoyFileSet {
     reportWarnings();
   }
 
+  /**
+   * Performs the minimal amount of work needed to calculate TemplateMetadata objects for header
+   * compilation.
+   */
+  ParseResult compileMinimallyForHeaders() {
+    resetErrorReporter();
+    ParseResult result =
+        parse(
+            passManagerBuilder()
+                // HtmlRewrite is the first pass.  So if we stop before it means we don't run
+                // any passes.  This is kind of weird.  Alternatively we could configure the
+                // SoyFileSetParser with a null passmanger, since that is what we want.
+                .addPassContinuationRule("HtmlRewrite", PassContinuationRule.STOP_BEFORE_PASS),
+            typeRegistry,
+            // we allow undefined plugins so we don't need to provide them to the header
+            // compiler.  We do this for 2 reasons.
+            // 1. information about plugins is not required to produce template headers, so we can
+            // simply get away without it.
+            // 2. generateParseInfo doesn't require plugins to be provided. So if we want to speed
+            // up generateParseInfo by having it use template headers, then we need to be able to
+            // produce headers without requiring plugins.  Of course it would be better to fix
+            // generateParseInfo.
+            // TODO(b/63212073): It would be better to delay plugin resolution so that it happens
+            // after the parser runs.  Then we would naturally skip resolution due to the pass
+            // continuation rule above.
+            new PluginResolver(
+                PluginResolver.Mode.ALLOW_UNDEFINED,
+                printDirectives,
+                soyFunctionMap,
+                soySourceFunctionMap,
+                errorReporter));
+
+    throwIfErrorsPresent();
+    reportWarnings();
+    return result;
+  }
+
   ImmutableMap<String, SoyFunction> getSoyFunctions() {
     return soyFunctionMap;
   }
@@ -1110,8 +1193,9 @@ public final class SoyFileSet {
     return soySourceFunctionMap;
   }
 
-  // Parse the current file set with the given default syntax version.
-  private ParseResult parse() {
+  // Parse the current file set.
+  @VisibleForTesting
+  ParseResult parse() {
     return parse(passManagerBuilder());
   }
 
@@ -1120,9 +1204,7 @@ public final class SoyFileSet {
         builder,
         typeRegistry,
         new PluginResolver(
-            generalOptions.getDeclaredSyntaxVersion() == SyntaxVersion.V1_0
-                ? PluginResolver.Mode.ALLOW_UNDEFINED_FUNCTIONS_FOR_V1_SUPPORT
-                : PluginResolver.Mode.REQUIRE_DEFINITIONS,
+            PluginResolver.Mode.REQUIRE_DEFINITIONS,
             printDirectives,
             soyFunctionMap,
             soySourceFunctionMap,
@@ -1157,7 +1239,8 @@ public final class SoyFileSet {
    *
    * <p>This method should be called at the beginning of every entry point into SoyFileSet.
    */
-  private void resetErrorReporter() {
+  @VisibleForTesting
+  void resetErrorReporter() {
     errorReporter = ErrorReporter.create(soyFileSuppliers);
   }
 

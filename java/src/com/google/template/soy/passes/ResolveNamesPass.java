@@ -41,12 +41,13 @@ import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyNode.BlockNode;
 import com.google.template.soy.soytree.SoyNode.ExprHolderNode;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
+import com.google.template.soy.soytree.TemplateElementNode;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.defn.InjectedParam;
 import com.google.template.soy.soytree.defn.LocalVar;
 import com.google.template.soy.soytree.defn.LoopVar;
 import com.google.template.soy.soytree.defn.TemplateParam;
-import com.google.template.soy.soytree.defn.TemplateStateVar;
+import com.google.template.soy.soytree.defn.TemplatePropVar;
 import com.google.template.soy.soytree.defn.UndeclaredVar;
 import java.util.ArrayDeque;
 import java.util.BitSet;
@@ -243,8 +244,10 @@ public final class ResolveNamesPass extends CompilerFilePass {
       for (TemplateParam param : node.getAllParams()) {
         localVariables.define(param, node);
       }
-      for (TemplateStateVar stateVar : node.getStateVars()) {
-        localVariables.define(stateVar, node);
+      if (node instanceof TemplateElementNode) {
+        for (TemplatePropVar propVar : ((TemplateElementNode) node).getPropVars()) {
+          localVariables.define(propVar, node);
+        }
       }
 
       visitSoyNode(node);
@@ -325,8 +328,8 @@ public final class ResolveNamesPass extends CompilerFilePass {
         return Optional.of(((TemplateParam) varDefn).nameLocation());
       case LOCAL_VAR:
         return Optional.of(((LocalVar) varDefn).declaringNode().getSourceLocation());
-      case STATE:
-        return Optional.of(((TemplateStateVar) varDefn).nameLocation());
+      case PROP:
+        return Optional.of(((TemplatePropVar) varDefn).nameLocation());
       case IJ_PARAM:
       case UNDECLARED:
         return Optional.absent();
@@ -387,7 +390,7 @@ public final class ResolveNamesPass extends CompilerFilePass {
       if (varRef.isDollarSignIjParameter()) {
         InjectedParam ijParam = ijParams.get(varRef.getName());
         if (ijParam == null) {
-          ijParam = new InjectedParam(varRef.getName());
+          ijParam = new InjectedParam(varRef.getName(), varRef.getSourceLocation());
           ijParams.put(varRef.getName(), ijParam);
         }
         varRef.setDefn(ijParam);
@@ -397,7 +400,7 @@ public final class ResolveNamesPass extends CompilerFilePass {
       if (varDefn == null) {
         // this case is mostly about supporting v1 templates.  Undeclared vars for v2 templates are
         // flagged as errors in the CheckTemplateParamsPass
-        varDefn = new UndeclaredVar(varRef.getName());
+        varDefn = new UndeclaredVar(varRef.getName(), varRef.getSourceLocation());
       }
       varRef.setDefn(varDefn);
     }

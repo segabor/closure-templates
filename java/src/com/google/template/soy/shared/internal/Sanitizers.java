@@ -335,6 +335,22 @@ public final class Sanitizers {
   }
 
   /**
+   * Escapes HTML special characters in an HTML attribute value containing HTML code, such as {@code
+   * <iframe srcdoc>}.
+   */
+  public static String escapeHtmlHtmlAttribute(SoyValue value) {
+    return escapeHtml(value);
+  }
+
+  /**
+   * Escapes HTML special characters in an HTML attribute value containing HTML code, such as {@code
+   * <iframe srcdoc>}.
+   */
+  public static String escapeHtmlHtmlAttribute(String value) {
+    return escapeHtml(value);
+  }
+
+  /**
    * Converts plain text to HTML by entity escaping, stripping tags in sanitized content so the
    * result can safely be embedded in an unquoted HTML attribute value.
    */
@@ -353,6 +369,19 @@ public final class Sanitizers {
    */
   public static String escapeHtmlAttributeNospace(String value) {
     return EscapingConventions.EscapeHtmlNospace.INSTANCE.escape(value);
+  }
+
+  /** Filters decimal and floating-point numbers. */
+  public static String filterNumber(SoyValue value) {
+    return filterNumber(value.coerceToString());
+  }
+
+  /** Filters decimal and floating-point numbers. */
+  public static String filterNumber(String value) {
+    if (!value.matches("\\d*\\.?\\d+")) {
+      return EscapingConventions.INNOCUOUS_OUTPUT;
+    }
+    return value;
   }
 
   /** Converts the input to the body of a JavaScript string by using {@code \n} style escapes. */
@@ -560,6 +589,19 @@ public final class Sanitizers {
     }
     logger.log(Level.WARNING, "|filterNormalizeMediaUri received bad value ''{0}''", value);
     return EscapingConventions.FilterNormalizeMediaUri.INSTANCE.getInnocuousOutput();
+  }
+
+  /**
+   * Like {@link #filterNormalizeUri} but also escapes ';'. It is a special character in content of
+   * {@code <meta http-equiv="Refresh">}.
+   */
+  public static String filterNormalizeRefreshUri(SoyValue value) {
+    return filterNormalizeUri(value).replace(";", "%3B");
+  }
+
+  /** Like {@link #filterNormalizeUri} but also escapes ';'. */
+  public static String filterNormalizeRefreshUri(String value) {
+    return filterNormalizeUri(value).replace(";", "%3B");
   }
 
   /** Makes sure the given input is an instance of either trustedResourceUrl or trustedString. */

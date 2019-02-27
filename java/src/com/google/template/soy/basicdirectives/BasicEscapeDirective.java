@@ -92,11 +92,6 @@ public abstract class BasicEscapeDirective
     return VALID_ARGS_SIZES;
   }
 
-  @Override
-  public final boolean shouldCancelAutoescape() {
-    return true;
-  }
-
   /**
    * Returns whether or not the streaming version of this directive is closeable.
    *
@@ -254,6 +249,20 @@ public abstract class BasicEscapeDirective
     }
   }
 
+  /** Implements the |escapeHtmlHtmlAttribute directive. */
+  @SoyPurePrintDirective
+  static final class EscapeHtmlHtmlAttribute extends BasicEscapeDirective {
+
+    EscapeHtmlHtmlAttribute() {
+      super("|escapeHtmlHtmlAttribute");
+    }
+
+    @Override
+    protected String escape(SoyValue value) {
+      return Sanitizers.escapeHtmlHtmlAttribute(value);
+    }
+  }
+
   /** Implements the |escapeHtmlAttributeNospace directive. */
   @SoyPurePrintDirective
   static final class EscapeHtmlAttributeNospace extends BasicEscapeDirective {
@@ -284,6 +293,19 @@ public abstract class BasicEscapeDirective
     @Override
     protected boolean isCloseable() {
       return true;
+    }
+  }
+
+  /** Implements the |filterNumber directive. */
+  @SoyPurePrintDirective
+  static final class FilterNumber extends BasicEscapeDirective {
+    FilterNumber() {
+      super("|filterNumber");
+    }
+
+    @Override
+    protected String escape(SoyValue value) {
+      return Sanitizers.filterNumber(value);
     }
   }
 
@@ -373,6 +395,20 @@ public abstract class BasicEscapeDirective
     @Override
     protected String escape(SoyValue value) {
       return Sanitizers.filterNormalizeMediaUri(value);
+    }
+  }
+
+  /** Implements the |filterNormalizeRefreshUri directive. */
+  @SoyPurePrintDirective
+  static final class FilterNormalizeRefreshUri extends BasicEscapeDirective {
+
+    FilterNormalizeRefreshUri() {
+      super("|filterNormalizeRefreshUri");
+    }
+
+    @Override
+    protected String escape(SoyValue value) {
+      return Sanitizers.filterNormalizeRefreshUri(value);
     }
   }
 

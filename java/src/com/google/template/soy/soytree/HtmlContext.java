@@ -60,8 +60,14 @@ public enum HtmlContext {
   /** Inside an HTML comment. */
   HTML_COMMENT(EscapingMode.ESCAPE_HTML_RCDATA),
 
-  /** Inside a normal (non-CSS, JS, or URI) HTML attribute value. */
+  /** Inside a normal (non-CSS, JS, HTML, META_REFRESH_CONTENT, or URI) HTML attribute value. */
   HTML_NORMAL_ATTR_VALUE(EscapingMode.ESCAPE_HTML_ATTRIBUTE),
+
+  /** Inside an HTML attribute value containing HTML such as {@code <iframe srcdoc="">}. */
+  HTML_HTML_ATTR_VALUE(EscapingMode.ESCAPE_HTML_HTML_ATTRIBUTE),
+
+  /** Inside the content attribute of {@code <meta http-equiv="refresh">}. */
+  HTML_META_REFRESH_CONTENT(EscapingMode.FILTER_NUMBER),
 
   /** In CSS content outside a comment, string, or URI. */
   CSS(EscapingMode.FILTER_CSS_VALUE),
@@ -88,10 +94,10 @@ public enum HtmlContext {
   JS(EscapingMode.ESCAPE_JS_VALUE),
 
   /** In JavaScript inside a line comment. */
-  JS_LINE_COMMENT("JS comments cannot contain dynamic values."),
+  JS_LINE_COMMENT(EscapingMode.ESCAPE_JS_STRING),
 
   /** In JavaScript inside a block comment. */
-  JS_BLOCK_COMMENT("JS comments cannot contain dynamic values."),
+  JS_BLOCK_COMMENT(EscapingMode.ESCAPE_JS_STRING),
 
   /** In JavaScript inside a double quoted string. */
   JS_DQ_STRING(EscapingMode.ESCAPE_JS_STRING),

@@ -16,6 +16,10 @@
 
 package com.google.template.soy.passes;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
+import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.IdGenerator;
@@ -23,7 +27,6 @@ import com.google.template.soy.base.internal.SanitizedContentKind;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.ErrorReporter.Checkpoint;
 import com.google.template.soy.error.SoyErrorKind;
-import com.google.template.soy.error.SoyErrorKind.StyleAllowance;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.soytree.AbstractSoyNodeVisitor;
 import com.google.template.soy.soytree.AutoescapeMode;
@@ -41,15 +44,19 @@ import com.google.template.soy.soytree.MsgPluralCaseNode;
 import com.google.template.soy.soytree.MsgPluralDefaultNode;
 import com.google.template.soy.soytree.MsgSelectCaseNode;
 import com.google.template.soy.soytree.MsgSelectDefaultNode;
+import com.google.template.soy.soytree.RawTextNode;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyNode.BlockNode;
+import com.google.template.soy.soytree.SoyNode.Kind;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
+import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.SwitchCaseNode;
 import com.google.template.soy.soytree.SwitchDefaultNode;
 import com.google.template.soy.soytree.SwitchNode;
 import com.google.template.soy.soytree.TagName;
+import com.google.template.soy.soytree.TemplateElementNode;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.VeLogNode;
 import java.util.ArrayDeque;
@@ -58,12 +65,6 @@ import java.util.Map;
 
 /** A {@link CompilerFilePass} that checks strict html mode. See go/soy-html for usages. */
 final class StrictHtmlValidationPass extends CompilerFilePass {
-  private static final SoyErrorKind STRICT_HTML_WITHOUT_AUTOESCAPE =
-      SoyErrorKind.of(
-          "stricthtml=\"true\" must be used with autoescape=\"strict\".", StyleAllowance.NO_CAPS);
-  private static final SoyErrorKind STRICT_HTML_WITH_NON_HTML =
-      SoyErrorKind.of(
-          "stricthtml=\"true\" can only be used with kind=\"html\".", StyleAllowance.NO_CAPS);
   private static final SoyErrorKind INVALID_SELF_CLOSING_TAG =
       SoyErrorKind.of("''{0}'' tag is not allowed to be self-closing.");
   private static final SoyErrorKind INVALID_CLOSE_TAG =
@@ -77,6 +78,7 @@ final class StrictHtmlValidationPass extends CompilerFilePass {
       SoyErrorKind.of(
           "Unexpected HTML close tag. Within an if or switch block, "
               + "all branches must end with unmatched open tags or unmatched close tags.");
+
   private static final SoyErrorKind VELOG_NODE_FIRST_CHILD_NOT_TAG =
       SoyErrorKind.of("The first child of '{velog'} must be a HTML open tag.");
   private static final SoyErrorKind VELOG_NODE_LAST_CHILD_NOT_TAG =
@@ -84,10 +86,14 @@ final class StrictHtmlValidationPass extends CompilerFilePass {
   private static final SoyErrorKind VELOG_NODE_EXACTLY_ONE_TAG =
       SoyErrorKind.of("'{velog'} must contain exactly one top-level HTML element.");
 
+  private static final SoyErrorKind SOY_ELEMENT_EXACTLY_ONE_TAG =
+      SoyErrorKind.of(
+          "Soy elements must contain exactly one top-level HTML element (e.g, span, div).");
+
   private final ErrorReporter errorReporter;
 
   StrictHtmlValidationPass(ErrorReporter errorReporter) {
-    this.errorReporter = errorReporter;
+    this.errorReporter = checkNotNull(errorReporter);
   }
 
   @Override
@@ -99,16 +105,20 @@ final class StrictHtmlValidationPass extends CompilerFilePass {
 
   private void checkTemplateNode(TemplateNode node) {
     AutoescapeMode autoescapeMode = node.getAutoescapeMode();
-    if (autoescapeMode != AutoescapeMode.STRICT && node.isStrictHtml()) {
-      errorReporter.report(node.getSourceLocation(), STRICT_HTML_WITHOUT_AUTOESCAPE);
-      return;
-    }
+    // The SoyConformance pass runs before this pass, which guarantees that any strict HTML node has
+    // STRICT autoescaping mode. Note that you are allowed to set STRICT autoescaping mode on
+    // a non-strict-HTML node.
+    checkState(
+        !(autoescapeMode != AutoescapeMode.STRICT && node.isStrictHtml()),
+        "Strict HTML template without strict autoescaping.");
     // ContentKind is guaranteed to be non-null if AutoescapeMode is strict.
     SanitizedContentKind contentKind = node.getContentKind();
-    if (contentKind != SanitizedContentKind.HTML && node.isStrictHtml()) {
-      errorReporter.report(node.getSourceLocation(), STRICT_HTML_WITH_NON_HTML);
-      return;
-    }
+    // The SoyConformance pass runs before this pass, which guarantees that any strict HTML node has
+    // STRICT HTML sanitize mode. Note that you are allowed to set STRICT sanitize mode on
+    // a non-strict-HTML node.
+    checkState(
+        !(contentKind != SanitizedContentKind.HTML && node.isStrictHtml()),
+        "Strict HTML in a non-HTML node.");
     if (node.isStrictHtml()) {
       new HtmlTagVisitor(errorReporter).exec(node);
     }
@@ -151,8 +161,8 @@ final class StrictHtmlValidationPass extends CompilerFilePass {
     private boolean inForeignContent = false;
 
     /**
-     * A map that records the tag matching process. The keys are open tags, and the values are the
-     * close tags that actually match the corresponding open tags.
+     * A map that records the tag matching process. The keys are close tags, and the values are the
+     * open tags that actually match the corresponding close tags.
      */
     // TODO(user): Change this to a multimap and use it for improving error messages.
     private final Map<HtmlCloseTagNode, HtmlOpenTagNode> tagMatches = new IdentityHashMap<>();
@@ -169,7 +179,7 @@ final class StrictHtmlValidationPass extends CompilerFilePass {
     @Override
     protected void visitHtmlOpenTagNode(HtmlOpenTagNode node) {
       TagName openTag = node.getTagName();
-      HtmlTagEntry entry = new HtmlTagEntry(node);
+      HtmlTagEntry entry = HtmlTagEntry.builder().setTagNode(node).build();
       // Switch to xml mode if we reach a <svg> tag.
       if (openTag.isForeignContent()) {
         if (inForeignContent) {
@@ -199,7 +209,7 @@ final class StrictHtmlValidationPass extends CompilerFilePass {
     @Override
     protected void visitHtmlCloseTagNode(HtmlCloseTagNode node) {
       TagName closeTag = node.getTagName();
-      HtmlTagEntry entry = new HtmlTagEntry(node);
+      HtmlTagEntry entry = HtmlTagEntry.builder().setTagNode(node).build();
       // Report an error if this node is a void tag. Void tag should never be closed.
       if (closeTag.isDefinitelyVoid()) {
         errorReporter.report(
@@ -247,11 +257,11 @@ final class StrictHtmlValidationPass extends CompilerFilePass {
         closeTagBranches.clear();
       }
       if (!openTagBranches.isEmpty()) {
-        openTagStack.addFirst(new HtmlTagEntry(openTagBranches));
+        openTagStack.addFirst(HtmlTagEntry.builder().setBranches(openTagBranches).build());
         openTagBranches.clear();
       }
       if (!closeTagBranches.isEmpty()) {
-        closeTagQueue.addLast(new HtmlTagEntry(closeTagBranches));
+        closeTagQueue.addLast(HtmlTagEntry.builder().setBranches(closeTagBranches).build());
         closeTagBranches.clear();
       }
       // At this point we should try to match openTagStack and closeTagQueue and remove anything
@@ -294,11 +304,11 @@ final class StrictHtmlValidationPass extends CompilerFilePass {
         closeTagBranches.clear();
       }
       if (!openTagBranches.isEmpty()) {
-        openTagStack.addFirst(new HtmlTagEntry(openTagBranches));
+        openTagStack.addFirst(HtmlTagEntry.builder().setBranches(openTagBranches).build());
         openTagBranches.clear();
       }
       if (!closeTagBranches.isEmpty()) {
-        closeTagQueue.addLast(new HtmlTagEntry(closeTagBranches));
+        closeTagQueue.addLast(HtmlTagEntry.builder().setBranches(closeTagBranches).build());
         closeTagBranches.clear();
       }
       // At this point we should try to match openTagStack and closeTagQueue and remove anything
@@ -329,7 +339,7 @@ final class StrictHtmlValidationPass extends CompilerFilePass {
 
     @Override
     protected void visitVeLogNode(VeLogNode node) {
-      // {velog} must contains at least one child.
+      // {velog} must contain at least one child.
       if (node.numChildren() == 0) {
         errorReporter.report(node.getSourceLocation(), VELOG_NODE_EXACTLY_ONE_TAG);
         return;
@@ -358,7 +368,7 @@ final class StrictHtmlValidationPass extends CompilerFilePass {
         }
       }
       visitBlockChildren(node, /* inControlBlock= */ false);
-      // After visiting all the children, we should have alreday built the map.
+      // After visiting all the children, we should have already built the map.
       // At this point, we check the map and verify that the first child is actually popped by the
       // last child. Otherwise, report an error.
       if (lastTag != null) {
@@ -382,8 +392,87 @@ final class StrictHtmlValidationPass extends CompilerFilePass {
       if (errorReporter.errorsSince(checkpoint)) {
         return;
       }
+
       // Match the tags in the deques.
       HtmlTagEntry.matchOrError(openTagStack, closeTagQueue, errorReporter);
+
+      if (node instanceof TemplateElementNode) {
+        validateSoyElementHasOneRootTagNode(node);
+      }
+    }
+
+    private void validateSoyElementHasOneRootTagNode(TemplateNode node) {
+      class HtmlOrControlNode implements Predicate<SoyNode> {
+        @Override
+        public boolean apply(SoyNode node) {
+          ImmutableList<Kind> validKinds =
+              ImmutableList.of(
+                  Kind.HTML_COMMENT_NODE,
+                  Kind.LET_CONTENT_NODE,
+                  Kind.VE_LOG_NODE,
+                  Kind.LET_VALUE_NODE,
+                  Kind.DEBUGGER_NODE);
+          return !validKinds.contains(node.getKind())
+              // Skip empty raw text nodes. They will be later be stripped out as part
+              // of {@link CombineConsecutiveRawTextNodesPass}.
+              && !(node instanceof RawTextNode && ((RawTextNode) node).isEmpty());
+        }
+      }
+
+      class VeLogMatcher implements Predicate<SoyNode> {
+        @Override
+        public boolean apply(SoyNode node) {
+          return node instanceof VeLogNode;
+        }
+      }
+
+      VeLogNode maybeVelogNode = (VeLogNode) node.firstChildThatMatches(new VeLogMatcher());
+      SoyNode firstNode = node.firstChildThatMatches(new HtmlOrControlNode());
+      SoyNode lastNode = node.lastChildThatMatches(new HtmlOrControlNode());
+      if (maybeVelogNode != null && firstNode != null && lastNode != null) {
+        errorReporter.report(node.getSourceLocation(), SOY_ELEMENT_EXACTLY_ONE_TAG);
+        return;
+      }
+      // Get the first and last nodes that we want to validate are HTML tags that match each other.
+      // Skip e.g. comment, let, and debugger nodes.
+      if (maybeVelogNode != null) {
+        firstNode = maybeVelogNode.firstChildThatMatches(new HtmlOrControlNode());
+        lastNode = maybeVelogNode.lastChildThatMatches(new HtmlOrControlNode());
+      }
+
+      if (firstNode == null || lastNode == null) {
+        errorReporter.report(node.getSourceLocation(), SOY_ELEMENT_EXACTLY_ONE_TAG);
+        return;
+      }
+
+      // Get the nodes now as open and close tags, or null if they are not.
+      HtmlOpenTagNode firstNodeAsOpenTag =
+          (HtmlOpenTagNode) SoyTreeUtils.getNodeAsHtmlTagNode(firstNode, /* openTag= */ true);
+      HtmlCloseTagNode lastNodeAsCloseTag =
+          (HtmlCloseTagNode) SoyTreeUtils.getNodeAsHtmlTagNode(lastNode, /* openTag= */ false);
+      boolean firstTagIsSelfClosing =
+          firstNodeAsOpenTag != null
+              && firstNodeAsOpenTag.isSelfClosing()
+              && firstNodeAsOpenTag.getTagName().isDefinitelyVoid();
+      if (firstTagIsSelfClosing) {
+        if (!firstNode.equals(lastNode)) {
+          // First node is self-closing, but there is another element after the self-closing node.
+          errorReporter.report(lastNode.getSourceLocation(), SOY_ELEMENT_EXACTLY_ONE_TAG);
+        }
+      } else if (firstNodeAsOpenTag == null || lastNodeAsCloseTag == null) {
+        // Either the first or last node is not an HTML tag.
+        SoyNode nodeToReport = firstNodeAsOpenTag == null ? firstNode : lastNode;
+        errorReporter.report(nodeToReport.getSourceLocation(), SOY_ELEMENT_EXACTLY_ONE_TAG);
+        return;
+      }
+
+      if (tagMatches.get(lastNodeAsCloseTag) != null
+          && !tagMatches.get(lastNodeAsCloseTag).equals(firstNodeAsOpenTag)) {
+        // The last close tag does not match the first open tag, i.e. there are multiple root
+        // HTML tag elements.
+        errorReporter.report(
+            tagMatches.get(lastNodeAsCloseTag).getSourceLocation(), SOY_ELEMENT_EXACTLY_ONE_TAG);
+      }
     }
 
     @Override
@@ -453,10 +542,9 @@ final class StrictHtmlValidationPass extends CompilerFilePass {
       // After we visit all children, we check if deques are empty or not.
       if (inControlBlock) {
         boolean matched = HtmlTagEntry.tryMatchOrError(openTagStack, closeTagQueue, errorReporter);
-        if (matched && !openTagStack.isEmpty() && !closeTagQueue.isEmpty()) {
-          throw new AssertionError(
-              "This should not happen. At least one of the stack/queue should be empty.");
-        }
+        checkState(
+            !(matched && !openTagStack.isEmpty() && !closeTagQueue.isEmpty()),
+            "This should not happen. At least one of the stack/queue should be empty.");
         // If we are in a control block, we add non-empty deques to the branches.
         if (!openTagStack.isEmpty() && closeTagQueue.isEmpty()) {
           openTagBranches.add(currentCondition, openTagStack);

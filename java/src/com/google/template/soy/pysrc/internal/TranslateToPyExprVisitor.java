@@ -47,6 +47,7 @@ import com.google.template.soy.exprtree.OperatorNodes.PlusOpNode;
 import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
+import com.google.template.soy.exprtree.VarDefn;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.logging.LoggingFunction;
 import com.google.template.soy.pysrc.restricted.PyExpr;
@@ -55,6 +56,7 @@ import com.google.template.soy.pysrc.restricted.PyFunctionExprBuilder;
 import com.google.template.soy.pysrc.restricted.PyStringExpr;
 import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
 import com.google.template.soy.shared.internal.BuiltinFunction;
+import com.google.template.soy.soytree.defn.TemplatePropVar;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyType.Kind;
 import java.util.LinkedHashMap;
@@ -203,6 +205,10 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
 
   @Override
   protected PyExpr visitVarRefNode(VarRefNode node) {
+    if (node.getDefnDecl().kind() == VarDefn.Kind.PROP) {
+      TemplatePropVar prop = (TemplatePropVar) node.getDefnDecl();
+      return visit(prop.initialValue());
+    }
     return visitNullSafeNode(node);
   }
 
@@ -228,7 +234,12 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
       case VAR_REF_NODE:
         {
           VarRefNode varRef = (VarRefNode) node;
-          if (varRef.isInjected()) {
+          if (varRef.getDefnDecl().kind() == VarDefn.Kind.PROP) {
+            TemplatePropVar prop = (TemplatePropVar) varRef.getDefnDecl();
+            // This means we will generate code for the prop initializer multiple times.  This
+            // could be improved but this is not yet important for pysrc
+            return visitNullSafeNodeRecurse(prop.initialValue(), nullSafetyPrefix);
+          } else if (varRef.isInjected()) {
             // Case 1: Injected data reference.
             return genCodeForLiteralKeyAccess("ijData", varRef.getName());
           } else {
@@ -436,9 +447,19 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
         return visitXidFunction(node);
       case IS_PRIMARY_MSG_IN_USE:
         return visitIsPrimaryMsgInUseFunction(node);
+      case TO_FLOAT:
+        // this is a no-op in python
+        return visit(node.getChild(0));
+      case DEBUG_SOY_TEMPLATE_INFO:
+        // 'debugSoyTemplateInfo' is used for inpsecting soy template info from rendered pages.
+        // Always resolve to false since there is no plan to support this feature in PySrc.
+        return new PyExpr("False", Integer.MAX_VALUE);
       case V1_EXPRESSION:
         throw new UnsupportedOperationException(
             "the v1Expression function can't be used in templates compiled to Python");
+      case VE_DATA:
+        // TODO(b/71641483): Implement this once we have ve runtime objects.
+        throw new UnsupportedOperationException();
       case MSG_WITH_ID:
       case REMAINDER:
         // should have been removed earlier in the compiler

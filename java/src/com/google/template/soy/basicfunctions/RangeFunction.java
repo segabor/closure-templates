@@ -15,16 +15,14 @@
  */
 package com.google.template.soy.basicfunctions;
 
-import com.google.common.base.Function;
-import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
-import com.google.template.soy.jssrc.restricted.JsExpr;
-import com.google.template.soy.jssrc.restricted.SoyLibraryAssistedJsSrcFunction;
 import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
 import com.google.template.soy.plugin.java.restricted.JavaValue;
 import com.google.template.soy.plugin.java.restricted.JavaValueFactory;
 import com.google.template.soy.plugin.java.restricted.SoyJavaSourceFunction;
+import com.google.template.soy.plugin.javascript.restricted.JavaScriptPluginContext;
+import com.google.template.soy.plugin.javascript.restricted.JavaScriptValue;
+import com.google.template.soy.plugin.javascript.restricted.JavaScriptValueFactory;
+import com.google.template.soy.plugin.javascript.restricted.SoyJavaScriptSourceFunction;
 import com.google.template.soy.pysrc.restricted.PyExpr;
 import com.google.template.soy.pysrc.restricted.PyFunctionExprBuilder;
 import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
@@ -62,16 +60,10 @@ import java.util.List;
           returnType = "list<int>")
     })
 public final class RangeFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyLibraryAssistedJsSrcFunction, SoyPySrcFunction, SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPySrcFunction, SoySwiftSrcFunction {
 
   private static final class Methods {
-    static final Method RANGE_1 =
-        JavaValueFactory.createMethod(BasicFunctionsRuntime.class, "range", int.class);
-
-    static final Method RANGE_2 =
-        JavaValueFactory.createMethod(BasicFunctionsRuntime.class, "range", int.class, int.class);
-
-    static final Method RANGE_3 =
+    static final Method RANGE =
         JavaValueFactory.createMethod(
             BasicFunctionsRuntime.class, "range", int.class, int.class, int.class);
   }
@@ -79,53 +71,44 @@ public final class RangeFunction extends TypedSoyFunction
   @Override
   public JavaValue applyForJavaSource(
       JavaValueFactory factory, List<JavaValue> args, JavaPluginContext context) {
+    JavaValue start;
+    JavaValue end;
+    JavaValue step;
     switch (args.size()) {
       case 1:
-        return factory.callStaticMethod(Methods.RANGE_1, args.get(0).asSoyInt());
+        start = factory.constant(0);
+        end = args.get(0).asSoyInt();
+        step = factory.constant(1);
+        break;
       case 2:
-        return factory.callStaticMethod(
-            Methods.RANGE_2, args.get(0).asSoyInt(), args.get(1).asSoyInt());
+        start = args.get(0).asSoyInt();
+        end = args.get(1).asSoyInt();
+        step = factory.constant(1);
+        break;
       case 3:
-        return factory.callStaticMethod(
-            Methods.RANGE_3,
-            args.get(0).asSoyInt(),
-            args.get(1).asSoyInt(),
-            args.get(2).asSoyInt());
+        start = args.get(0).asSoyInt();
+        end = args.get(1).asSoyInt();
+        step = args.get(2).asSoyInt();
+        break;
       default:
         throw new AssertionError();
     }
+    return factory.callStaticMethod(Methods.RANGE, start, end, step);
   }
 
   @Override
   public PyExpr computeForPySrc(List<PyExpr> args) {
-    // Coincidentally, soy range is identical to python xrange
-    // in theory we should use range which is guaranteed to produce a list.  But the xrange object
-    // is also enumerable, so as far as soy is concerned it is also a list and we can just use it.
-    return new PyFunctionExprBuilder("xrange").addArgs(args).asPyExpr();
+    // Coincidentally, soy range is identical to python 2 xrange and python 3 range
+    // Use range which is guaranteed to produce either a list (python 2) or a lazy iterable
+    // (python 3) -- both of which are enumerable -- because xrange does not exist in python 3.
+    return new PyFunctionExprBuilder("range").addArgs(args).asPyExpr();
   }
 
   @Override
-  public JsExpr computeForJsSrc(List<JsExpr> args) {
-    return new JsExpr(
-        "goog.array.range("
-            + Joiner.on(", ")
-                .join(
-                    Iterables.transform(
-                        args,
-                        new Function<JsExpr, String>() {
-
-                          @Override
-                          public String apply(JsExpr input) {
-                            return input.getText();
-                          }
-                        }))
-            + ")",
-        Integer.MAX_VALUE);
-  }
-
-  @Override
-  public ImmutableSet<String> getRequiredJsLibNames() {
-    return ImmutableSet.of("goog.array");
+  public JavaScriptValue applyForJavaScriptSource(
+      JavaScriptValueFactory factory, List<JavaScriptValue> args, JavaScriptPluginContext context) {
+    return factory.callNamespaceFunction(
+        "goog.array", "goog.array.range", args.toArray(new JavaScriptValue[0]));
   }
 
   /**

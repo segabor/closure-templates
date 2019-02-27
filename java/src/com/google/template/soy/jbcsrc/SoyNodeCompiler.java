@@ -70,6 +70,7 @@ import com.google.template.soy.msgs.internal.MsgUtils;
 import com.google.template.soy.msgs.internal.MsgUtils.MsgPartsAndIds;
 import com.google.template.soy.shared.RangeArgs;
 import com.google.template.soy.shared.internal.BuiltinFunction;
+import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
 import com.google.template.soy.soytree.AbstractReturningSoyNodeVisitor;
 import com.google.template.soy.soytree.CallBasicNode;
@@ -84,6 +85,7 @@ import com.google.template.soy.soytree.ForNonemptyNode;
 import com.google.template.soy.soytree.IfCondNode;
 import com.google.template.soy.soytree.IfElseNode;
 import com.google.template.soy.soytree.IfNode;
+import com.google.template.soy.soytree.KeyNode;
 import com.google.template.soy.soytree.LetContentNode;
 import com.google.template.soy.soytree.LetValueNode;
 import com.google.template.soy.soytree.LogNode;
@@ -103,6 +105,7 @@ import com.google.template.soy.soytree.SwitchDefaultNode;
 import com.google.template.soy.soytree.SwitchNode;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.VeLogNode;
+import com.google.template.soy.soytree.defn.TemplatePropVar;
 import com.google.template.soy.types.SoyTypeRegistry;
 import java.util.ArrayList;
 import java.util.List;
@@ -140,12 +143,13 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
       TemplateVariableManager variables,
       TemplateParameterLookup parameterLookup,
       ErrorReporter reporter,
-      SoyTypeRegistry typeRegistry) {
+      SoyTypeRegistry typeRegistry,
+      List<TemplatePropVar> propVars) {
     DetachState detachState = new DetachState(variables, thisVar, stateField);
     ExpressionCompiler expressionCompiler =
         ExpressionCompiler.create(detachState, parameterLookup, variables, reporter, typeRegistry);
     ExpressionToSoyValueProviderCompiler soyValueProviderCompiler =
-        ExpressionToSoyValueProviderCompiler.create(expressionCompiler, parameterLookup);
+        ExpressionToSoyValueProviderCompiler.create(variables, expressionCompiler, parameterLookup);
     return new SoyNodeCompiler(
         thisVar,
         registry,
@@ -162,7 +166,8 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
             variables,
             soyValueProviderCompiler,
             reporter,
-            typeRegistry));
+            typeRegistry,
+            propVars));
   }
 
   private final Expression thisVar;
@@ -568,9 +573,15 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
           parameterLookup.getRenderContext().getEscapingDirectiveAsFunction(child.getName()));
     }
     Label reattachPoint = new Label();
+    SoyFunctionSignature functionSignature =
+        loggingFunction.getClass().getAnnotation(SoyFunctionSignature.class);
+    checkNotNull(
+        functionSignature,
+        "LoggingFunction %s must be annotated with @SoyFunctionSignature",
+        loggingFunction.getClass().getName());
     return appendableExpression
         .appendLoggingFunctionInvocation(
-            loggingFunction.getName(),
+            functionSignature.name(),
             loggingFunction.getPlaceholder(),
             exprCompiler.asBasicCompiler(reattachPoint).compileToList(fn.getChildren()),
             printDirectives)
@@ -737,6 +748,12 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     return MethodRef.RUNTIME_DEBUGGER.invokeVoid(
         constant(node.getSourceLocation().getFilePath()),
         constant(node.getSourceLocation().getBeginLine()));
+  }
+
+  @Override
+  protected Statement visitKeyNode(KeyNode node) {
+    // Outside of incremental dom, key nodes are a no-op.
+    return Statement.NULL_STATEMENT;
   }
 
   /**
@@ -1119,7 +1136,12 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
               ExtraCodeCompiler prefix,
               ExtraCodeCompiler suffix) {
             LetContentNode fakeLet =
-                LetContentNode.forVariable(/*id=*/ -1, node.getSourceLocation(), phname, null);
+                LetContentNode.forVariable(
+                    /*id=*/ -1,
+                    node.getSourceLocation(),
+                    "$" + phname,
+                    node.getSourceLocation(),
+                    null);
             // copy the node so we don't end up removing it from the parent as a side effect.
             fakeLet.addChild(SoyTreeUtils.cloneWithNewIds(node, new FixedIdGenerator(-1)));
             return lazyClosureCompiler.compileLazyContent("ph", fakeLet, phname, prefix, suffix);

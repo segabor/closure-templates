@@ -49,6 +49,7 @@ public interface SoyNode extends Node {
 
     TEMPLATE_BASIC_NODE,
     TEMPLATE_DELEGATE_NODE,
+    TEMPLATE_ELEMENT_NODE,
 
     RAW_TEXT_NODE,
 
@@ -94,6 +95,8 @@ public interface SoyNode extends Node {
     HTML_ATTRIBUTE_NODE,
     HTML_ATTRIBUTE_VALUE_NODE,
     HTML_COMMENT_NODE,
+
+    KEY_NODE,
 
     VE_LOG_NODE,
 

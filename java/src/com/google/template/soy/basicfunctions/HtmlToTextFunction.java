@@ -16,13 +16,15 @@
 
 package com.google.template.soy.basicfunctions;
 
-import com.google.common.collect.ImmutableSet;
-import com.google.template.soy.jssrc.restricted.JsExpr;
-import com.google.template.soy.jssrc.restricted.SoyLibraryAssistedJsSrcFunction;
+import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
 import com.google.template.soy.plugin.java.restricted.JavaValue;
 import com.google.template.soy.plugin.java.restricted.JavaValueFactory;
 import com.google.template.soy.plugin.java.restricted.SoyJavaSourceFunction;
+import com.google.template.soy.plugin.javascript.restricted.JavaScriptPluginContext;
+import com.google.template.soy.plugin.javascript.restricted.JavaScriptValue;
+import com.google.template.soy.plugin.javascript.restricted.JavaScriptValueFactory;
+import com.google.template.soy.plugin.javascript.restricted.SoyJavaScriptSourceFunction;
 import com.google.template.soy.pysrc.restricted.PyExpr;
 import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
 import com.google.template.soy.shared.restricted.Signature;
@@ -43,32 +45,27 @@ import java.util.List;
     name = "htmlToText",
     value =
         @Signature(
-            parameterTypes = {"html"},
+            parameterTypes = {"html|string|null"},
             returnType = "string"))
 final class HtmlToTextFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyLibraryAssistedJsSrcFunction, SoyPySrcFunction, SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPySrcFunction, SoySwiftSrcFunction {
 
   @Override
-  public JsExpr computeForJsSrc(List<JsExpr> args) {
-    String arg = args.get(0).getText();
-    return new JsExpr(String.format("soy.$$htmlToText(String(%s))", arg), Integer.MAX_VALUE);
-  }
-
-  @Override
-  public ImmutableSet<String> getRequiredJsLibNames() {
-    return ImmutableSet.of("soy");
+  public JavaScriptValue applyForJavaScriptSource(
+      JavaScriptValueFactory factory, List<JavaScriptValue> args, JavaScriptPluginContext context) {
+    return factory.callNamespaceFunction("soy", "soy.$$htmlToText", args.get(0));
   }
 
   @Override
   public PyExpr computeForPySrc(List<PyExpr> args) {
     PyExpr arg = args.get(0);
-    return new PyExpr("sanitize.html_to_text(str(" + arg.getText() + "))", Integer.MAX_VALUE);
+    return new PyExpr("sanitize.html_to_text(" + arg.getText() + ")", Integer.MAX_VALUE);
   }
 
   // Lazy singleton pattern, allows other backends to avoid the work.
   private static final class Methods {
     static final Method HTML_TO_TEXT =
-        JavaValueFactory.createMethod(HtmlToText.class, "convert", String.class);
+        JavaValueFactory.createMethod(HtmlToText.class, "convert", SoyValue.class);
   }
 
   @Override

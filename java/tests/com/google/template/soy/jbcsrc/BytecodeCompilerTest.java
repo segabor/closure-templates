@@ -20,6 +20,7 @@ import static com.google.common.truth.Truth.assertThat;
 import static com.google.template.soy.data.SoyValueConverter.EMPTY_DICT;
 import static com.google.template.soy.data.SoyValueConverter.EMPTY_LIST;
 import static com.google.template.soy.jbcsrc.TemplateTester.asRecord;
+import static com.google.template.soy.jbcsrc.TemplateTester.assertThatElementBody;
 import static com.google.template.soy.jbcsrc.TemplateTester.assertThatFile;
 import static com.google.template.soy.jbcsrc.TemplateTester.assertThatTemplateBody;
 import static com.google.template.soy.jbcsrc.TemplateTester.getDefaultContext;
@@ -36,6 +37,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.template.soy.SoyFileSetParser;
+import com.google.template.soy.SoyFileSetParser.ParseResult;
 import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.coredirectives.EscapeHtmlDirective;
 import com.google.template.soy.data.LoggingAdvisingAppendable;
@@ -145,13 +147,15 @@ public class BytecodeCompilerTest {
     SoyFileSetParser parser =
         SoyFileSetParserBuilder.forFileContents(
                 soyFileContent1, soyFileContent2, soyFileContent3, soyFileContent4)
+            .enableExperimentalFeatures(ImmutableList.of("prop_vars"))
             .build();
-    SoyFileSetNode soyTree = parser.parse().fileSet();
-    TemplateRegistry templateRegistry = new TemplateRegistry(soyTree, ErrorReporter.exploding());
+    ParseResult parseResult = parser.parse();
     CompiledTemplates templates =
         BytecodeCompiler.compile(
-                templateRegistry,
-                false,
+                parseResult.registry(),
+                parseResult.fileSet(),
+
+                /*developmentMode=*/ false,
                 ErrorReporter.exploding(),
                 parser.soyFileSuppliers(),
                 parser.typeRegistry())
@@ -197,12 +201,13 @@ public class BytecodeCompilerTest {
         SoyFileSetParserBuilder.forFileContents(soyFileContent)
             .addHtmlAttributesForDebugging(true)
             .build();
-    SoyFileSetNode soyTree = parser.parse().fileSet();
-    TemplateRegistry templateRegistry = new TemplateRegistry(soyTree, ErrorReporter.exploding());
+    ParseResult parseResult = parser.parse();
     CompiledTemplates templates =
         BytecodeCompiler.compile(
-                templateRegistry,
-                false,
+                parseResult.registry(),
+                parseResult.fileSet(),
+
+                /*developmentMode=*/ false,
                 ErrorReporter.exploding(),
                 parser.soyFileSuppliers(),
                 parser.typeRegistry())
@@ -461,6 +466,17 @@ public class BytecodeCompilerTest {
   }
 
   @Test
+  public void testPropNodeNumber() {
+    assertThatElementBody("{@prop foo: number= 1}", "<a>{$foo}</a>").rendersAs("<a>1</a>");
+    assertThatElementBody("{@prop foo:= 1}", "<p>{$foo}</p>").rendersAs("<p>1</p>");
+  }
+
+  @Test
+  public void testPropNodeBoolean() {
+    assertThatElementBody("{@prop foo:= 1}", "<p>{if $foo}1{else}0{/if}</p>").rendersAs("<p>1</p>");
+  }
+
+  @Test
   public void testSwitchNode() {
     assertThatTemplateBody(
             "{switch 1}",
@@ -676,8 +692,8 @@ public class BytecodeCompilerTest {
 
   @Test
   public void testPrintDirectives() {
-    assertThatTemplateBody("{' blah &&blahblahblah' |escapeHtml|insertWordBreaks:8}")
-        .rendersAs(" blah &amp;&amp;blahbl<wbr>ahblah");
+    assertThatTemplateBody("{' blah aablahblahblah' |insertWordBreaks:8}")
+        .rendersAs(" blah aablahbl<wbr>ahblah");
   }
 
   @Test
@@ -791,7 +807,7 @@ public class BytecodeCompilerTest {
             "{namespace ns}",
             "{template .foo}",
             "  {@param? content : string}",
-            "  {$content ?: 'empty' |escapeHtml}",
+            "  {$content ?: 'empty'}",
             "{/template}");
     subject.rendersAs("empty");
     subject.rendersAs(
@@ -937,16 +953,19 @@ public class BytecodeCompilerTest {
                 "{/template}",
                 "");
     SoyFileSetParser parser = SoyFileSetParserBuilder.forFileContents(soyFileContent1).build();
-    SoyFileSetNode soyTree = parser.parse().fileSet();
+    ParseResult parseResult = parser.parse();
+    SoyFileSetNode soyTree = parseResult.fileSet();
+    TemplateRegistry templateRegistry = parseResult.registry();
     // apply an escaping directive to the callsite, just like the autoescaper would
     CallDelegateNode cdn =
         SoyTreeUtils.getAllNodesOfType(soyTree.getChild(0), CallDelegateNode.class).get(0);
     cdn.setEscapingDirectives(ImmutableList.of(new EscapeHtmlDirective()));
-    TemplateRegistry templateRegistry = new TemplateRegistry(soyTree, ErrorReporter.exploding());
     CompiledTemplates templates =
         BytecodeCompiler.compile(
                 templateRegistry,
-                false,
+                soyTree,
+
+                /*developmentMode=*/ false,
                 ErrorReporter.exploding(),
                 parser.soyFileSuppliers(),
                 parser.typeRegistry())
@@ -1143,12 +1162,12 @@ public class BytecodeCompilerTest {
 
   private CompiledTemplates compileFiles(String... soyFileContents) {
     SoyFileSetParser parser = SoyFileSetParserBuilder.forFileContents(soyFileContents).build();
-    SoyFileSetNode soyTree = parser.parse().fileSet();
-    TemplateRegistry templateRegistry = new TemplateRegistry(soyTree, ErrorReporter.exploding());
+    ParseResult parseResult = parser.parse();
     CompiledTemplates templates =
         BytecodeCompiler.compile(
-                templateRegistry,
-                false,
+                parseResult.registry(),
+                parseResult.fileSet(),
+                /*developmentMode=*/ false,
                 ErrorReporter.exploding(),
                 parser.soyFileSuppliers(),
                 parser.typeRegistry())

@@ -19,17 +19,12 @@ package com.google.template.soy.soytree;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.CharMatcher;
-import com.google.common.base.Function;
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
 import com.google.common.base.Splitter;
-import com.google.common.collect.FluentIterable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.Identifier;
@@ -39,10 +34,8 @@ import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.error.SoyErrorKind.StyleAllowance;
 import com.google.template.soy.soytree.TemplateNode.SoyFileHeaderInfo;
 import com.google.template.soy.soytree.defn.SoyDocParam;
-import com.google.template.soy.soytree.defn.TemplateHeaderVarDefn;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.soytree.defn.TemplateParam.DeclLoc;
-import com.google.template.soy.soytree.defn.TemplateStateVar;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -65,8 +58,6 @@ public abstract class TemplateNodeBuilder {
   private static final boolean DISABLE_MIXED_PARAMS_ERROR_FOR_MIGRATION =
       Boolean.getBoolean("DISABLE_MIXED_PARAMS_ERROR_FOR_MIGRATION");
 
-  private static final SoyErrorKind DUPLICATE_DECLARATION =
-      SoyErrorKind.of("Param ''{0}'' is a duplicate of state var ''{0}''.");
   private static final SoyErrorKind INVALID_SOYDOC_PARAM =
       SoyErrorKind.of("Found invalid soydoc param name ''{0}''.");
   private static final SoyErrorKind INVALID_PARAM_NAMED_IJ =
@@ -77,10 +68,9 @@ public abstract class TemplateNodeBuilder {
           StyleAllowance.NO_CAPS);
   private static final SoyErrorKind LEGACY_COMPATIBLE_PARAM_TAG =
       SoyErrorKind.of(
-          "Found invalid SoyDoc param tag ''{0}'', tags like this are only allowed in "
-              + "legacy templates marked ''deprecatedV1=\"true\"''.  The proper soydoc @param "
-              + "syntax is: ''@param <name> <optional comment>''. Soy does not understand JsDoc "
-              + "style type declarations in SoyDoc.");
+          "Found invalid SoyDoc param tag ''{0}''. The proper soydoc @param syntax is: "
+              + "''@param <name> <optional comment>''. Soy does not understand JsDoc style type "
+              + "declarations in SoyDoc.");
   private static final SoyErrorKind PARAM_ALREADY_DECLARED =
       SoyErrorKind.of("Param ''{0}'' already declared.");
 
@@ -144,11 +134,6 @@ public abstract class TemplateNodeBuilder {
   /** The params from template header and/or SoyDoc. Null if no decls and no SoyDoc. */
   @Nullable protected ImmutableList<TemplateParam> params;
 
-  /** The state variables from template header. */
-  protected ImmutableList<TemplateStateVar> stateVars = ImmutableList.of();
-
-  protected boolean isMarkedDeprecatedV1;
-
   protected boolean strictHtmlDisabled;
 
   SourceLocation sourceLocation;
@@ -187,7 +172,7 @@ public abstract class TemplateNodeBuilder {
       Identifier name, List<CommandTagAttribute> attrs);
 
   protected static final ImmutableSet<String> COMMON_ATTRIBUTE_NAMES =
-      ImmutableSet.of("autoescape", "kind", "requirecss", "cssbase", "deprecatedV1", "stricthtml");
+      ImmutableSet.of("autoescape", "kind", "requirecss", "cssbase", "stricthtml");
 
   protected void setCommonCommandValues(List<CommandTagAttribute> attrs) {
     AutoescapeMode autoescapeMode = soyFileHeaderInfo.defaultAutoescapeMode;
@@ -213,9 +198,6 @@ public abstract class TemplateNodeBuilder {
         case "cssbase":
           setCssBaseNamespace(attribute.valueAsCssBase(errorReporter));
           break;
-        case "deprecatedV1":
-          this.isMarkedDeprecatedV1 = attribute.valueAsEnabled(errorReporter);
-          break;
         case "stricthtml":
           strictHtmlDisabled = attribute.valueAsDisabled(errorReporter);
           break;
@@ -225,7 +207,6 @@ public abstract class TemplateNodeBuilder {
     }
     setAutoescapeInfo(autoescapeMode, kind, kindLocation);
   }
-
 
   /**
    * Sets the SoyDoc for the node to be built. The SoyDoc will be parsed to fill in SoyDoc param
@@ -285,13 +266,6 @@ public abstract class TemplateNodeBuilder {
         }
       }
     }
-    checkDuplicateHeaderVars(params, stateVars, errorReporter);
-    return this;
-  }
-
-  public TemplateNodeBuilder setStateVars(ImmutableList<TemplateStateVar> newStateVars) {
-    this.stateVars = newStateVars;
-    checkDuplicateHeaderVars(params, stateVars, errorReporter);
     return this;
   }
 
@@ -553,10 +527,7 @@ public abstract class TemplateNodeBuilder {
 
         } else {
           if (declText.startsWith("{")) {
-            // v1 is allowed for compatibility reasons
-            if (!isMarkedDeprecatedV1) {
-              errorReporter.report(paramLocation, LEGACY_COMPATIBLE_PARAM_TAG, declText);
-            }
+            errorReporter.report(paramLocation, LEGACY_COMPATIBLE_PARAM_TAG, declText);
           } else {
             errorReporter.report(paramLocation, INVALID_SOYDOC_PARAM, declText);
           }
@@ -568,49 +539,5 @@ public abstract class TemplateNodeBuilder {
     }
 
     return params;
-  }
-
-  /**
-   * Check for duplicate header variable names and append error text for each duplicate to the
-   * `errorReporter`. For example, this is an error:
-   *
-   * <pre>{@code
-   * {@param s: bool}
-   * {@state s: bool}
-   * }</pre>
-   *
-   * Note that it is not possible to have duplicate names of the same declaration type. Any
-   * duplicate {@code @state} or {@code @param} will have been flagged as error during the resolve-
-   * names pass or in {@link #addParams(Iterable)}.
-   */
-  @VisibleForTesting
-  static void checkDuplicateHeaderVars(
-      ImmutableList<? extends TemplateHeaderVarDefn> params,
-      ImmutableList<? extends TemplateHeaderVarDefn> stateVars,
-      ErrorReporter errorReporter) {
-
-    final Set<String> stateVarNames =
-        FluentIterable.from(stateVars)
-            .transform(
-                new Function<TemplateHeaderVarDefn, String>() {
-                  @Override
-                  public String apply(TemplateHeaderVarDefn stateVar) {
-                    return stateVar.name();
-                  }
-                })
-            .toSet();
-
-    Iterable<? extends TemplateHeaderVarDefn> duplicateVars =
-        Iterables.filter(
-            params,
-            new Predicate<TemplateHeaderVarDefn>() {
-              @Override
-              public boolean apply(TemplateHeaderVarDefn param) {
-                return stateVarNames.contains(param.name());
-              }
-            });
-    for (TemplateHeaderVarDefn duplicateVar : duplicateVars) {
-      errorReporter.report(duplicateVar.nameLocation(), DUPLICATE_DECLARATION, duplicateVar.name());
-    }
   }
 }

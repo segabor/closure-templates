@@ -19,14 +19,12 @@ import com.google.common.base.Optional;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
-import com.google.template.soy.error.SoyErrorKind.StyleAllowance;
-import com.google.template.soy.error.SoyErrors;
 import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.logging.LoggingFunction;
-import com.google.template.soy.logging.ValidatedLoggingConfig;
 import com.google.template.soy.logging.ValidatedLoggingConfig.ValidatedLoggableElement;
+import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.soytree.MsgNode;
 import com.google.template.soy.soytree.PrintNode;
 import com.google.template.soy.soytree.SoyFileNode;
@@ -42,28 +40,31 @@ import com.google.template.soy.types.BoolType;
 import com.google.template.soy.types.SoyProtoType;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyType.Kind;
+import com.google.template.soy.types.VeType;
 
 /**
- * Validates uses of the {@code velog} command.
+ * Validates uses of the {@code velog} command and {@code ve_data} expression.
  *
  * <p>Must run after:
  *
  * <ul>
+ *   <li>VeRewritePass since that rewrites VE syntactic sugar
  *   <li>ResolveTypesPass since we rely on type resolution data
  *   <li>ResolveFunctions pass since we need to validate the use of {@link LoggingFunction}
  *       invocations
  * </ul>
  */
 final class VeLogValidationPass extends CompilerFilePass {
-  private static final SoyErrorKind NO_CONFIG_FOR_ELEMENT =
-      SoyErrorKind.of(
-          "Could not find logging configuration for this element.{0}",
-          StyleAllowance.NO_PUNCTUATION);
   private static final SoyErrorKind UNEXPECTED_CONFIG =
       SoyErrorKind.of(
           "Unexpected ''data'' attribute for logging element ''{0}'', there is no configured "
               + "''proto_extension_type'' in the logging configuration for this element. "
               + "Did you forget to configure it?");
+  private static final SoyErrorKind UNEXPECTED_DATA =
+      SoyErrorKind.of(
+          "Unexpected data argument. The data (''{0}'') must match with the VE passed as the "
+              + "first argument (''{1}''). The VE is type ''{2}'' which means there cannot be any "
+              + "data.");
   private static final SoyErrorKind WRONG_TYPE =
       SoyErrorKind.of("Expected an expression of type ''{0}'', instead got ''{1}''.");
   private static final SoyErrorKind LOGONLY_DISALLOWED_IN_MSG =
@@ -87,13 +88,11 @@ final class VeLogValidationPass extends CompilerFilePass {
               + "directives.");
 
   private final ErrorReporter reporter;
-  private final ValidatedLoggingConfig loggingConfig;
+  private final VeLogValidator veLogValidator;
 
-  VeLogValidationPass(
-      ErrorReporter reporter,
-      ValidatedLoggingConfig loggingConfig) {
+  VeLogValidationPass(ErrorReporter reporter, VeLogValidator veLogValidator) {
     this.reporter = reporter;
-    this.loggingConfig = loggingConfig;
+    this.veLogValidator = veLogValidator;
   }
 
   @Override
@@ -105,6 +104,10 @@ final class VeLogValidationPass extends CompilerFilePass {
         } else {
           reporter.report(node.getName().location(), REQUIRE_STRICTHTML);
         }
+      }
+      for (FunctionNode node :
+          SoyTreeUtils.getAllFunctionInvocations(template, BuiltinFunction.VE_DATA)) {
+        validateVeDataFunctionNode(node);
       }
       // We need to validate logging functions.  The rules are
       // 1. logging functions can only be the direct children of PrintNodes
@@ -171,19 +174,14 @@ final class VeLogValidationPass extends CompilerFilePass {
 
   /** Type checks both expressions and assigns the {@link VeLogNode#getLoggingId()} field. */
   private void validateNodeAgainstConfig(VeLogNode node) {
-    ValidatedLoggableElement config = loggingConfig.getElement(node.getName().identifier());
+    Optional<ValidatedLoggableElement> config =
+        veLogValidator.getLoggingElement(node.getName().identifier(), node.getName().location());
 
-    if (config == null) {
-      reporter.report(
-          node.getName().location(),
-          NO_CONFIG_FOR_ELEMENT,
-          SoyErrors.getDidYouMeanMessage(
-              loggingConfig.allKnownIdentifiers(), node.getName().identifier()));
-    } else {
-      node.setLoggingId(config.getId());
+    if (config.isPresent()) {
+      node.setLoggingId(config.get().getId());
       if (node.getConfigExpression() != null) {
         SoyType type = node.getConfigExpression().getType();
-        Optional<String> protoName = config.getProtoName();
+        Optional<String> protoName = config.get().getProtoName();
         if (!protoName.isPresent()) {
           reporter.report(
               node.getConfigExpression().getSourceLocation(),
@@ -211,6 +209,31 @@ final class VeLogValidationPass extends CompilerFilePass {
               WRONG_TYPE,
               BoolType.getInstance(),
               type);
+        }
+      }
+    }
+  }
+
+  private void validateVeDataFunctionNode(FunctionNode node) {
+    ExprNode veExpr = node.getChild(0);
+    ExprNode dataExpr = node.getChild(1);
+
+    if (veExpr.getType().getKind() != Kind.ERROR) {
+      if (veExpr.getType().getKind() != Kind.VE) {
+        reporter.report(veExpr.getSourceLocation(), WRONG_TYPE, "ve", veExpr.getType());
+      } else if (dataExpr.getType().getKind() != Kind.NULL) {
+        VeType veType = (VeType) veExpr.getType();
+        SoyType dataType = dataExpr.getType();
+        if (!veType.getDataType().isPresent()) {
+          reporter.report(
+              dataExpr.getSourceLocation(),
+              UNEXPECTED_DATA,
+              dataExpr.toSourceString(),
+              veExpr.toSourceString(),
+              veType);
+        } else if (!dataType.equals(veType.getDataType().get())) {
+          reporter.report(
+              dataExpr.getSourceLocation(), WRONG_TYPE, veType.getDataType().get(), dataType);
         }
       }
     }

@@ -27,21 +27,31 @@ import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.exprtree.StringNode;
+import com.google.template.soy.exprtree.VeLiteralNode;
+import com.google.template.soy.logging.LoggableElement;
+import com.google.template.soy.logging.LoggingConfig;
+import com.google.template.soy.logging.ValidatedLoggingConfig;
 import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.soyparse.SoyFileParser;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
+import com.google.template.soy.soytree.TemplateElementNode;
+import com.google.template.soy.soytree.defn.TemplatePropVar;
 import com.google.template.soy.testing.ExampleExtendable;
 import com.google.template.soy.types.AnyType;
+import com.google.template.soy.types.BoolType;
 import com.google.template.soy.types.IntType;
 import com.google.template.soy.types.ListType;
 import com.google.template.soy.types.MapType;
+import com.google.template.soy.types.NullType;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyType.Kind;
 import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.StringType;
 import com.google.template.soy.types.UnknownType;
+import com.google.template.soy.types.VeType;
+import java.util.List;
 import java.util.Set;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -82,6 +92,71 @@ public final class ResolveExpressionTypesPassTest {
             .parse()
             .fileSet();
     assertTypes(soyTree);
+  }
+
+  @Test
+  public void testProp() {
+    SoyFileSetNode soyTree =
+        SoyFileSetParserBuilder.forFileContents(
+                constructElementSource(
+                    "{@prop pa:= true}",
+                    "{@prop pb:= [1,2,3]}",
+                    "{@prop pc: bool|null = null}",
+                    "{@prop pd: list<int>|null = null}",
+                    "<div>",
+                    "{assertType('bool', $pa)}",
+                    "{assertType('list<int>', $pb)}",
+                    "{assertType('bool|null', $pc)}",
+                    "{assertType('list<int>|null', $pd)}",
+                    "</div>"))
+            .addSoyFunction(ASSERT_TYPE_FUNCTION)
+            .enableExperimentalFeatures(ImmutableList.of("prop_vars"))
+            .parse()
+            .fileSet();
+    assertTypes(soyTree);
+    TemplateElementNode node = (TemplateElementNode) soyTree.getChild(0).getChild(0);
+    List<TemplatePropVar> props = node.getPropVars();
+    assertThat(props.get(0).initialValue().getType()).isEqualTo(BoolType.getInstance());
+    assertThat(props.get(1).initialValue().getType()).isEqualTo(ListType.of(IntType.getInstance()));
+    assertThat(props.get(2).initialValue().getType()).isEqualTo(NullType.getInstance());
+    assertThat(props.get(3).initialValue().getType()).isEqualTo(NullType.getInstance());
+  }
+
+  @Test
+  public void testPropTypeInference() {
+    SoyTypeRegistry typeRegistry =
+        new SoyTypeRegistry.Builder()
+            .addDescriptors(ImmutableList.of(ExampleExtendable.getDescriptor()))
+            .build();
+
+    SoyFileSetNode soyTree =
+        SoyFileSetParserBuilder.forFileContents(
+                constructElementSource(
+                    "{@prop pa:= true}",
+                    "{@prop pb:= [1,2,3]}",
+                    "{@prop proto:= example.ExampleExtendable()}",
+                    "<div>",
+                    "{assertType('bool', $pa)}",
+                    "{assertType('list<int>', $pb)}",
+                    "{assertType('example.ExampleExtendable', $proto)}",
+                    "</div>"))
+            .addSoyFunction(ASSERT_TYPE_FUNCTION)
+            .enableExperimentalFeatures(ImmutableList.of("prop_vars"))
+            .typeRegistry(typeRegistry)
+            .parse()
+            .fileSet();
+    assertTypes(soyTree);
+    TemplateElementNode node = (TemplateElementNode) soyTree.getChild(0).getChild(0);
+    List<TemplatePropVar> props = node.getPropVars();
+
+    assertThat(props.get(0).name()).isEqualTo("pa");
+    assertThat(props.get(0).type()).isEqualTo(BoolType.getInstance());
+
+    assertThat(props.get(1).name()).isEqualTo("pb");
+    assertThat(props.get(1).type()).isEqualTo(ListType.of(IntType.getInstance()));
+
+    assertThat(props.get(2).name()).isEqualTo("proto");
+    assertThat(props.get(2).type()).isEqualTo(typeRegistry.getType("example.ExampleExtendable"));
   }
 
   @Test
@@ -566,6 +641,44 @@ public final class ResolveExpressionTypesPassTest {
   }
 
   @Test
+  public void testDataFlowTypeNarrowing_switch() {
+    SoyFileSetNode soyTree =
+        SoyFileSetParserBuilder.forFileContents(
+                constructTemplateSource(
+                    "{@param? p: string|bool|int}",
+                    "{switch $p}",
+                    "  {case 'str'}",
+                    "    {assertType('string', $p)}",
+                    "  {case true}",
+                    "    {assertType('bool', $p)}",
+                    "  {case 'str', 'str2'}",
+                    "    {assertType('string', $p)}",
+                    "  {case 'str', 8675309}",
+                    "    {assertType('int|string', $p)}",
+                    "  {default}",
+                    "    {assertType('bool|int|null|string', $p)}",
+                    "{/switch}",
+                    "",
+                    "{switch $p}",
+                    "  {case null}",
+                    "    {assertType('null', $p)}",
+                    "  {default}",
+                    "    {assertType('bool|int|string', $p)}",
+                    "{/switch}",
+                    "",
+                    "{switch $p}",
+                    "  {case 'str', null}",
+                    "    {assertType('null|string', $p)}",
+                    "  {default}",
+                    "    {assertType('bool|int|string', $p)}",
+                    "{/switch}"))
+            .addSoyFunction(ASSERT_TYPE_FUNCTION)
+            .parse()
+            .fileSet();
+    assertTypes(soyTree);
+  }
+
+  @Test
   public void testConditionalOperatorDataFlowTypeNarrowing() {
     SoyFileSetNode soyTree =
         SoyFileSetParserBuilder.forFileContents(
@@ -701,6 +814,78 @@ public final class ResolveExpressionTypesPassTest {
   }
 
   @Test
+  public void testVeLiteral() {
+    SoyTypeRegistry typeRegistry =
+        new SoyTypeRegistry.Builder()
+            .addDescriptors(ImmutableList.of(ExampleExtendable.getDescriptor()))
+            .build();
+
+    SoyFileSetNode soyTree =
+        SoyFileSetParserBuilder.forFileContents(
+                constructTemplateSource(
+                    "{assertType('ve<example.ExampleExtendable>', ve(VeData))}",
+                    "{assertType('ve<null>', ve(VeNoData))}"))
+            .addSoyFunction(ASSERT_TYPE_FUNCTION)
+            .typeRegistry(typeRegistry)
+            .enableExperimentalFeatures(ImmutableList.of("dynamic_ve"))
+            .setLoggingConfig(
+                ValidatedLoggingConfig.create(
+                    LoggingConfig.newBuilder()
+                        .addElement(
+                            LoggableElement.newBuilder()
+                                .setId(1)
+                                .setName("VeData")
+                                .setProtoType("example.ExampleExtendable"))
+                        .addElement(LoggableElement.newBuilder().setId(2).setName("VeNoData"))
+                        .build()))
+            .parse()
+            .fileSet();
+    assertTypes(soyTree);
+
+    List<VeLiteralNode> veNodes = SoyTreeUtils.getAllNodesOfType(soyTree, VeLiteralNode.class);
+    assertThat(veNodes).hasSize(2);
+
+    assertThat(veNodes.get(0).getId()).isEqualTo(1);
+    assertThat(veNodes.get(0).getName().identifier()).isEqualTo("VeData");
+    assertThat(veNodes.get(0).getType())
+        .isEqualTo(VeType.of(typeRegistry.getType("example.ExampleExtendable")));
+
+    assertThat(veNodes.get(1).getId()).isEqualTo(2);
+    assertThat(veNodes.get(1).getName().identifier()).isEqualTo("VeNoData");
+    assertThat(veNodes.get(1).getType()).isEqualTo(VeType.of(NullType.getInstance()));
+  }
+
+  @Test
+  public void testVeDataLiteral() {
+    SoyTypeRegistry typeRegistry =
+        new SoyTypeRegistry.Builder()
+            .addDescriptors(ImmutableList.of(ExampleExtendable.getDescriptor()))
+            .build();
+
+    SoyFileSetNode soyTree =
+        SoyFileSetParserBuilder.forFileContents(
+                constructTemplateSource(
+                    "{assertType('ve_data', ve_data(ve(VeData), example.ExampleExtendable()))}",
+                    "{assertType('ve_data', ve_data(ve(VeNoData), null))}"))
+            .addSoyFunction(ASSERT_TYPE_FUNCTION)
+            .typeRegistry(typeRegistry)
+            .enableExperimentalFeatures(ImmutableList.of("dynamic_ve"))
+            .setLoggingConfig(
+                ValidatedLoggingConfig.create(
+                    LoggingConfig.newBuilder()
+                        .addElement(
+                            LoggableElement.newBuilder()
+                                .setId(1)
+                                .setName("VeData")
+                                .setProtoType("example.ExampleExtendable"))
+                        .addElement(LoggableElement.newBuilder().setId(2).setName("VeNoData"))
+                        .build()))
+            .parse()
+            .fileSet();
+    assertTypes(soyTree);
+  }
+
+  @Test
   public void testErrorMessagesInUnionTypes() {
     assertResolveExpressionTypesFails(
         "Type float does not support bracket access.",
@@ -769,6 +954,23 @@ public final class ResolveExpressionTypesPassTest {
   }
 
   /**
+   * Helper function that constructs a boilerplate template given a list of body statements to
+   * insert into the middle of the template. The body statements will be indented and separated with
+   * newlines.
+   *
+   * @param body The body statements.
+   * @return The combined template.
+   */
+  private static String constructElementSource(String... body) {
+    return ""
+        + "{namespace ns}\n"
+        + "/***/\n"
+        + "{element .aaa}\n"
+        + Joiner.on("\n   ").join(body)
+        + "{/element}\n";
+  }
+
+  /**
    * Assertions function that checks to make sure that name resolution fails with the expected
    * exception.
    *
@@ -787,14 +989,12 @@ public final class ResolveExpressionTypesPassTest {
 
   /** Traverses the tree and checks all the calls to {@code assertType} */
   private void assertTypes(SoyNode node) {
-    for (FunctionNode fn : SoyTreeUtils.getAllNodesOfType(node, FunctionNode.class)) {
-      if (fn.getFunctionName().equals("assertType")) {
-        StringNode expected = (StringNode) fn.getChild(0);
-        SoyType actualType = fn.getChild(1).getType();
-        assertWithMessage("assertion @ " + fn.getSourceLocation())
-            .that(actualType.toString())
-            .isEqualTo(expected.getValue());
-      }
+    for (FunctionNode fn : SoyTreeUtils.getAllFunctionInvocations(node, ASSERT_TYPE_FUNCTION)) {
+      StringNode expected = (StringNode) fn.getChild(0);
+      SoyType actualType = fn.getChild(1).getType();
+      assertWithMessage("assertion @ " + fn.getSourceLocation())
+          .that(actualType.toString())
+          .isEqualTo(expected.getValue());
     }
   }
 }

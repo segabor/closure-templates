@@ -16,6 +16,7 @@
 
 package com.google.template.soy.soytree;
 
+
 import com.google.common.collect.ImmutableList;
 import com.google.common.truth.FailureMetadata;
 import com.google.common.truth.Subject;
@@ -43,17 +44,22 @@ final class TemplateRegistrySubject extends Subject<TemplateRegistrySubject, Tem
   }
 
   TemplateBasicNodeSubject containsBasicTemplate(String name) {
-    Truth.assertThat(actual().getBasicTemplatesMap()).containsKey(name);
-    TemplateBasicNode templateBasicNode = actual().getBasicTemplatesMap().get(name);
+    TemplateMetadata templateBasicNode = actual().getBasicTemplateOrElement(name);
+    if (templateBasicNode == null) {
+      fail("The registry doesn't contain a template named", name);
+    }
     return Truth.assertAbout(TemplateBasicNodeSubject.TEMPLATE_BASIC_NODE).that(templateBasicNode);
   }
 
   void doesNotContainBasicTemplate(String name) {
-    Truth.assertThat(actual().getBasicTemplatesMap()).doesNotContainKey(name);
+    TemplateMetadata templateBasicNode = actual().getBasicTemplateOrElement(name);
+    if (templateBasicNode != null) {
+      fail("The registry does contain a template named", name);
+    }
   }
 
   TemplateDelegateNodesSubject containsDelTemplate(String name) {
-    ImmutableList<TemplateDelegateNode> delTemplates =
+    ImmutableList<TemplateMetadata> delTemplates =
         actual().getDelTemplateSelector().delTemplateNameToValues().get(name);
     Truth.assertThat(delTemplates).isNotEmpty();
     return Truth.assertAbout(TemplateDelegateNodesSubject.TEMPLATE_DELEGATE_NODES)
@@ -65,12 +71,12 @@ final class TemplateRegistrySubject extends Subject<TemplateRegistrySubject, Tem
   }
 
   static class TemplateBasicNodeSubject
-      extends Subject<TemplateBasicNodeSubject, TemplateBasicNode> {
+      extends Subject<TemplateBasicNodeSubject, TemplateMetadata> {
 
-    private static final Subject.Factory<TemplateBasicNodeSubject, TemplateBasicNode>
+    private static final Subject.Factory<TemplateBasicNodeSubject, TemplateMetadata>
         TEMPLATE_BASIC_NODE = TemplateBasicNodeSubject::new;
 
-    TemplateBasicNodeSubject(FailureMetadata failureMetadata, TemplateBasicNode templateBasicNode) {
+    TemplateBasicNodeSubject(FailureMetadata failureMetadata, TemplateMetadata templateBasicNode) {
       super(failureMetadata, templateBasicNode);
     }
 
@@ -80,19 +86,18 @@ final class TemplateRegistrySubject extends Subject<TemplateRegistrySubject, Tem
   }
 
   static class TemplateDelegateNodesSubject
-      extends Subject<TemplateDelegateNodesSubject, List<TemplateDelegateNode>> {
+      extends Subject<TemplateDelegateNodesSubject, List<TemplateMetadata>> {
 
-    private static final Subject.Factory<TemplateDelegateNodesSubject, List<TemplateDelegateNode>>
+    private static final Subject.Factory<TemplateDelegateNodesSubject, List<TemplateMetadata>>
         TEMPLATE_DELEGATE_NODES = TemplateDelegateNodesSubject::new;
 
-    TemplateDelegateNodesSubject(
-        FailureMetadata failureMetadata, List<TemplateDelegateNode> nodes) {
+    TemplateDelegateNodesSubject(FailureMetadata failureMetadata, List<TemplateMetadata> nodes) {
       super(failureMetadata, nodes);
     }
 
     void definedAt(SourceLocation sourceLocation) {
       List<SourceLocation> locations = new ArrayList<>();
-      for (TemplateDelegateNode delegateNode : actual()) {
+      for (TemplateMetadata delegateNode : actual()) {
         locations.add(delegateNode.getSourceLocation());
       }
       Truth.assertThat(locations).contains(sourceLocation);

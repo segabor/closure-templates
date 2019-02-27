@@ -26,7 +26,6 @@ import com.google.template.soy.jbcsrc.restricted.TypeInfo;
 import com.google.template.soy.jbcsrc.shared.CompiledTemplate;
 import com.google.template.soy.jbcsrc.shared.Names;
 import com.google.template.soy.jbcsrc.shared.RenderContext;
-import com.google.template.soy.soytree.TemplateNode;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.commons.Method;
 
@@ -67,15 +66,14 @@ abstract class CompiledTemplateMetadata {
     }
   }
 
-  static CompiledTemplateMetadata create(String templateName, TemplateNode node) {
+  static CompiledTemplateMetadata create(String templateName) {
     String className = Names.javaClassNameFromSoyTemplateName(templateName);
     TypeInfo type = TypeInfo.create(className);
     return new AutoValue_CompiledTemplateMetadata(
         ConstructorRef.create(type, GENERATED_CONSTRUCTOR),
         MethodRef.createInstanceMethod(type, RENDER_METHOD).asNonNullable(),
         MethodRef.createInstanceMethod(type, KIND_METHOD).asCheap(),
-        type,
-        node);
+        type);
   }
 
   /**
@@ -94,7 +92,4 @@ abstract class CompiledTemplateMetadata {
 
   /** The name of the compiled template. */
   abstract TypeInfo typeInfo();
-
-  /** The actual template. */
-  abstract TemplateNode node();
 }

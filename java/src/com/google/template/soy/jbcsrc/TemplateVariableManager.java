@@ -437,6 +437,20 @@ final class TemplateVariableManager implements ClassFieldManager {
     return ref;
   }
 
+  FieldRef addPackagePrivateStaticField(
+      String proposedName, Type fieldType, Expression initializer) {
+    String name = fieldNames.generateName(proposedName);
+    FieldRef ref =
+        FieldRef.create(
+            owner,
+            name,
+            fieldType,
+            Opcodes.ACC_STATIC | Opcodes.ACC_FINAL,
+            !initializer.isNonNullable());
+    staticFields.add(new AutoValue_TemplateVariableManager_StaticFieldVariable(ref, initializer));
+    return ref;
+  }
+
   // TODO(lukes): consider moving all these optional 'one per template' fields to a different object
   // for management.
 

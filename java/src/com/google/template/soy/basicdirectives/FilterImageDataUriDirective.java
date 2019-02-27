@@ -63,11 +63,6 @@ final class FilterImageDataUriDirective
   }
 
   @Override
-  public boolean shouldCancelAutoescape() {
-    return false;
-  }
-
-  @Override
   public SoyValue applyForJava(SoyValue value, List<SoyValue> args) {
     return Sanitizers.filterImageDataUri(value);
   }

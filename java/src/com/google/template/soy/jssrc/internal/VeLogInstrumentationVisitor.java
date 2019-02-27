@@ -19,11 +19,11 @@ package com.google.template.soy.jssrc.internal;
 import com.google.common.collect.ImmutableList;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.IdGenerator;
+import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.base.internal.QuoteStyle;
 import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.FunctionNode;
-import com.google.template.soy.exprtree.IntegerNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.NullNode;
 import com.google.template.soy.exprtree.StringNode;
@@ -44,7 +44,6 @@ import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
 import com.google.template.soy.soytree.SoyNode.StandaloneNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
-import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.VeLogNode;
 
@@ -57,9 +56,6 @@ final class VeLogInstrumentationVisitor extends AbstractSoyNodeVisitor<Void> {
   /** The node id generator for the parse tree. Retrieved from the root SoyFileSetNode. */
   private IdGenerator nodeIdGen;
 
-  /** This counter is used for creating unique data attribute names for logging functions. */
-  private int counter;
-
   VeLogInstrumentationVisitor(TemplateRegistry templateRegistry) {
     this.templateRegistry = templateRegistry;
   }
@@ -68,7 +64,7 @@ final class VeLogInstrumentationVisitor extends AbstractSoyNodeVisitor<Void> {
   protected void visitSoyFileSetNode(SoyFileSetNode node) {
     // Retrieve the node id generator.
     nodeIdGen = node.getNodeIdGenerator();
-    ImmutableList<SoyFileNode> sourceFiles = node.getSourceFiles();
+    ImmutableList<SoyFileNode> sourceFiles = ImmutableList.copyOf(node.getChildren());
     for (SoyFileNode fileNode : sourceFiles) {
       visitSoyFileNode(fileNode);
     }
@@ -87,8 +83,13 @@ final class VeLogInstrumentationVisitor extends AbstractSoyNodeVisitor<Void> {
             .getEndPoint()
             .offset(0, tag.isSelfClosing() ? -2 : -1)
             .asLocation(tag.getSourceLocation().getFilePath());
-    FunctionNode funcNode = new FunctionNode(VeLogFunction.INSTANCE, insertionLocation);
-    funcNode.addChild(new IntegerNode(node.getLoggingId(), insertionLocation));
+    FunctionNode funcNode =
+        new FunctionNode(
+            Identifier.create(VeLogFunction.NAME, insertionLocation),
+            VeLogFunction.INSTANCE,
+            insertionLocation);
+    funcNode.addChild(
+        new StringNode(Long.toString(node.getLoggingId()), QuoteStyle.SINGLE, insertionLocation));
     funcNode.addChild(
         node.getConfigExpression() == null
             ? new NullNode(insertionLocation)
@@ -105,25 +106,7 @@ final class VeLogInstrumentationVisitor extends AbstractSoyNodeVisitor<Void> {
             /* attributes= */ ImmutableList.of(),
             ErrorReporter.exploding());
     tag.addChild(attributeNode);
-    visitChildren(node);
-  }
-
-  @Override
-  protected void visitTemplateNode(TemplateNode node) {
-    // Resets the counter whenever we visit a template node.
-    counter = 0;
-    // Allows the children to insert the nodes as its siblings.
     visitChildrenAllowingConcurrentModification(node);
-  }
-
-  @Override
-  protected void visitHtmlOpenTagNode(HtmlOpenTagNode node) {
-    // Stores the original counter that might be useful for nested tags.
-    int oldCounter = counter;
-    counter = 0;
-    // Allows the children to insert the nodes as its siblings.
-    visitChildrenAllowingConcurrentModification(node);
-    counter = oldCounter;
   }
 
   /**
@@ -143,7 +126,10 @@ final class VeLogInstrumentationVisitor extends AbstractSoyNodeVisitor<Void> {
         continue;
       }
       FunctionNode funcNode =
-          new FunctionNode(VeLogJsSrcLoggingFunction.INSTANCE, insertionLocation);
+          new FunctionNode(
+              Identifier.create(VeLogJsSrcLoggingFunction.NAME, insertionLocation),
+              VeLogJsSrcLoggingFunction.INSTANCE,
+              insertionLocation);
       funcNode.addChild(
           new StringNode(function.getFunctionName(), QuoteStyle.SINGLE, insertionLocation));
       funcNode.addChild(new ListLiteralNode(function.getChildren(), insertionLocation));
@@ -156,10 +142,14 @@ final class VeLogInstrumentationVisitor extends AbstractSoyNodeVisitor<Void> {
       } else {
         // Otherwise wrap the print node or call node into a let block, and use the let variable
         // as a function argument.
-        String varName = "soy_logging_function_attribute_" + counter;
+        String varName = "$soy_logging_function_attribute_" + node.getId();
         LetContentNode letNode =
             LetContentNode.forVariable(
-                nodeIdGen.genId(), attributeName.getSourceLocation(), varName, null);
+                nodeIdGen.genId(),
+                attributeName.getSourceLocation(),
+                varName,
+                attributeName.getSourceLocation(),
+                null);
         // Adds a let var which references to the original attribute name, and move the name to
         // the let block.
         node.replaceChild(
@@ -168,14 +158,15 @@ final class VeLogInstrumentationVisitor extends AbstractSoyNodeVisitor<Void> {
                 nodeIdGen.genId(),
                 insertionLocation,
                 /* isImplicit= */ true,
-                /* expr= */ new VarRefNode(varName, insertionLocation, false, letNode.getVar()),
+                /* expr= */ new VarRefNode(
+                    letNode.getVar().name(), insertionLocation, false, letNode.getVar()),
                 /* attributes= */ ImmutableList.of(),
                 ErrorReporter.exploding()));
         letNode.addChild(attributeName);
         node.getParent().addChild(node.getParent().getChildIndex(node), letNode);
-        funcNode.addChild(new VarRefNode(varName, insertionLocation, false, letNode.getVar()));
+        funcNode.addChild(
+            new VarRefNode(letNode.getVar().name(), insertionLocation, false, letNode.getVar()));
       }
-      funcNode.addChild(new IntegerNode(counter++, insertionLocation));
       PrintNode loggingFunctionAttribute =
           new PrintNode(
               nodeIdGen.genId(),
@@ -200,13 +191,13 @@ final class VeLogInstrumentationVisitor extends AbstractSoyNodeVisitor<Void> {
       // logging function in a html attribute value.
       break;
     }
-    visitChildren(node);
+    visitChildrenAllowingConcurrentModification(node);
   }
 
   @Override
   protected void visitSoyNode(SoyNode node) {
     if (node instanceof ParentSoyNode<?>) {
-      visitChildren((ParentSoyNode<?>) node);
+      visitChildrenAllowingConcurrentModification((ParentSoyNode<?>) node);
     }
   }
 }
