@@ -56,6 +56,8 @@ public abstract class AbstractReturningSoyNodeVisitor<R>
         return visitSoyFileSetNode((SoyFileSetNode) node);
       case SOY_FILE_NODE:
         return visitSoyFileNode((SoyFileNode) node);
+      case TEMPLATE_ELEMENT_NODE:
+        return visitTemplateElementNode((TemplateElementNode) node);
       case TEMPLATE_BASIC_NODE:
         return visitTemplateBasicNode((TemplateBasicNode) node);
       case TEMPLATE_DELEGATE_NODE:
@@ -134,6 +136,9 @@ public abstract class AbstractReturningSoyNodeVisitor<R>
       case HTML_ATTRIBUTE_VALUE_NODE:
         return visitHtmlAttributeValueNode((HtmlAttributeValueNode) node);
 
+      case KEY_NODE:
+        return visitKeyNode((KeyNode) node);
+
       case VE_LOG_NODE:
         return visitVeLogNode((VeLogNode) node);
       case LOG_NODE:
@@ -158,6 +163,10 @@ public abstract class AbstractReturningSoyNodeVisitor<R>
   }
 
   protected R visitTemplateBasicNode(TemplateNode node) {
+    return visitTemplateNode(node);
+  }
+
+  protected R visitTemplateElementNode(TemplateElementNode node) {
     return visitTemplateNode(node);
   }
 
@@ -310,6 +319,10 @@ public abstract class AbstractReturningSoyNodeVisitor<R>
   }
 
   protected R visitHtmlAttributeValueNode(HtmlAttributeValueNode node) {
+    return visitSoyNode(node);
+  }
+
+  protected R visitKeyNode(KeyNode node) {
     return visitSoyNode(node);
   }
 

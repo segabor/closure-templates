@@ -24,7 +24,9 @@ import java.util.Set;
  * <p>Important: Implementing this interface by itself does nothing. Your directive implementation
  * class needs to implement some of all of this interface's subinterfaces.
  *
+ * @deprecated Use Soy functions instead
  */
+@Deprecated
 public interface SoyPrintDirective {
 
   /**
@@ -41,13 +43,4 @@ public interface SoyPrintDirective {
    * @return The set of valid args list sizes.
    */
   public Set<Integer> getValidArgsSizes();
-
-  /**
-   * Returns whether the appearance of this directive on a 'print' tag should cancel autoescape for
-   * that 'print' tag.
-   *
-   * @return Whether the appearance of this directive on a 'print' tag should cancel autoescape for
-   *     that 'print' tag.
-   */
-  public boolean shouldCancelAutoescape();
 }

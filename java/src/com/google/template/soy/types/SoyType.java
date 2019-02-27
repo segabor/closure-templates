@@ -74,6 +74,7 @@ public abstract class SoyType {
    *         <li>PROTO_ENUM: Protobuf enum object.
    *         <li>UNION: Used to indicate a parameter that can accept multiple alternatives, e.g.
    *             a|b.
+   *         <li>VE: A VE ID.
    *       </ul>
    * </ul>
    */
@@ -103,6 +104,8 @@ public abstract class SoyType {
     PROTO,
     PROTO_ENUM,
     UNION,
+    VE,
+    VE_DATA,
     ;
 
     private static final ImmutableSet<Kind> STRING_KINDS =
@@ -175,4 +178,8 @@ public abstract class SoyType {
    */
   @ForOverride
   abstract boolean doIsAssignableFromNonUnionType(SoyType type);
+
+  /** The type represented in a fully parseable format. */
+  @Override
+  public abstract String toString();
 }

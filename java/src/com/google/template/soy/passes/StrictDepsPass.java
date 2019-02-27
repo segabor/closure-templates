@@ -26,7 +26,7 @@ import com.google.template.soy.error.SoyErrors;
 import com.google.template.soy.soytree.CallBasicNode;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
-import com.google.template.soy.soytree.TemplateNode;
+import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateRegistry;
 
 /**
@@ -50,32 +50,33 @@ public final class StrictDepsPass extends CompilerFileSetPass {
   }
 
   @Override
-  public void run(
+  public Result run(
       ImmutableList<SoyFileNode> sourceFiles, IdGenerator idGenerator, TemplateRegistry registry) {
     for (SoyFileNode file : sourceFiles) {
       for (CallBasicNode node : SoyTreeUtils.getAllNodesOfType(file, CallBasicNode.class)) {
         checkBasicCall(node, registry);
       }
     }
+    return Result.CONTINUE;
   }
 
   // TODO(gboyer): Consider some deltemplate checking, but it's hard to make a coherent case for
   // deltemplates since it's legitimate to have zero implementations, or to have the implementation
   // in a different part of the dependency graph (if it's late-bound).
   private void checkBasicCall(CallBasicNode node, TemplateRegistry registry) {
-    TemplateNode callee = registry.getBasicTemplate(node.getCalleeName());
+    TemplateMetadata callee = registry.getBasicTemplateOrElement(node.getCalleeName());
 
     if (callee == null) {
       String extraErrorMessage =
           SoyErrors.getDidYouMeanMessage(
-              registry.getBasicTemplatesMap().keySet(), node.getCalleeName());
+              registry.getBasicTemplateOrElementNames(), node.getCalleeName());
       errorReporter.report(
           node.getSourceLocation(),
           CALL_TO_UNDEFINED_TEMPLATE,
           node.getCalleeName(),
           extraErrorMessage);
     } else {
-      SoyFileKind calleeKind = callee.getParent().getSoyFileKind();
+      SoyFileKind calleeKind = callee.getSoyFileKind();
       String callerFilePath = node.getSourceLocation().getFilePath();
       String calleeFilePath = callee.getSourceLocation().getFilePath();
       if (calleeKind == SoyFileKind.INDIRECT_DEP) {

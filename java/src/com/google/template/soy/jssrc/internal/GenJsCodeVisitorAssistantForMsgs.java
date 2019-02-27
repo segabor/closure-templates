@@ -300,11 +300,11 @@ public class GenJsCodeVisitorAssistantForMsgs extends AbstractSoyNodeVisitor<Voi
     // Generate JS comment (JSDoc) block for the goog.getMsg() call.
     JsDoc.Builder jsDocBuilder = JsDoc.builder();
     if (msgNode.getMeaning() != null) {
-      jsDocBuilder.addTag("meaning", msgNode.getMeaning());
+      jsDocBuilder.addAnnotation("meaning", msgNode.getMeaning());
     }
-    jsDocBuilder.addTag("desc", msgNode.getDesc());
+    jsDocBuilder.addAnnotation("desc", msgNode.getDesc());
     if (msgNode.isHidden()) {
-      jsDocBuilder.addTag("hidden");
+      jsDocBuilder.addAnnotation("hidden");
     }
 
     // Generate goog.getMsg() call.
@@ -485,7 +485,7 @@ public class GenJsCodeVisitorAssistantForMsgs extends AbstractSoyNodeVisitor<Voi
   }
 
   private Expression translateExpr(ExprNode expr) {
-    return new TranslateExprNodeVisitor(translationContext, errorReporter).exec(expr);
+    return master.getExprTranslator().exec(expr);
   }
 
   /**
@@ -567,7 +567,12 @@ public class GenJsCodeVisitorAssistantForMsgs extends AbstractSoyNodeVisitor<Voi
         }
 
         Expression call =
-            genCallCodeUtils.gen(callNode, templateAliases, translationContext, errorReporter);
+            genCallCodeUtils.gen(
+                callNode,
+                templateAliases,
+                translationContext,
+                errorReporter,
+                master.getExprTranslator());
         contentChunks.add(call);
       } else {
         List<Expression> chunks = genJsExprsVisitor.exec(contentNode);

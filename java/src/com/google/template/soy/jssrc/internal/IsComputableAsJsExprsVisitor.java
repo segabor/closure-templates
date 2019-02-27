@@ -29,6 +29,7 @@ import com.google.template.soy.soytree.HtmlOpenTagNode;
 import com.google.template.soy.soytree.IfCondNode;
 import com.google.template.soy.soytree.IfElseNode;
 import com.google.template.soy.soytree.IfNode;
+import com.google.template.soy.soytree.KeyNode;
 import com.google.template.soy.soytree.LetNode;
 import com.google.template.soy.soytree.LogNode;
 import com.google.template.soy.soytree.MsgFallbackGroupNode;
@@ -38,6 +39,8 @@ import com.google.template.soy.soytree.PrintNode;
 import com.google.template.soy.soytree.RawTextNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
+import com.google.template.soy.soytree.SwitchCaseNode;
+import com.google.template.soy.soytree.SwitchDefaultNode;
 import com.google.template.soy.soytree.SwitchNode;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.VeLogNode;
@@ -146,6 +149,16 @@ public class IsComputableAsJsExprsVisitor extends AbstractReturningSoyNodeVisito
   }
 
   @Override
+  protected Boolean visitSwitchCaseNode(SwitchCaseNode node) {
+    return false;
+  }
+
+  @Override
+  protected Boolean visitSwitchDefaultNode(SwitchDefaultNode node) {
+    return false;
+  }
+
+  @Override
   protected Boolean visitForNode(ForNode node) {
     return false;
   }
@@ -192,6 +205,11 @@ public class IsComputableAsJsExprsVisitor extends AbstractReturningSoyNodeVisito
 
   @Override
   protected Boolean visitHtmlCloseTagNode(HtmlCloseTagNode node) {
+    return false;
+  }
+
+  @Override
+  protected Boolean visitKeyNode(KeyNode node) {
     return false;
   }
 

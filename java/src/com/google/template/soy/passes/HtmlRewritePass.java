@@ -56,10 +56,10 @@ import com.google.template.soy.soytree.HtmlCommentNode;
 import com.google.template.soy.soytree.HtmlOpenTagNode;
 import com.google.template.soy.soytree.IfCondNode;
 import com.google.template.soy.soytree.IfNode;
+import com.google.template.soy.soytree.KeyNode;
 import com.google.template.soy.soytree.LetContentNode;
 import com.google.template.soy.soytree.LetValueNode;
 import com.google.template.soy.soytree.LogNode;
-import com.google.template.soy.soytree.MessagePlaceholders;
 import com.google.template.soy.soytree.MsgFallbackGroupNode;
 import com.google.template.soy.soytree.MsgNode;
 import com.google.template.soy.soytree.MsgPluralNode;
@@ -73,7 +73,6 @@ import com.google.template.soy.soytree.SoyNode.Kind;
 import com.google.template.soy.soytree.SoyNode.MsgBlockNode;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
 import com.google.template.soy.soytree.SoyNode.StandaloneNode;
-import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.SwitchCaseNode;
 import com.google.template.soy.soytree.SwitchNode;
 import com.google.template.soy.soytree.TagName;
@@ -217,9 +216,6 @@ public final class HtmlRewritePass extends CompilerFilePass {
       SoyErrorKind.of(
           "Unexpected smart quote character ''”'',  Did you mean ''\"''?  If this is intentional,"
               + " replace with the HTML entity ''&ldquo;'' or ''&rdquo;''.");
-
-  private static final SoyErrorKind UNEXPECTED_CLOSE_TAG_CONTENT =
-      SoyErrorKind.of("Unexpected close tag content, only whitespace is allowed in close tags.");
 
   private static final SoyErrorKind UNEXPECTED_WS_AFTER_LT =
       SoyErrorKind.of("Unexpected whitespace after ''<'', did you mean ''&lt;''?");
@@ -397,42 +393,9 @@ public final class HtmlRewritePass extends CompilerFilePass {
     this.errorReporter = errorReporter;
   }
 
-  /**
-   * TODO(b/80336719): We need to run on deps to support the autoescaper. deprecated-contextual
-   * autoescaping needs to explore calls to calculate end contexts and so it relies on the
-   * datastructures produced by this pass.
-   *
-   * <p>TODO(b/74256690): We need to run on deps to support the conformance pass. Some conformance
-   * checks rely on these datastructures.
-   */
-  @Override
-  public boolean shouldRunOnDepsAndIndirectDeps() {
-    return true;
-  }
-
   @Override
   public void run(SoyFileNode file, IdGenerator nodeIdGen) {
     new Visitor(nodeIdGen, file.getFilePath(), errorReporter).exec(file);
-    /*
-     * Validates that the only children of close tags can be {@code phname} attributes.
-     *
-     * <p>Later passes validate that phnames for close tags only appear in messages.
-     */
-    for (HtmlCloseTagNode closeTag : SoyTreeUtils.getAllNodesOfType(file, HtmlCloseTagNode.class)) {
-      List<StandaloneNode> children = closeTag.getChildren();
-      HtmlAttributeNode phNameAttribute =
-          closeTag.getDirectAttributeNamed(MessagePlaceholders.PHNAME_ATTR);
-      HtmlAttributeNode phExAttribute =
-          closeTag.getDirectAttributeNamed(MessagePlaceholders.PHEX_ATTR);
-      // the child at index 0 is the tag name
-      for (int i = 1; i < children.size(); i++) {
-        StandaloneNode child = children.get(i);
-        if (child == phNameAttribute || child == phExAttribute) {
-          continue; // the phname and phex attributes are validated later and allowed in close nodes
-        }
-        errorReporter.report(child.getSourceLocation(), UNEXPECTED_CLOSE_TAG_CONTENT);
-      }
-    }
   }
 
   private static final class Visitor extends AbstractSoyNodeVisitor<Void> {
@@ -719,7 +682,7 @@ public final class HtmlRewritePass extends CompilerFilePass {
     void handleRcData(TagName.RcDataTagName tagName) {
       boolean foundLt = advanceWhileMatches(NOT_LT);
       if (foundLt) {
-        if (matchPrefixIgnoreCase("</" + tagName, false /* don't advance */)) {
+        if (matchPrefixIgnoreCase("</" + tagName, /* advance= */ false)) {
           // pseudo re-enter pcdata so that we trigger the normal logic for starting a tag
           handlePcData();
         } else {
@@ -905,8 +868,10 @@ public final class HtmlRewritePass extends CompilerFilePass {
       if (consumeWhitespace()) {
         // if we consumed whitespace, return and keep going.
         // we don't necessarily expect whitespace, but it is ok if there is extra whitespace here
-        // this can happen in the case of kind="attributes" blocks which start in this state, or
-        // if raw text nodes are split strangely.
+        // this can happen:
+        // in the case of kind="attributes" blocks which start in this state, or
+        // if raw text nodes are split strangely or
+        // we reported an error on an earlier character
         // We have to return in case we hit the end of the raw text.
         return;
       }
@@ -914,6 +879,10 @@ public final class HtmlRewritePass extends CompilerFilePass {
       if (identifier == null) {
         // consumeHtmlIdentifier will have already reported an error
         context.resetAttribute();
+        // resetAtttribute doesn't change our state, and we need to either advance
+        // state or advance a character to not go into an infinite loop.  So we just advance a
+        // single character. This may cause spammy errors.
+        advance();
         return;
       } else {
         validateIdentifier(identifier, ATTRIBUTE_NAME, BAD_ATTRIBUTE_NAME);
@@ -1265,6 +1234,11 @@ public final class HtmlRewritePass extends CompilerFilePass {
     }
 
     @Override
+    protected void visitKeyNode(KeyNode node) {
+      processNonPrintableNode(node);
+    }
+
+    @Override
     protected void visitDebuggerNode(DebuggerNode node) {
       processNonPrintableNode(node);
     }
@@ -1355,7 +1329,7 @@ public final class HtmlRewritePass extends CompilerFilePass {
               return "ifempty block";
             }
           },
-          false /* no guarantee that the children will only execute once. */,
+          /* willExactlyOneBranchExecuteOnce= */ false,
           node.hasIfEmptyBlock() /* one branch will execute if there is an ifempty block. */);
     }
 
@@ -1544,7 +1518,6 @@ public final class HtmlRewritePass extends CompilerFilePass {
       if (blockKind == null) {
         switch (autoescapeMode) {
           case CONTEXTUAL:
-          case NONCONTEXTUAL:
             blockKind = SanitizedContentKind.HTML;
             break;
           case STRICT:
@@ -2455,15 +2428,15 @@ public final class HtmlRewritePass extends CompilerFilePass {
         // in a block
         errorReporter.report(
             currentPoint.asLocation(filePath), FOUND_END_OF_ATTRIBUTE_STARTED_IN_ANOTHER_BLOCK);
-        throw new AbortParsingBlockError();
+        resetAttribute();
       }
       if (attributeName != null) {
         SourceLocation location = attributeName.getSourceLocation();
         HtmlAttributeNode attribute;
         if (attributeValue != null) {
+          location = location.extend(attributeValue.getSourceLocation());
           attribute =
               new HtmlAttributeNode(nodeIdGen.genId(), location, checkNotNull(equalsSignLocation));
-          location = location.extend(attributeValue.getSourceLocation());
           edits.addChild(attribute, attributeName);
           edits.addChild(attribute, attributeValue);
         } else {

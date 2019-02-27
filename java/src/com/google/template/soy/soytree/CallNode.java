@@ -18,6 +18,7 @@ package com.google.template.soy.soytree;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
+import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableList;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.BaseUtils;
@@ -29,7 +30,6 @@ import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
 import com.google.template.soy.soytree.SoyNode.ExprHolderNode;
 import com.google.template.soy.soytree.SoyNode.MsgPlaceholderInitialNode;
-import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
 import com.google.template.soy.soytree.SoyNode.SplitLevelTopNode;
 import com.google.template.soy.soytree.SoyNode.StandaloneNode;
 import com.google.template.soy.soytree.SoyNode.StatementNode;
@@ -58,6 +58,9 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
 
   /** The data= expression, or null if the call does not pass data or passes data="all". */
   @Nullable private ExprRootNode dataExpr;
+
+  /** The key= expression, or null if the call does not pass key. */
+  @Nullable private ExprRootNode keyExpr;
 
   /** The user-supplied placeholder name, or null if not supplied or not applicable. */
   @Nullable private final String userSuppliedPlaceholderName;
@@ -106,6 +109,10 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
             this.dataExpr = new ExprRootNode(dataExpr);
           }
           break;
+        case "key":
+          ExprNode keyExpr = attr.valueAsExpr(reporter);
+          this.keyExpr = new ExprRootNode(keyExpr);
+          break;
         case MessagePlaceholders.PHNAME_ATTR:
           phname =
               MessagePlaceholders.validatePlaceholderName(
@@ -134,6 +141,7 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
     super(orig, copyState);
     this.isPassingAllData = orig.isPassingAllData;
     this.dataExpr = (orig.dataExpr != null) ? orig.dataExpr.copy(copyState) : null;
+    this.keyExpr = (orig.keyExpr != null) ? orig.keyExpr.copy(copyState) : null;
     this.userSuppliedPlaceholderName = orig.userSuppliedPlaceholderName;
     this.userSuppliedPlaceholderExample = orig.userSuppliedPlaceholderExample;
     this.escapingDirectives = orig.escapingDirectives;
@@ -215,7 +223,12 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
 
   @Override
   public ImmutableList<ExprRootNode> getExprList() {
-    return (dataExpr != null) ? ImmutableList.of(dataExpr) : ImmutableList.<ExprRootNode>of();
+    if (dataExpr == null & keyExpr == null) {
+      return ImmutableList.of();
+    } else if (dataExpr != null && keyExpr != null) {
+      return ImmutableList.of(dataExpr, keyExpr);
+    }
+    return (dataExpr != null) ? ImmutableList.of(dataExpr) : ImmutableList.of(keyExpr);
   }
 
   @SuppressWarnings("unchecked")
@@ -224,11 +237,14 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
     return (ParentSoyNode<StandaloneNode>) super.getParent();
   }
 
+  /** Returns the location of the callee name in the source code. */
+  public abstract SourceLocation getSourceCalleeLocation();
+
   /**
    * Returns the subset of {@link TemplateParam params} of the {@code callee} that require runtime
    * type checking when this node is being rendered.
    */
-  public abstract ImmutableList<TemplateParam> getParamsToRuntimeCheck(TemplateNode callee);
+  public abstract Predicate<String> getParamsToRuntimeCheck(String calleeTemplateName);
 
   /**
    * Returns the escaping directives, applied from left to right.

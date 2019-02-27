@@ -21,7 +21,6 @@ import static com.google.common.truth.Truth.assertThat;
 import com.google.common.collect.ImmutableList;
 import com.google.template.soy.data.SanitizedContents;
 import com.google.template.soy.data.SoyValue;
-import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.plugin.java.restricted.testing.SoyJavaSourceFunctionTester;
 import com.google.template.soy.pysrc.restricted.PyExpr;
 import org.junit.Test;
@@ -39,14 +38,7 @@ public final class HtmlToTextFunctionTest {
     SoyJavaSourceFunctionTester tester = new SoyJavaSourceFunctionTester(htmlToTextFunction);
     SoyValue html = SanitizedContents.constantHtml(HTML);
     assertThat(tester.callFunction(html)).isEqualTo(TEXT);
-  }
-
-  @Test
-  public void testComputeForJsSrc() {
-    HtmlToTextFunction htmlToTextFunction = new HtmlToTextFunction();
-    JsExpr expr = new JsExpr("JS_CODE", Integer.MAX_VALUE);
-    assertThat(htmlToTextFunction.computeForJsSrc(ImmutableList.of(expr)))
-        .isEqualTo(new JsExpr("soy.$$htmlToText(String(JS_CODE))", Integer.MAX_VALUE));
+    assertThat(tester.callFunction(TEXT)).isEqualTo(TEXT);
   }
 
   @Test
@@ -54,6 +46,6 @@ public final class HtmlToTextFunctionTest {
     HtmlToTextFunction htmlToTextFunction = new HtmlToTextFunction();
     PyExpr expr = new PyExpr("PY_CODE", Integer.MAX_VALUE);
     assertThat(htmlToTextFunction.computeForPySrc(ImmutableList.of(expr)))
-        .isEqualTo(new PyExpr("sanitize.html_to_text(str(PY_CODE))", Integer.MAX_VALUE));
+        .isEqualTo(new PyExpr("sanitize.html_to_text(PY_CODE)", Integer.MAX_VALUE));
   }
 }

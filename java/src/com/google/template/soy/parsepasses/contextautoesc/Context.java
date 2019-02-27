@@ -144,6 +144,9 @@ public final class Context {
   /** Determines the context in which this URI is being used. */
   public final UriType uriType;
 
+  /** Determines position in the HTML attribute value containing HTML. */
+  public final HtmlHtmlAttributePosition htmlHtmlAttributePosition;
+
   /** The count of {@code <template>} elements entered and not subsequently exited. */
   public final int templateNestDepth;
 
@@ -159,6 +162,7 @@ public final class Context {
       JsFollowingSlash slashType,
       UriPart uriPart,
       UriType uriType,
+      HtmlHtmlAttributePosition htmlHtmlAttributePosition,
       int templateNestDepth,
       int jsTemplateLiteralNestDepth) {
     this.state = state;
@@ -175,6 +179,7 @@ public final class Context {
         "If in a URI, the type of URI must be specified. UriType = %s but UriPart = %s",
         uriType,
         uriPart);
+    this.htmlHtmlAttributePosition = htmlHtmlAttributePosition;
     this.templateNestDepth = templateNestDepth;
     this.jsTemplateLiteralNestDepth = jsTemplateLiteralNestDepth;
   }
@@ -189,6 +194,7 @@ public final class Context {
         JsFollowingSlash.NONE,
         UriPart.NONE,
         UriType.NONE,
+        HtmlHtmlAttributePosition.NONE,
         0,
         0);
   }
@@ -212,6 +218,13 @@ public final class Context {
   /** Returns a context that differs only in the uri part. */
   public Context derive(UriPart uriPart) {
     return uriPart == this.uriPart ? this : toBuilder().withUriPart(uriPart).build();
+  }
+
+  /** Returns a context that differs only in the HTML attribute containing HTML position. */
+  public Context derive(HtmlHtmlAttributePosition htmlHtmlAttributePosition) {
+    return htmlHtmlAttributePosition == this.htmlHtmlAttributePosition
+        ? this
+        : toBuilder().withHtmlHtmlAttributePosition(htmlHtmlAttributePosition).build();
   }
 
   /** A mutable builder that allows deriving variant contexts. */
@@ -241,7 +254,6 @@ public final class Context {
         case REGEX:
           return derive(JsFollowingSlash.DIV_OP);
         case NONE:
-        default:
           throw new IllegalStateException(slashType.name());
       }
     } else if (state == HtmlContext.HTML_BEFORE_OPEN_TAG_NAME
@@ -303,6 +315,12 @@ public final class Context {
       case STYLE:
         state = HtmlContext.CSS;
         break;
+      case HTML:
+        state = HtmlContext.HTML_HTML_ATTR_VALUE;
+        break;
+      case META_REFRESH_CONTENT:
+        state = HtmlContext.HTML_META_REFRESH_CONTENT;
+        break;
       case URI:
         state = HtmlContext.URI;
         uriPart = UriPart.START;
@@ -317,7 +335,16 @@ public final class Context {
         uriType,
         attrType);
     return new Context(
-        state, elType, attrType, delim, slash, uriPart, uriType, templateNestDepth, 0);
+        state,
+        elType,
+        attrType,
+        delim,
+        slash,
+        uriPart,
+        uriType,
+        HtmlHtmlAttributePosition.NONE,
+        templateNestDepth,
+        0);
   }
 
   private static boolean hasBlessStringAsTrustedResourceUrlForLegacyDirective(
@@ -368,6 +395,9 @@ public final class Context {
         switch (uriType) {
           case MEDIA:
             escapingMode = EscapingMode.FILTER_NORMALIZE_MEDIA_URI;
+            break;
+          case REFRESH:
+            escapingMode = EscapingMode.FILTER_NORMALIZE_REFRESH_URI;
             break;
           case TRUSTED_RESOURCE:
             if (hasBlessStringAsTrustedResourceUrlForLegacyDirective(printDirectives)) {
@@ -465,7 +495,7 @@ public final class Context {
         } else if (!escapingMode.isHtmlEmbeddable) {
           // Some modes, like JS and CSS value modes, might insert quotes to make
           // a quoted string, so make sure to escape those as HTML.
-          // E.g. when the value of $s is " onmouseover=evil() foo=", in
+          // E.g. when the value of $s is “' onmouseover=evil() foo='”, in
           //    <a onclick='alert({$s})'>
           // we want to produce
           //    <a onclick='alert(&#39; onmouseover=evil() foo=&#39;)'>
@@ -718,7 +748,7 @@ public final class Context {
       //
       // Good Example 1: {$urlWithQuery}{if $a}&a={$a}{/if}{if $b}&b={$b}{/if}
       // In this example, the first "if" statement has two branches:
-      // - "true": {$urlWithQuey}&a={$a} looks like a QUERY due to hueristics
+      // - "true": {$urlWithQuery}&a={$a} looks like a QUERY due to hueristics
       // - "false": {$urlWithQuery} only, which Soy doesn't know at compile-time to actually
       // have a query, and it remains in MAYBE_VARIABLE_SCHEME.
       // Instead of yielding UNKNOWN, this yields MAYBE_VARIABLE_SCHEME, which the second
@@ -1186,14 +1216,16 @@ public final class Context {
           elType = ElementType.BASE;
           break;
         case "link":
-          elType = ElementType.LINK_EXECUTABLE;
-          HtmlAttributeNode rel = node.getDirectAttributeNamed("rel");
-          if (rel != null) {
-            String value = rel.getStaticContent();
-            if (value != null && REGULAR_LINK_PATTERN.matcher(value).matches()) {
-              elType = ElementType.NORMAL;
-            }
-          }
+          String rel = getStaticAttributeValue(node, "rel");
+          elType =
+              rel != null && REGULAR_LINK_PATTERN.matcher(rel).matches()
+                  ? ElementType.NORMAL
+                  : ElementType.LINK_EXECUTABLE;
+          break;
+        case "meta":
+          String httpEquiv = getStaticAttributeValue(node, "http-equiv");
+          elType =
+              "refresh".equalsIgnoreCase(httpEquiv) ? ElementType.META_REFRESH : ElementType.NORMAL;
           break;
         case "textarea":
           elType = ElementType.TEXTAREA;
@@ -1213,6 +1245,11 @@ public final class Context {
         .withElType(elType)
         .withTemplateNestDepth(newTemplateNestDepth)
         .build();
+  }
+
+  private String getStaticAttributeValue(HtmlTagNode node, String name) {
+    HtmlAttributeNode attribute = node.getDirectAttributeNamed(name);
+    return attribute == null ? null : attribute.getStaticContent();
   }
 
   /** Returns a new context that is in {@link HtmlContext#HTML_TAG}. */
@@ -1245,14 +1282,13 @@ public final class Context {
       case NORMAL:
       case BASE:
       case LINK_EXECUTABLE:
+      case META_REFRESH:
       case IFRAME:
       case MEDIA:
         builder.withState(HtmlContext.HTML_PCDATA).withElType(Context.ElementType.NONE);
         break;
       case NONE:
         throw new IllegalStateException();
-      default:
-        throw new AssertionError("Unrecognized state " + elType);
     }
     return builder.build();
   }
@@ -1340,10 +1376,10 @@ public final class Context {
         && ("src".equals(attrName) || "xlink:href".equals(attrName))) {
       attr = Context.AttributeType.URI;
       uriType = UriType.MEDIA;
-    } else if (elType == ElementType.SCRIPT && "src".equals(attrName)
-        || elType == ElementType.IFRAME && "src".equals(attrName)
-        || elType == ElementType.LINK_EXECUTABLE && "href".equals(attrName)
-        || elType == ElementType.BASE && "href".equals(attrName)) {
+    } else if ((elType == ElementType.SCRIPT && "src".equals(attrName))
+        || (elType == ElementType.IFRAME && "src".equals(attrName))
+        || (elType == ElementType.LINK_EXECUTABLE && "href".equals(attrName))
+        || (elType == ElementType.BASE && "href".equals(attrName))) {
       attr = Context.AttributeType.URI;
       uriType = UriType.TRUSTED_RESOURCE;
     } else if (URI_ATTR_NAMES.contains(localName)
@@ -1352,6 +1388,10 @@ public final class Context {
         || attrName.startsWith("xmlns:")) {
       attr = Context.AttributeType.URI;
       uriType = UriType.NORMAL;
+    } else if (elType == ElementType.META_REFRESH && "content".equals(attrName)) {
+      attr = AttributeType.META_REFRESH_CONTENT;
+    } else if (elType == ElementType.IFRAME && "srcdoc".equals(attrName)) {
+      attr = Context.AttributeType.HTML;
     } else {
       attr = Context.AttributeType.PLAIN_TEXT;
     }
@@ -1407,6 +1447,9 @@ public final class Context {
      */
     LINK_EXECUTABLE,
 
+    /** A {@code <meta http-equiv="refresh">} element. */
+    META_REFRESH,
+
     /** An element whose content is normal mixed PCDATA and child elements. */
     NORMAL,
     ;
@@ -1424,8 +1467,14 @@ public final class Context {
     /** Mime-type text/css. */
     STYLE,
 
+    /** Mime-type text/html. */
+    HTML,
+
     /** A URI or URI reference. */
     URI,
+
+    /** The value of content attribute in {@code <meta http-equiv="refresh">}. */
+    META_REFRESH_CONTENT,
 
     /** Other content. Human readable or other non-structured plain text or keyword values. */
     PLAIN_TEXT,
@@ -1590,9 +1639,9 @@ public final class Context {
      * General URI context suitable for most URI types.
      *
      * <p>The biggest use-case here is for anchors, where we want to prevent Javascript URLs that
-     * can cause XSS. However, this grabs other types of URIs such as stylesheets, prefetch, SEO
-     * metadata, and attributes that look like they're supposed to contain URIs but might just be
-     * harmless metadata because they end with "url".
+     * can cause XSS. However, this grabs other types of URIs such as prefetch, SEO metadata, and
+     * attributes that look like they're supposed to contain URIs but might just be harmless
+     * metadata because they end with "url".
      *
      * <p>It's expected that this will be split up over time to address the different safety levels
      * of the different URI types.
@@ -1615,6 +1664,14 @@ public final class Context {
     MEDIA,
 
     /**
+     * URL used in {@code <meta http-equiv="Refresh" content="0; URL=">}.
+     *
+     * <p>Compared to the normal URL, ';' is escaped because it is a special character in this
+     * context.
+     */
+    REFRESH,
+
+    /**
      * A URI which loads resources. This is intended to be used in scripts, stylesheets, etc which
      * should not be in attacker control.
      *
@@ -1628,6 +1685,14 @@ public final class Context {
     TRUSTED_RESOURCE;
   }
 
+  /** Describes position in HTML attribute value containing HTML (e.g. {@code <iframe srcdoc>}). */
+  public enum HtmlHtmlAttributePosition {
+    /** Not in HTML attribute value containing HTML or at its start. */
+    NONE,
+    /** Inside HTML attribute value containing HTML but not at the start. */
+    NOT_START;
+  }
+
   /** A mutable builder for {@link Context}s. */
   static final class Builder {
     private HtmlContext state;
@@ -1637,6 +1702,7 @@ public final class Context {
     private JsFollowingSlash slashType;
     private UriPart uriPart;
     private UriType uriType;
+    private HtmlHtmlAttributePosition htmlHtmlAttributePosition;
     private int templateNestDepth;
     private int jsTemplateLiteralNestDepth;
 
@@ -1648,6 +1714,7 @@ public final class Context {
       this.slashType = context.slashType;
       this.uriPart = context.uriPart;
       this.uriType = context.uriType;
+      this.htmlHtmlAttributePosition = context.htmlHtmlAttributePosition;
       this.templateNestDepth = context.templateNestDepth;
       this.jsTemplateLiteralNestDepth = context.jsTemplateLiteralNestDepth;
     }
@@ -1684,6 +1751,11 @@ public final class Context {
 
     Builder withUriType(UriType uriType) {
       this.uriType = Preconditions.checkNotNull(uriType);
+      return this;
+    }
+
+    Builder withHtmlHtmlAttributePosition(HtmlHtmlAttributePosition htmlHtmlAttributePosition) {
+      this.htmlHtmlAttributePosition = Preconditions.checkNotNull(htmlHtmlAttributePosition);
       return this;
     }
 
@@ -1748,8 +1820,6 @@ public final class Context {
           withUriPart(UriPart.START);
           withUriType(UriType.TRUSTED_RESOURCE);
           break;
-        default:
-          throw new AssertionError();
       }
       if (!inTag) {
         withElType(ElementType.NONE);
@@ -1766,6 +1836,7 @@ public final class Context {
           slashType,
           uriPart,
           uriType,
+          htmlHtmlAttributePosition,
           templateNestDepth,
           jsTemplateLiteralNestDepth);
     }

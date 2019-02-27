@@ -119,21 +119,28 @@ public class GenCallCodeUtils {
       CallNode callNode,
       TemplateAliases templateAliases,
       TranslationContext translationContext,
-      ErrorReporter errorReporter) {
+      ErrorReporter errorReporter,
+      TranslateExprNodeVisitor exprTranslator) {
 
     // Build the JS CodeChunk for the callee's name.
-    Expression callee = genCallee(callNode, templateAliases, translationContext, errorReporter);
+    Expression callee = genCallee(callNode, templateAliases, exprTranslator);
 
     // Generate the data object to pass to callee
     Expression objToPass =
-        genObjToPass(callNode, templateAliases, translationContext, errorReporter);
+        genObjToPass(callNode, templateAliases, translationContext, errorReporter, exprTranslator);
 
-    // Generate the main call expression.
-    Expression call = callee.call(objToPass, JsRuntime.OPT_IJ_DATA);
+    Expression call = genMainCall(callee, objToPass, callNode);
     if (callNode.getEscapingDirectives().isEmpty()) {
       return call;
     }
+    return applyEscapingDirectives(call, callNode);
+  }
 
+  protected Expression genMainCall(Expression callee, Expression objToPass, CallNode call) {
+    return callee.call(objToPass, JsRuntime.OPT_IJ_DATA);
+  }
+
+  public static Expression applyEscapingDirectives(Expression call, CallNode callNode) {
     // Apply escaping directives as necessary.
     //
     // The print directive system continues to use JsExpr, as it is a publicly available API and
@@ -169,10 +176,7 @@ public class GenCallCodeUtils {
    * @return The JS expression for the template to call
    */
   public Expression genCallee(
-      CallNode callNode,
-      TemplateAliases templateAliases,
-      TranslationContext translationContext,
-      ErrorReporter errorReporter) {
+      CallNode callNode, TemplateAliases templateAliases, TranslateExprNodeVisitor exprTranslator) {
     // Build the JS CodeChunk for the callee's name.
     Expression callee;
     if (callNode instanceof CallBasicNode) {
@@ -197,8 +201,7 @@ public class GenCallCodeUtils {
         variant = LITERAL_EMPTY_STRING;
       } else {
         // Case 2b: Delegate call with variant expression.
-        variant =
-            new TranslateExprNodeVisitor(translationContext, errorReporter).exec(variantSoyExpr);
+        variant = exprTranslator.exec(variantSoyExpr);
       }
 
       callee =
@@ -256,16 +259,15 @@ public class GenCallCodeUtils {
       CallNode callNode,
       TemplateAliases templateAliases,
       TranslationContext translationContext,
-      ErrorReporter errorReporter) {
+      ErrorReporter errorReporter,
+      TranslateExprNodeVisitor exprTranslator) {
 
     // ------ Generate the expression for the original data to pass ------
     Expression dataToPass;
     if (callNode.isPassingAllData()) {
       dataToPass = JsRuntime.OPT_DATA;
     } else if (callNode.isPassingData()) {
-      dataToPass =
-          new TranslateExprNodeVisitor(translationContext, errorReporter)
-              .exec(callNode.getDataExpr());
+      dataToPass = exprTranslator.exec(callNode.getDataExpr());
     } else {
       dataToPass = LITERAL_NULL;
     }
@@ -284,8 +286,7 @@ public class GenCallCodeUtils {
 
       if (child instanceof CallParamValueNode) {
         CallParamValueNode cpvn = (CallParamValueNode) child;
-        Expression value =
-            new TranslateExprNodeVisitor(translationContext, errorReporter).exec(cpvn.getExpr());
+        Expression value = exprTranslator.exec(cpvn.getExpr());
         values.add(value);
       } else {
         CallParamContentNode cpcn = (CallParamContentNode) child;

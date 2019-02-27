@@ -59,8 +59,6 @@ import com.google.template.soy.soytree.defn.LocalVar;
  *       usable.
  * </ul>
  *
- * <p>TODO(b/79240335): delete the {@code msgId} function.
- *
  * <p>Must run after the ResolveNamesPass and the CheckNonEmptyMsgNodesPass since we depend on
  * finding local variable definitions and empty message nodes don't have valid ids. Should run
  * before ResolveExpressionTypesPass so that we don't need to worry about assigning types here.
@@ -81,50 +79,49 @@ final class MsgWithIdFunctionPass extends CompilerFilePass {
   @Override
   public void run(SoyFileNode file, IdGenerator nodeIdGen) {
     outer:
-    for (FunctionNode fn : SoyTreeUtils.getAllNodesOfType(file, FunctionNode.class)) {
-      if (fn.getSoyFunction() == BuiltinFunction.MSG_WITH_ID) {
-        if (fn.numChildren() != 1) {
-          // if it isn't == 1, then an error has already been reported
+    for (FunctionNode fn :
+        SoyTreeUtils.getAllFunctionInvocations(file, BuiltinFunction.MSG_WITH_ID)) {
+      if (fn.numChildren() != 1) {
+        // if it isn't == 1, then an error has already been reported
+        continue;
+      }
+      ExprNode msgVariable = fn.getChild(0);
+      if (!(msgVariable instanceof VarRefNode)) {
+        badFunctionCall(fn, " It is not a variable.");
+        continue;
+      }
+      VarDefn defn = ((VarRefNode) msgVariable).getDefnDecl();
+      if (!(defn instanceof LocalVar)) {
+        badFunctionCall(fn, " It is not a let variable.");
+        continue;
+      }
+      LocalVarNode declaringNode = ((LocalVar) defn).declaringNode();
+      if (!(declaringNode instanceof LetContentNode)) {
+        badFunctionCall(fn, " It is not a let.");
+        continue;
+      }
+      LetContentNode letNode = (LetContentNode) declaringNode;
+      MsgFallbackGroupNode fallbackGroupNode = null;
+      for (SoyNode child : letNode.getChildren()) {
+        if (child instanceof RawTextNode && ((RawTextNode) child).getRawText().isEmpty()) {
           continue;
-        }
-        ExprNode msgVariable = fn.getChild(0);
-        if (!(msgVariable instanceof VarRefNode)) {
-          badFunctionCall(fn, " It is not a variable.");
-          continue;
-        }
-        VarDefn defn = ((VarRefNode) msgVariable).getDefnDecl();
-        if (!(defn instanceof LocalVar)) {
-          badFunctionCall(fn, " It is not a let variable.");
-          continue;
-        }
-        LocalVarNode declaringNode = ((LocalVar) defn).declaringNode();
-        if (!(declaringNode instanceof LetContentNode)) {
-          badFunctionCall(fn, " It is not a let.");
-          continue;
-        }
-        LetContentNode letNode = (LetContentNode) declaringNode;
-        MsgFallbackGroupNode fallbackGroupNode = null;
-        for (SoyNode child : letNode.getChildren()) {
-          if (child instanceof RawTextNode && ((RawTextNode) child).getRawText().isEmpty()) {
-            continue;
-          } else if (child instanceof MsgFallbackGroupNode) {
-            if (fallbackGroupNode == null) {
-              fallbackGroupNode = (MsgFallbackGroupNode) child;
-            } else {
-              badFunctionCall(fn, " There is more than one msg.");
-              continue outer;
-            }
+        } else if (child instanceof MsgFallbackGroupNode) {
+          if (fallbackGroupNode == null) {
+            fallbackGroupNode = (MsgFallbackGroupNode) child;
           } else {
-            badFunctionCall(fn, " There is a non-msg child of the let.");
+            badFunctionCall(fn, " There is more than one msg.");
             continue outer;
           }
+        } else {
+          badFunctionCall(fn, " There is a non-msg child of the let.");
+          continue outer;
         }
-        if (fallbackGroupNode == null) {
-          badFunctionCall(fn, " There was no msg in the referenced let.");
-          continue;
-        }
-        handleMsgIdCall(fn, fallbackGroupNode);
       }
+      if (fallbackGroupNode == null) {
+        badFunctionCall(fn, " There was no msg in the referenced let.");
+        continue;
+      }
+      handleMsgIdCall(fn, fallbackGroupNode);
     }
   }
 
@@ -163,7 +160,11 @@ final class MsgWithIdFunctionPass extends CompilerFilePass {
       long fallbackMsgId = MsgUtils.computeMsgIdForDualFormat(msgNode.getChild(1));
       ConditionalOpNode condOpNode = new ConditionalOpNode(fn.getSourceLocation());
       FunctionNode isPrimaryMsgInUse =
-          new FunctionNode(BuiltinFunction.IS_PRIMARY_MSG_IN_USE, fn.getSourceLocation());
+          new FunctionNode(
+              Identifier.create(
+                  BuiltinFunction.IS_PRIMARY_MSG_IN_USE.getName(), fn.getSourceLocation()),
+              BuiltinFunction.IS_PRIMARY_MSG_IN_USE,
+              fn.getSourceLocation());
       // We add the varRef, and the 2 message ids to the funcitonnode as arguments so they are
       // trivial to access in the backends.  This is a little hacky however since we never generate
       // code for these things.

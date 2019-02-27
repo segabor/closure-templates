@@ -47,9 +47,9 @@ import com.google.protobuf.Descriptors.GenericDescriptor;
 import com.google.protobuf.ExtensionRegistry;
 import com.google.template.soy.internal.proto.ProtoUtils;
 import com.google.template.soy.types.SanitizedType.AttributesType;
-import com.google.template.soy.types.SanitizedType.CssType;
 import com.google.template.soy.types.SanitizedType.HtmlType;
 import com.google.template.soy.types.SanitizedType.JsType;
+import com.google.template.soy.types.SanitizedType.StyleType;
 import com.google.template.soy.types.SanitizedType.TrustedResourceUriType;
 import com.google.template.soy.types.SanitizedType.UriType;
 import java.io.BufferedInputStream;
@@ -98,20 +98,21 @@ public class SoyTypeRegistry {
           .put("number", NUMBER_TYPE)
           .put("html", HtmlType.getInstance())
           .put("attributes", AttributesType.getInstance())
-          .put("css", CssType.getInstance())
+          .put("css", StyleType.getInstance())
           .put("uri", UriType.getInstance())
           .put("trusted_resource_uri", TrustedResourceUriType.getInstance())
           .put("js", JsType.getInstance())
+          .put("ve_data", VeDataType.getInstance())
           .build();
 
   private static final ImmutableMap<String, SanitizedType> SAFE_PROTO_TO_SANITIZED_TYPE =
       ImmutableMap.<String, SanitizedType>builder()
           .put(SafeHtmlProto.getDescriptor().getFullName(), SanitizedType.HtmlType.getInstance())
           .put(SafeScriptProto.getDescriptor().getFullName(), SanitizedType.JsType.getInstance())
-          .put(SafeStyleProto.getDescriptor().getFullName(), SanitizedType.CssType.getInstance())
+          .put(SafeStyleProto.getDescriptor().getFullName(), SanitizedType.StyleType.getInstance())
           .put(
               SafeStyleSheetProto.getDescriptor().getFullName(),
-              SanitizedType.CssType.getInstance())
+              SanitizedType.StyleType.getInstance())
           .put(SafeUrlProto.getDescriptor().getFullName(), SanitizedType.UriType.getInstance())
           .put(
               TrustedResourceUrlProto.getDescriptor().getFullName(),
@@ -139,6 +140,7 @@ public class SoyTypeRegistry {
   private final Interner<LegacyObjectMapType> legacyObjectMapTypes = Interners.newStrongInterner();
   private final Interner<UnionType> unionTypes = Interners.newStrongInterner();
   private final Interner<RecordType> recordTypes = Interners.newStrongInterner();
+  private final Interner<VeType> veTypes = Interners.newStrongInterner();
 
   @GuardedBy("lock")
   private ImmutableList<String> lazyAllSortedTypeNames;
@@ -304,6 +306,14 @@ public class SoyTypeRegistry {
    */
   public RecordType getOrCreateRecordType(Map<String, SoyType> fields) {
     return recordTypes.intern(RecordType.of(fields));
+  }
+
+  /**
+   * Factory function which creates and returns a {@code ve} type with the given {@code dataType}.
+   * This folds identical ve types together.
+   */
+  public VeType getOrCreateVeType(SoyType dataType) {
+    return veTypes.intern(VeType.of(dataType));
   }
 
   /** Helper class that assists in the construction of SoyTypeProviders. */

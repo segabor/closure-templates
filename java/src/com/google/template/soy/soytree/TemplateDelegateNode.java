@@ -29,7 +29,6 @@ import com.google.template.soy.exprtree.IntegerNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.soytree.SoyNode.ExprHolderNode;
 import com.google.template.soy.soytree.defn.TemplateParam;
-import com.google.template.soy.soytree.defn.TemplateStateVar;
 import javax.annotation.Nullable;
 
 /**
@@ -40,23 +39,17 @@ import javax.annotation.Nullable;
  */
 public final class TemplateDelegateNode extends TemplateNode implements ExprHolderNode {
 
-  /**
-   * Value class for a delegate template key (name and variant).
-   *
-   * <p>Important: Do not use outside of Soy code (treat as superpackage-private).
-   */
+  /** Value class for a delegate template key (name and variant). */
   @AutoValue
-  public abstract static class DelTemplateKey {
+  abstract static class DelTemplateKey {
 
-    public static DelTemplateKey create(String name, String variant) {
+    static DelTemplateKey create(String name, String variant) {
       return new AutoValue_TemplateDelegateNode_DelTemplateKey(name, variant);
     }
 
-    DelTemplateKey() {}
+    abstract String name();
 
-    public abstract String name();
-
-    public abstract String variant();
+    abstract String variant();
 
     @Override
     public final String toString() {
@@ -85,7 +78,6 @@ public final class TemplateDelegateNode extends TemplateNode implements ExprHold
    * @param delTemplateName The delegate template name.
    * @param delTemplateVariantExpr An expression that references a delegate template variant.
    * @param delPriority The delegate priority.
-   * @param params The params from template header or SoyDoc. Null if no decls and no SoyDoc.
    */
   TemplateDelegateNode(
       TemplateDelegateNodeBuilder nodeBuilder,
@@ -93,16 +85,14 @@ public final class TemplateDelegateNode extends TemplateNode implements ExprHold
       String delTemplateName,
       @Nullable ExprRootNode delTemplateVariantExpr,
       Priority delPriority,
-      ImmutableList<TemplateParam> params,
-      ImmutableList<TemplateStateVar> stateVars) {
+      ImmutableList<TemplateParam> params) {
 
     super(
         nodeBuilder,
         "deltemplate",
         soyFileHeaderInfo,
         Visibility.PUBLIC /* deltemplate always has public visibility */,
-        params,
-        stateVars);
+        params);
     this.delTemplateName = checkNotNull(delTemplateName);
     this.delTemplateVariantExpr = delTemplateVariantExpr;
     this.delPriority = checkNotNull(delPriority);

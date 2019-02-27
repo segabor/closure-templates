@@ -22,8 +22,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.BaseUtils;
 import com.google.template.soy.base.internal.Identifier;
-import com.google.template.soy.base.internal.QuoteStyle;
-import com.google.template.soy.base.internal.SanitizedContentKind;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.exprtree.ExprNode;
@@ -36,6 +34,7 @@ import com.google.template.soy.soytree.TemplateNode.Priority;
 import com.google.template.soy.soytree.TemplateNode.SoyFileHeaderInfo;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import java.util.List;
+import javax.annotation.Nullable;
 
 /**
  * Builder for TemplateDelegateNode.
@@ -149,60 +148,6 @@ public class TemplateDelegateNodeBuilder extends TemplateNodeBuilder {
   }
 
   /**
-   * Alternative to {@code setCmdText()} that sets command text info directly as opposed to having
-   * it parsed from the command text string. The cmdText field will be set to a canonical string
-   * generated from the given info.
-   *
-   * @param delTemplateName The delegate template name.
-   * @param delTemplateVariant The delegate template variant.
-   * @param delPriority The delegate priority.
-   * @param autoescapeMode The mode of autoescaping for this template.
-   * @param contentKind Strict mode context. Nonnull iff autoescapeMode is strict.
-   * @param requiredCssNamespaces CSS namespaces required to render the template.
-   * @return This builder.
-   */
-  public TemplateDelegateNodeBuilder setCmdTextInfo(
-      String delTemplateName,
-      String delTemplateVariant,
-      Priority delPriority,
-      AutoescapeMode autoescapeMode,
-      SanitizedContentKind contentKind,
-      ImmutableList<String> requiredCssNamespaces) {
-
-    Preconditions.checkState(this.sourceLocation != null);
-    Preconditions.checkState(this.cmdText == null);
-    Preconditions.checkArgument(BaseUtils.isDottedIdentifier(delTemplateName));
-    Preconditions.checkArgument(
-        delTemplateVariant.length() == 0 || BaseUtils.isIdentifier(delTemplateVariant));
-    Preconditions.checkArgument((contentKind != null) == (autoescapeMode == AutoescapeMode.STRICT));
-
-    this.delTemplateName = delTemplateName;
-    this.delTemplateVariantExpr =
-        new ExprRootNode(
-            new StringNode(delTemplateVariant, QuoteStyle.SINGLE, this.sourceLocation));
-    this.delPriority = delPriority;
-    setAutoescapeInfo(autoescapeMode, contentKind, sourceLocation);
-    setRequiredCssNamespaces(requiredCssNamespaces);
-    String cmdText =
-        delTemplateName
-            + ((delTemplateVariant.length() == 0) ? "" : " variant=\"" + delTemplateVariant + "\"")
-            + " autoescape=\""
-            + autoescapeMode.getAttributeValue()
-            + "\"";
-    if (contentKind != null) {
-      cmdText += " kind=\"" + contentKind.asAttributeValue() + '"';
-    }
-    if (!requiredCssNamespaces.isEmpty()) {
-      cmdText += " requirecss=\"" + Joiner.on(", ").join(requiredCssNamespaces) + "\"";
-    }
-    this.cmdText = cmdText;
-
-    genInternalTemplateNameHelper();
-
-    return this;
-  }
-
-  /**
    * Private helper for both setCmdText() and setCmdTextInfo() to generate and set the internal-use
    * partial template name and template name.
    */
@@ -221,17 +166,24 @@ public class TemplateDelegateNodeBuilder extends TemplateNodeBuilder {
         variant = expr.toSourceString();
       }
     }
+    String generatedPartialTemplateName =
+        partialDeltemplateTemplateName(delTemplateName, soyFileHeaderInfo.delPackageName, variant);
+    String generatedTemplateName = soyFileHeaderInfo.namespace + generatedPartialTemplateName;
+    setTemplateNames(generatedTemplateName, generatedPartialTemplateName);
+  }
+
+  /** Returns the inferred 'partial' name for a deltemplate. */
+  public static String partialDeltemplateTemplateName(
+      String delTemplateName, @Nullable String delPackageName, String variant) {
     String delPackageTemplateAndVariantStr =
-        (soyFileHeaderInfo.delPackageName == null ? "" : soyFileHeaderInfo.delPackageName)
+        (delPackageName == null ? "" : delPackageName)
             + "_"
             + delTemplateName.replace('.', '_')
             + "_"
             + variant;
     delPackageTemplateAndVariantStr = delPackageTemplateAndVariantStr.replace('.', '_');
     // Generate the actual internal-use template name.
-    String generatedPartialTemplateName = ".__deltemplate_" + delPackageTemplateAndVariantStr;
-    String generatedTemplateName = soyFileHeaderInfo.namespace + generatedPartialTemplateName;
-    setTemplateNames(generatedTemplateName, generatedPartialTemplateName);
+    return ".__deltemplate_" + delPackageTemplateAndVariantStr;
   }
 
   @Override
@@ -249,12 +201,6 @@ public class TemplateDelegateNodeBuilder extends TemplateNodeBuilder {
     Preconditions.checkState(id != null && cmdText != null);
 
     return new TemplateDelegateNode(
-        this,
-        soyFileHeaderInfo,
-        delTemplateName,
-        delTemplateVariantExpr,
-        delPriority,
-        params,
-        stateVars);
+        this, soyFileHeaderInfo, delTemplateName, delTemplateVariantExpr, delPriority, params);
   }
 }

@@ -55,16 +55,18 @@ goog.require('goog.soy.data.SanitizedCss');
 goog.require('goog.soy.data.SanitizedHtml');
 goog.require('goog.soy.data.SanitizedHtmlAttribute');
 goog.require('goog.soy.data.SanitizedJs');
-goog.require('goog.soy.data.SanitizedStyle');
 goog.require('goog.soy.data.SanitizedTrustedResourceUri');
 goog.require('goog.soy.data.SanitizedUri');
 goog.require('goog.soy.data.UnsanitizedText');
 goog.require('goog.string');
 goog.require('goog.string.Const');
+goog.require('soy.checks');
+
+
 
 // -----------------------------------------------------------------------------
-// soydata: Defines typed strings, e.g. an HTML string {@code "a<b>c"} is
-// semantically distinct from the plain text string {@code "a<b>c"} and smart
+// soydata: Defines typed strings, e.g. an HTML string `"a<b>c"` is
+// semantically distinct from the plain text string `"a<b>c"` and smart
 // templates can take that distinction into account.
 
 /**
@@ -84,7 +86,6 @@ soydata.isContentKind_ = function(value, contentKind) {
   // altogether and only at the constructor.
   return value != null && value.contentKind === contentKind;
 };
-
 
 /**
  * Returns a given value's contentDir property, constrained to a
@@ -138,9 +139,7 @@ goog.inherits(soydata.SanitizedHtml, goog.soy.data.SanitizedHtml);
  */
 soydata.SanitizedHtml.from = function(value) {
   // The check is soydata.isContentKind_() inlined for performance.
-  if (value != null &&
-      value.contentKind === goog.soy.data.SanitizedContentKind.HTML) {
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedHtml);
+  if (soy.checks.isHtml(value)) {
     return /** @type {!goog.soy.data.SanitizedHtml} */ (value);
   }
   if (value instanceof goog.html.SafeHtml) {
@@ -351,27 +350,13 @@ soydata.VERY_UNSAFE.ordainSanitizedTrustedResourceUri =
  * HTML attribute.
  *
  * @param {?} content An attribute name and value, such as
- *     {@code dir="ltr"}.
+ *     `dir="ltr"`.
  * @return {!goog.soy.data.SanitizedHtmlAttribute} Sanitized content wrapper
  *     that indicates to Soy not to escape when printed as an HTML attribute.
  */
 soydata.VERY_UNSAFE.ordainSanitizedHtmlAttribute =
     soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_(
         goog.soy.data.SanitizedHtmlAttribute);
-
-
-/**
- * Takes a leap of faith that the provided content is "safe" to use as STYLE
- * in a style attribute.
- *
- * @param {?} content CSS, such as `color:#c3d9ff`.
- * @return {!goog.soy.data.SanitizedStyle} Sanitized style wrapper that
- *     indicates to Soy there is no need to escape or filter when printed in CSS
- *     context.
- */
-soydata.VERY_UNSAFE.ordainSanitizedStyle =
-    soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_(
-        goog.soy.data.SanitizedStyle);
 
 
 /**
@@ -385,7 +370,6 @@ soydata.VERY_UNSAFE.ordainSanitizedStyle =
 soydata.VERY_UNSAFE.ordainSanitizedCss =
     soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_(
         goog.soy.data.SanitizedCss);
-
 
 // -----------------------------------------------------------------------------
 // Soy-generated utilities in the soy namespace.  Contains implementations for
@@ -550,6 +534,32 @@ soy.$$parseFloat = function(str) {
   return isNaN(parsed) ? null : parsed;
 };
 
+/**
+ * Returns a random integer.
+ * @return {number} a random integer between 0 and num
+ */
+soy.$$randomInt = function(/** number */ num) {
+  return Math.floor(Math.random() * num);
+};
+
+/**
+ * Rounds the given value to the closest decimal point left (negative numbers)
+ * or right (positive numbers) of the decimal point
+ *
+ * TODO(b/112835292): This is probably not something that anyone should use,
+ * instead they should use an i18n friendly number formatting routine.
+ *
+ * @return {number} the rounded value
+ */
+soy.$$round = function(/** number */ num, /** number */ numDigitsAfterPt) {
+  const shift = Math.pow(10, numDigitsAfterPt);
+  return Math.round(num * shift) / shift;
+};
+
+/** @return {boolean} returns whether the needle was found in the haystack */
+soy.$$strContains = function(/** string */ haystack, /** string */ needle) {
+  return haystack.indexOf(needle) != -1;
+};
 
 /**
  * Coerce the given value into a bool.
@@ -886,18 +896,6 @@ soydata.VERY_UNSAFE.$$ordainSanitizedAttributesForInternalBlocks =
 
 
 /**
- * Creates kind="style" block contents (internal use only).
- *
- * @param {?} content Text.
- * @return {goog.soy.data.SanitizedStyle|soydata.$$EMPTY_STRING_} Wrapped
- *     result.
- */
-soydata.VERY_UNSAFE.$$ordainSanitizedStyleForInternalBlocks =
-    soydata.$$makeSanitizedContentFactoryWithDefaultDirOnlyForInternalBlocks_(
-        goog.soy.data.SanitizedStyle);
-
-
-/**
  * Creates kind="css" block contents (internal use only).
  *
  * @param {?} content Text.
@@ -940,8 +938,7 @@ soy.$$escapeHtml = function(value) {
  *     value.
  */
 soy.$$cleanHtml = function(value, opt_safeTags) {
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.HTML)) {
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedHtml);
+  if (soy.checks.isHtml(value)) {
     return /** @type {!goog.soy.data.SanitizedHtml} */ (value);
   }
   var tagWhitelist;
@@ -960,10 +957,22 @@ soy.$$cleanHtml = function(value, opt_safeTags) {
 /**
  * Converts HTML to plain text by removing tags, normalizing spaces and
  * converting entities.
- * @param {string} html
+ * TODO(tomnguyen): Support IdomFunction in value.
+ * @param {string|?goog.soy.data.SanitizedHtml|?goog.soy.data.UnsanitizedText}
+ *     value
  * @return {string}
  */
-soy.$$htmlToText = function(html) {
+soy.$$htmlToText = function(value) {
+  if (value == null) {
+    return '';
+  }
+  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.TEXT)) {
+    return value.toString();
+  }
+  if (!soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.HTML)) {
+    return goog.asserts.assertString(value);
+  }
+  var html = value.toString();
   var text = '';
   var start = 0;
   // Tag name to stop removing contents, e.g. '/script'.
@@ -1046,13 +1055,13 @@ soy.$$normalizeHtml = function(value) {
  * RCDATA.
  * <p>
  * Escapes HTML special characters so that the value will not prematurely end
- * the body of a tag like {@code <textarea>} or {@code <title>}. RCDATA tags
+ * the body of a tag like `<textarea>` or `<title>`. RCDATA tags
  * cannot contain other HTML entities, so it is not strictly necessary to escape
  * HTML special characters except when part of that text looks like an HTML
- * entity or like a close tag : {@code </textarea>}.
+ * entity or like a close tag : `</textarea>`.
  * <p>
  * Will normalize known safe HTML to make sure that sanitized HTML (which could
- * contain an innocuous {@code </textarea>} don't prematurely end an RCDATA
+ * contain an innocuous `</textarea>` don't prematurely end an RCDATA
  * element.
  *
  * @param {?} value The string-like value to be escaped. May not be a string,
@@ -1060,8 +1069,7 @@ soy.$$normalizeHtml = function(value) {
  * @return {string} An escaped version of value.
  */
 soy.$$escapeHtmlRcdata = function(value) {
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.HTML)) {
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedHtml);
+  if (soy.checks.isHtml(value)) {
     return soy.esc.$$normalizeHtmlHelper(value.getContent());
   }
   return soy.esc.$$escapeHtmlHelper(value);
@@ -1177,7 +1185,7 @@ soy.$$stripHtmlTags = function(value, opt_tagWhitelist) {
 
 /**
  * Make sure that tag boundaries are not broken by Safe CSS when embedded in a
- * {@code <style>} element.
+ * `<style>` element.
  * @param {string} css
  * @return {string}
  * @private
@@ -1191,8 +1199,8 @@ soy.$$embedCssIntoHtml_ = function(css) {
 
 /**
  * Throw out any close tags that don't correspond to start tags.
- * If {@code <table>} is used for formatting, embedded HTML shouldn't be able
- * to use a mismatched {@code </table>} to break page layout.
+ * If `<table>` is used for formatting, embedded HTML shouldn't be able
+ * to use a mismatched `</table>` to break page layout.
  *
  * @param {Array<string>} tags Array of open/close tags (e.g. '<p>', '</p>')
  *    that will be modified in place to be either an open tag, one or more close
@@ -1236,14 +1244,26 @@ soy.$$balanceTags_ = function(tags) {
 soy.$$escapeHtmlAttribute = function(value) {
   // NOTE: We don't accept ATTRIBUTES here because ATTRIBUTES is actually not
   // the attribute value context, but instead k/v pairs.
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.HTML)) {
+  if (soy.checks.isHtml(value)) {
     // NOTE: After removing tags, we also escape quotes ("normalize") so that
     // the HTML can be embedded in attribute context.
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedHtml);
     return soy.esc.$$normalizeHtmlHelper(
         soy.$$stripHtmlTags(value.getContent()));
   }
   return soy.esc.$$escapeHtmlHelper(value);
+};
+
+
+/**
+ * Escapes HTML special characters in an HTML attribute value containing HTML
+ * code, such as <iframe srcdoc>.
+ *
+ * @param {?} value The HTML to be escaped. May not be a string, but the
+ *     value will be coerced to a string.
+ * @return {string} An escaped version of value.
+ */
+soy.$$escapeHtmlHtmlAttribute = function(value) {
+  return String(soy.$$escapeHtml(value));
 };
 
 
@@ -1256,8 +1276,7 @@ soy.$$escapeHtmlAttribute = function(value) {
  * @return {string} An escaped version of value.
  */
 soy.$$escapeHtmlAttributeNospace = function(value) {
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.HTML)) {
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedHtml);
+  if (soy.checks.isHtml(value)) {
     return soy.esc.$$normalizeHtmlNospaceHelper(
         soy.$$stripHtmlTags(value.getContent()));
   }
@@ -1273,15 +1292,12 @@ soy.$$escapeHtmlAttributeNospace = function(value) {
  * @param {?} value The value to escape. May not be a string, but the value
  *     will be coerced to a string.
  * @return {string} A valid HTML attribute name part or name/value pair.
- *     {@code "zSoyz"} if the input is invalid.
+ *     `"zSoyz"` if the input is invalid.
  */
 soy.$$filterHtmlAttributes = function(value) {
   // NOTE: Explicitly no support for SanitizedContentKind.HTML, since that is
   // meaningless in this context, which is generally *between* html attributes.
-  if (soydata.isContentKind_(
-    value, goog.soy.data.SanitizedContentKind.ATTRIBUTES)) {
-    goog.asserts.assert(
-        value.constructor === goog.soy.data.SanitizedHtmlAttribute);
+  if (soy.checks.isAttribute(value)) {
     // Add a space at the end to ensure this won't get merged into following
     // attributes, unless the interpretation is unambiguous (ending with quotes
     // or a space).
@@ -1296,12 +1312,22 @@ soy.$$filterHtmlAttributes = function(value) {
 
 
 /**
+ * Allows only decimal and floating-point numbers.
+ * @param {?} value
+ * @return {number} The number.
+ */
+soy.$$filterNumber = function(value) {
+  return /^\d*\.?\d+$/.test(value) ? value : 'zSoyz';
+};
+
+
+/**
  * Filters out strings that cannot be a substring of a valid HTML element name.
  *
  * @param {?} value The value to escape. May not be a string, but the value
  *     will be coerced to a string.
  * @return {string} A valid HTML element name part.
- *     {@code "zSoyz"} if the input is invalid.
+ *     `"zSoyz"` if the input is invalid.
  */
 soy.$$filterHtmlElementName = function(value) {
   // NOTE: We don't accept any SanitizedContent here. HTML indicates valid
@@ -1345,8 +1371,7 @@ soy.$$escapeJsValue = function(value) {
     // distinct undefined value.
     return ' null ';
   }
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.JS)) {
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedJs);
+  if (soy.checks.isJS(value)) {
     return value.getContent();
   }
   if (value instanceof goog.html.SafeScript) {
@@ -1444,14 +1469,10 @@ soy.$$normalizeUri = function(value) {
  * @return {string} An escaped version of value.
  */
 soy.$$filterNormalizeUri = function(value) {
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.URI)) {
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedUri);
+  if (soy.checks.isURI(value)) {
     return soy.$$normalizeUri(value);
   }
-  if (soydata.isContentKind_(value,
-      goog.soy.data.SanitizedContentKind.TRUSTED_RESOURCE_URI)) {
-    goog.asserts.assert(
-        value.constructor === goog.soy.data.SanitizedTrustedResourceUri);
+  if (soy.checks.isTrustedResourceURI(value)) {
     return soy.$$normalizeUri(value);
   }
   if (value instanceof goog.html.SafeUrl) {
@@ -1475,14 +1496,10 @@ soy.$$filterNormalizeMediaUri = function(value) {
   // Image URIs are filtered strictly more loosely than other types of URIs.
   // TODO(shwetakarwa): Add tests for this in soyutils_test_helper while adding
   // tests for filterTrustedResourceUri.
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.URI)) {
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedUri);
+  if (soy.checks.isURI(value)) {
     return soy.$$normalizeUri(value);
   }
-  if (soydata.isContentKind_(value,
-      goog.soy.data.SanitizedContentKind.TRUSTED_RESOURCE_URI)) {
-    goog.asserts.assert(
-        value.constructor === goog.soy.data.SanitizedTrustedResourceUri);
+  if (soy.checks.isTrustedResourceURI(value)) {
     return soy.$$normalizeUri(value);
   }
   if (value instanceof goog.html.SafeUrl) {
@@ -1496,6 +1513,16 @@ soy.$$filterNormalizeMediaUri = function(value) {
 
 
 /**
+ * Like filterNormalizeUri but also escapes ';'.
+ * @param {?} value The value to filter.
+ * @return {string} An escaped version of value.
+ */
+soy.$$filterNormalizeRefreshUri = function(value) {
+  return soy.$$filterNormalizeUri(value).replace(/;/g, '%3B');
+};
+
+
+/**
  * Vets a URI for usage as a resource. Makes sure the input value is a compile
  * time constant or a TrustedResouce not in attacker's control.
  *
@@ -1503,10 +1530,7 @@ soy.$$filterNormalizeMediaUri = function(value) {
  * @return {string} The value content.
  */
 soy.$$filterTrustedResourceUri = function(value) {
-  if (soydata.isContentKind_(value,
-      goog.soy.data.SanitizedContentKind.TRUSTED_RESOURCE_URI)) {
-    goog.asserts.assert(
-        value.constructor === goog.soy.data.SanitizedTrustedResourceUri);
+  if (soy.checks.isTrustedResourceURI(value)) {
     return value.getContent();
   }
   if (value instanceof goog.html.TrustedResourceUrl) {
@@ -1604,8 +1628,7 @@ soy.$$escapeCssString = function(value) {
  * @return {string} A safe CSS identifier part, keyword, or quanitity.
  */
 soy.$$filterCssValue = function(value) {
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.CSS)) {
-    goog.asserts.assertInstanceof(value, goog.soy.data.SanitizedCss);
+  if (soy.checks.isCss(value)) {
     return soy.$$embedCssIntoHtml_(value.getContent());
   }
   // Uses == to intentionally match null and undefined for Java compatibility.
@@ -1881,6 +1904,35 @@ soy.$$bidiDirAttr = function(bidiGlobalDir, text, opt_isHtml) {
   }
   return soydata.VERY_UNSAFE.ordainSanitizedHtmlAttribute(
       formatter.knownDirAttr(contentDir));
+};
+
+/**
+ * Returns the name of the start edge ('left' or 'right') for the current global
+ * bidi directionality.
+ *
+ * @return {string}
+ */
+soy.$$bidiStartEdge = function(/** number */ dir) {
+  return dir < 0 ? 'right' : 'left';
+};
+
+/**
+ * Returns the name of the end edge ('left' or 'right') for the current global
+ * bidi directionality.
+ *
+ * @return {string}
+ */
+soy.$$bidiEndEdge = function(/** number */ dir) {
+  return dir < 0 ? 'left' : 'right';
+};
+
+/**
+ * Returns a bidi mark character (LRM or RLM) for the given bidi directionality.
+ *
+ * @return {string}
+ */
+soy.$$bidiMark = function(/** number */ dir) {
+  return dir < 0 ? '\u200F' /*RLM*/ : '\u200E' /*LRM*/;
 };
 
 
@@ -2338,7 +2390,7 @@ soy.esc.$$MATCHER_FOR_NORMALIZE_URI__AND__FILTER_NORMALIZE_URI__AND__FILTER_NORM
  * A pattern that vets values produced by the named directives.
  * @private {!RegExp}
  */
-soy.esc.$$FILTER_FOR_FILTER_CSS_VALUE_ = /^(?!-*(?:expression|(?:moz-)?binding))(?!\s+)(?:[.#]?-?(?:[_a-z0-9-]+)(?:-[_a-z0-9-]+)*-?|(?:rgb|hsl)a?\([0-9.%,\u0020]+\)|-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[a-z]{1,2}|%)?|!important|\s+)*$/i;
+soy.esc.$$FILTER_FOR_FILTER_CSS_VALUE_ = /^(?!-*(?:expression|(?:moz-)?binding))(?:(?:[.#]?-?(?:[_a-z0-9-]+)(?:-[_a-z0-9-]+)*-?|(?:rgb|hsl)a?\([0-9.%,\u0020]+\)|-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[a-z]{1,4}|%)?|!important)(?:\s+|$))*$/i;
 
 /**
  * A pattern that vets values produced by the named directives.
@@ -2380,7 +2432,7 @@ soy.esc.$$FILTER_FOR_FILTER_TEL_URI_ = /^tel:[0-9a-z;=\-+._!~*'\u0020\/():&$#?@,
  * A pattern that vets values produced by the named directives.
  * @private {!RegExp}
  */
-soy.esc.$$FILTER_FOR_FILTER_HTML_ATTRIBUTES_ = /^(?!on|src|(?:style|action|archive|background|cite|classid|codebase|data|dsync|href|longdesc|usemap)\s*$)(?:[a-z0-9_$:-]*)$/i;
+soy.esc.$$FILTER_FOR_FILTER_HTML_ATTRIBUTES_ = /^(?!on|src|(?:action|archive|background|cite|classid|codebase|content|data|dsync|href|http-equiv|longdesc|style|usemap)\s*$)(?:[a-z0-9_$:-]*)$/i;
 
 /**
  * A pattern that vets values produced by the named directives.

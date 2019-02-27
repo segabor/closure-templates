@@ -336,11 +336,16 @@ goog.constructNamespace_ = function(name, opt_obj) {
 
 /**
  * Returns CSP nonce, if set for any script tag.
+ * @param {?Window=} opt_window The window context used to retrieve the nonce.
+ *     Defaults to global context.
  * @return {string} CSP nonce or empty string if no nonce is present.
  */
-goog.getScriptNonce = function() {
+goog.getScriptNonce = function(opt_window) {
+  if (opt_window && opt_window != goog.global) {
+    return goog.getScriptNonce_(opt_window.document);
+  }
   if (goog.cspNonce_ === null) {
-    goog.cspNonce_ = goog.getScriptNonce_(goog.global.document) || '';
+    goog.cspNonce_ = goog.getScriptNonce_(goog.global.document);
   }
   return goog.cspNonce_;
 };
@@ -363,7 +368,7 @@ goog.cspNonce_ = null;
 /**
  * Returns CSP nonce, if set for any script tag.
  * @param {!Document} doc
- * @return {?string} CSP nonce or null if no nonce is present.
+ * @return {string} CSP nonce or empty string if no nonce is present.
  * @private
  */
 goog.getScriptNonce_ = function(doc) {
@@ -378,7 +383,7 @@ goog.getScriptNonce_ = function(doc) {
       return nonce;
     }
   }
-  return null;
+  return '';
 };
 
 
@@ -503,7 +508,7 @@ goog.ModuleType = {
  * @private {?{
  *   moduleName: (string|undefined),
  *   declareLegacyNamespace:boolean,
- *   type: goog.ModuleType
+ *   type: ?goog.ModuleType
  * }}
  */
 goog.moduleLoaderState_ = null;
@@ -511,7 +516,8 @@ goog.moduleLoaderState_ = null;
 
 /**
  * @private
- * @return {boolean} Whether a is currently being initialized.
+ * @return {boolean} Whether a goog.module or an es6 module is currently being
+ *     initialized.
  */
 goog.isInModuleLoader_ = function() {
   return goog.isInGoogModuleLoader_() || goog.isInEs6ModuleLoader_();
@@ -582,25 +588,26 @@ goog.module.declareLegacyNamespace = function() {
 
 
 /**
- * Associate an ES6 module with a Closure namespace so that is available via
- * goog.require. This associates a namespace that acts like a goog.module - it
- * does not create any global names, it is merely available via goog.require.
- * goog.require will return the entire module as if it was import *'d. This
- * allows Closure files to reference ES6 modules.
+ * Associates an ES6 module with a Closure module ID so that is available via
+ * goog.require. The associated ID  acts like a goog.module ID - it does not
+ * create any global names, it is merely available via goog.require /
+ * goog.module.get / goog.forwardDeclare / goog.requireType. goog.require and
+ * goog.module.get will return the entire module as if it was import *'d. This
+ * allows Closure files to reference ES6 modules for the sake of migration.
  *
  * @param {string} namespace
  * @suppress {missingProvide}
  */
-goog.module.declareNamespace = function(namespace) {
+goog.declareModuleId = function(namespace) {
   if (!COMPILED) {
     if (!goog.isInEs6ModuleLoader_()) {
       throw new Error(
-          'goog.module.declareNamespace may only be called from ' +
+          'goog.declareModuleId may only be called from ' +
           'within an ES6 module');
     }
     if (goog.moduleLoaderState_ && goog.moduleLoaderState_.moduleName) {
       throw new Error(
-          'goog.module.declareNamespace may only be called once per module.');
+          'goog.declareModuleId may only be called once per module.');
     }
     if (namespace in goog.loadedModules_) {
       throw new Error(
@@ -626,6 +633,16 @@ goog.module.declareNamespace = function(namespace) {
     };
   }
 };
+
+
+/**
+ * Deprecated old name for goog.declareModuleId. This function is being renamed
+ * to help disambiguate with goog.module.declareLegacyNamespace.
+ *
+ * @type {function(string): undefined}
+ * @suppress {missingProvide}
+ */
+goog.module.declareNamespace = goog.declareModuleId;
 
 
 /**
@@ -818,12 +835,14 @@ goog.logToConsole_ = function(msg) {
 
 /**
  * Implements a system for the dynamic resolution of dependencies that works in
- * parallel with the BUILD system. Note that all calls to goog.require will be
- * stripped by the compiler.
+ * parallel with the BUILD system.
+ *
+ * Note that all calls to goog.require will be stripped by the compiler.
+ *
  * @see goog.provide
  * @param {string} namespace Namespace (as was given in goog.provide,
- *     goog.module, or goog.module.declareNamespace) in the form
- * "goog.package.part".
+ *     goog.module, or goog.declareModuleId) in the form
+ *     "goog.package.part".
  * @return {?} If called within a goog.module or ES6 module file, the associated
  *     namespace or module otherwise null.
  */
@@ -851,6 +870,30 @@ goog.require = function(namespace) {
 
     return null;
   }
+};
+
+
+/**
+ * Requires a symbol for its type information. This is an indication to the
+ * compiler that the symbol may appear in type annotations, yet it is not
+ * referenced at runtime.
+ *
+ * When called within a goog.module or ES6 module file, the return value may be
+ * assigned to or destructured into a variable, but it may not be otherwise used
+ * in code outside of a type annotation.
+ *
+ * Note that all calls to goog.requireType will be stripped by the compiler.
+ *
+ * @param {string} namespace Namespace (as was given in goog.provide,
+ *     goog.module, or goog.declareModuleId) in the form
+ *     "goog.package.part".
+ * @return {?}
+ */
+goog.requireType = function(namespace) {
+  // Return an empty object so that single-level destructuring of the return
+  // value doesn't crash at runtime when using the debug loader. Multi-level
+  // destructuring isn't supported.
+  return {};
 };
 
 
@@ -925,6 +968,8 @@ goog.addSingletonGetter = function(ctor) {
   // instance_ is immediately set to prevent issues with sealed constructors
   // such as are encountered when a constructor is returned as the export object
   // of a goog.module in unoptimized code.
+  // Delcare type to avoid conformance violations that ctor.instance_ is unknown
+  /** @type {undefined|!Object} @suppress {underscore} */
   ctor.instance_ = undefined;
   ctor.getInstance = function() {
     if (ctor.instance_) {
@@ -934,7 +979,8 @@ goog.addSingletonGetter = function(ctor) {
       // NOTE: JSCompiler can't optimize away Array#push.
       goog.instantiatedSingletons_[goog.instantiatedSingletons_.length] = ctor;
     }
-    return ctor.instance_ = new ctor;
+    // Cast to avoid conformance violations that ctor.instance_ is unknown
+    return /** @type {!Object|undefined} */ (ctor.instance_) = new ctor;
   };
 };
 
@@ -1675,7 +1721,7 @@ goog.partial = function(fn, var_args) {
     // to the existing arguments.
     var newArgs = args.slice();
     newArgs.push.apply(newArgs, arguments);
-    return fn.apply(this, newArgs);
+    return fn.apply(/** @type {?} */ (this), newArgs);
   };
 };
 
@@ -2126,7 +2172,8 @@ goog.base = function(me, opt_methodName, var_args) {
       ctorArgs[i - 1] = arguments[i];
     }
     // This is a constructor. Call the superclass constructor.
-    return caller.superClass_.constructor.apply(me, ctorArgs);
+    return /** @type {!Function} */ (caller.superClass_)
+        .constructor.apply(me, ctorArgs);
   }
 
   if (typeof opt_methodName != 'string' && typeof opt_methodName != 'symbol') {
@@ -3537,6 +3584,22 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
         this, 'constructor', path, relativePath, provides, requires, loadFlags);
     /** @private {?string} */
     this.contents_ = null;
+
+    /**
+     * Whether to lazily make the synchronous XHR (when goog.require'd) or make
+     * the synchronous XHR when initially loading. On FireFox 61 there is a bug
+     * where an ES6 module cannot make a synchronous XHR (rather, it can, but if
+     * it does then no other ES6 modules will load after).
+     *
+     * tl;dr we lazy load due to bugs on older browsers and eager load due to
+     * bugs on newer ones.
+     *
+     * https://bugzilla.mozilla.org/show_bug.cgi?id=1477090
+     *
+     * @private @const {boolean}
+     */
+    this.lazyFetch_ = !goog.inHtmlDocument_() ||
+        !('noModule' in goog.global.document.createElement('script'));
   };
   goog.inherits(goog.TransformedDependency, goog.Dependency);
 
@@ -3568,10 +3631,17 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
       return;
     }
 
+
     var isEs6 = this.loadFlags['module'] == goog.ModuleType.ES6;
 
-    function load() {
+    if (!this.lazyFetch_) {
       fetch();
+    }
+
+    function load() {
+      if (dep.lazyFetch_) {
+        fetch();
+      }
 
       if (!dep.contents_) {
         // loadFileSync_ or transform are responsible. Assume they logged an
@@ -3802,8 +3872,8 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
    * for deferred modules.
    * @const @private {boolean}
    */
-  goog.DebugLoader_.IS_OLD_IE_ =
-      !!(!goog.global.atob && goog.global.document && goog.global.document.all);
+  goog.DebugLoader_.IS_OLD_IE_ = !!(
+      !goog.global.atob && goog.global.document && goog.global.document['all']);
 
 
   /**
@@ -4072,9 +4142,12 @@ goog.dom.NodeType = {
  * @fileoverview Utilities to check the preconditions, postconditions and
  * invariants runtime.
  *
- * Methods in this package should be given special treatment by the compiler
+ * Methods in this package are given special treatment by the compiler
  * for type-inference. For example, <code>goog.asserts.assert(foo)</code>
- * will restrict <code>foo</code> to a truthy value.
+ * will make the compiler treat <code>foo</code> as non-nullable. Similarly,
+ * <code>goog.asserts.assertNumber(foo)</code> informs the compiler about the
+ * type of <code>foo</code>. Where applicable, such assertions are preferable to
+ * casts by jsdoc with <code>@type</code>.
  *
  * The compiler has an option to disable asserts. So code like:
  * <code>
@@ -5287,7 +5360,7 @@ goog.array.join = function(var_args) {
 goog.array.toArray = function(object) {
   var length = object.length;
 
-  // If length is not a number the following it false. This case is kept for
+  // If length is not a number the following is false. This case is kept for
   // backwards compatibility since there are callers that pass objects that are
   // not array like.
   if (length > 0) {
@@ -5459,9 +5532,9 @@ goog.array.removeDuplicates = function(arr, opt_rv, opt_hashFn) {
  * @param {TARGET} target The sought value.
  * @param {function(TARGET, VALUE): number=} opt_compareFn Optional comparison
  *     function by which the array is ordered. Should take 2 arguments to
- *     compare, and return a negative number, zero, or a positive number
- *     depending on whether the first argument is less than, equal to, or
- *     greater than the second.
+ *     compare, the target value and an element from your array, and return a
+ *     negative number, zero, or a positive number depending on whether the
+ *     first argument is less than, equal to, or greater than the second.
  * @return {number} Lowest index of the target value if found, otherwise
  *     (-(insertion point) - 1). The insertion point is where the value should
  *     be inserted into arr to preserve the sorted property.  Return value >= 0
@@ -6928,6 +7001,7 @@ goog.string.unescapeEntitiesWithDocument = function(str, document) {
 goog.string.unescapeEntitiesUsingDom_ = function(str, opt_document) {
   /** @type {!Object<string, string>} */
   var seen = {'&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"'};
+  /** @type {!Element} */
   var div;
   if (opt_document) {
     div = opt_document.createElement('div');
@@ -7844,6 +7918,21 @@ goog.string.editDistance = function(a, b) {
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+/**
+ * @fileoverview Utilities used by goog.labs.userAgent tools. These functions
+ * should not be used outside of goog.labs.userAgent.*.
+ *
+ * @visibility {//javascript/abc/libs/objects3d:__subpackages__}
+ * @visibility {//javascript/closure/bin/sizetests:__pkg__}
+ * @visibility {//javascript/closure/dom:__subpackages__}
+ * @visibility {//javascript/closure/style:__pkg__}
+ * @visibility {//javascript/closure/testing:__pkg__}
+ * @visibility {//javascript/closure/useragent:__subpackages__}
+ * @visibility {//testing/puppet/modules:__pkg__}
+ * @visibility {:util_legacy_users}
+ *
+ * @author nnaze@google.com (Nathan Naze)
+ */
 
 goog.provide('goog.labs.userAgent.util');
 
@@ -8797,7 +8886,8 @@ goog.labs.userAgent.browser.matchEdge_ = function() {
  * @private
  */
 goog.labs.userAgent.browser.matchFirefox_ = function() {
-  return goog.labs.userAgent.util.matchUserAgent('Firefox');
+  return goog.labs.userAgent.util.matchUserAgent('Firefox') ||
+      goog.labs.userAgent.util.matchUserAgent('FxiOS');
 };
 
 
@@ -8811,6 +8901,7 @@ goog.labs.userAgent.browser.matchSafari_ = function() {
         goog.labs.userAgent.browser.matchCoast_() ||
         goog.labs.userAgent.browser.matchOpera_() ||
         goog.labs.userAgent.browser.matchEdge_() ||
+        goog.labs.userAgent.browser.matchFirefox_() ||
         goog.labs.userAgent.browser.isSilk() ||
         goog.labs.userAgent.util.matchUserAgent('Android'));
 };
@@ -8838,6 +8929,7 @@ goog.labs.userAgent.browser.matchIosWebview_ = function() {
       !goog.labs.userAgent.browser.matchSafari_() &&
       !goog.labs.userAgent.browser.matchChrome_() &&
       !goog.labs.userAgent.browser.matchCoast_() &&
+      !goog.labs.userAgent.browser.matchFirefox_() &&
       goog.labs.userAgent.util.matchUserAgent('AppleWebKit');
 };
 
@@ -10390,6 +10482,9 @@ goog.debug.exposeArray = function(arr) {
  */
 goog.debug.normalizeErrorObject = function(err) {
   var href = goog.getObjectByName('window.location.href');
+  if (err == null) {
+    err = 'Unknown Error of type "null/undefined"';
+  }
   if (goog.isString(err)) {
     return {
       'message': err,
@@ -10427,8 +10522,19 @@ goog.debug.normalizeErrorObject = function(err) {
   // The Safari Error object uses the line and sourceURL fields.
   if (threwError || !err.lineNumber || !err.fileName || !err.stack ||
       !err.message || !err.name) {
+    var message = err.message;
+    if (message == null) {
+      if (err.constructor && err.constructor instanceof Function) {
+        var ctorName = err.constructor.name ?
+            err.constructor.name :
+            goog.debug.getFunctionName(err.constructor);
+        message = 'Unknown Error of type "' + ctorName + '"';
+      } else {
+        message = 'Unknown Error of unknown type';
+      }
+    }
     return {
-      'message': err.message || 'Not available',
+      'message': message,
       'name': err.name || 'UnknownError',
       'lineNumber': lineNumber,
       'fileName': fileName,
@@ -10687,16 +10793,6 @@ goog.debug.getStacktraceHelper_ = function(fn, visited) {
 
 
 /**
- * Set a custom function name resolver.
- * @param {function(Function): string} resolver Resolves functions to their
- *     names.
- */
-goog.debug.setFunctionResolver = function(resolver) {
-  goog.debug.fnNameResolver_ = resolver;
-};
-
-
-/**
  * Gets a function name
  * @param {Function} fn Function to get name of.
  * @return {string} Function's name.
@@ -10704,13 +10800,6 @@ goog.debug.setFunctionResolver = function(resolver) {
 goog.debug.getFunctionName = function(fn) {
   if (goog.debug.fnNameCache_[fn]) {
     return goog.debug.fnNameCache_[fn];
-  }
-  if (goog.debug.fnNameResolver_) {
-    var name = goog.debug.fnNameResolver_(fn);
-    if (name) {
-      goog.debug.fnNameCache_[fn] = name;
-      return name;
-    }
   }
 
   // Heuristically determine function name based on code.
@@ -10772,14 +10861,6 @@ goog.debug.runtimeType = function(value) {
  * @private
  */
 goog.debug.fnNameCache_ = {};
-
-
-/**
- * Resolves functions to their names.  Resolved function names will be cached.
- * @type {function(Function):string}
- * @private
- */
-goog.debug.fnNameResolver_;
 
 
 /**
@@ -11802,7 +11883,7 @@ goog.require('goog.asserts');
  */
 goog.structs.InversionMap = function(rangeArray, valueArray, opt_delta) {
   /**
-   * @protected {Array<number>}
+   * @protected {?Array<number>}
    */
   this.rangeArray = null;
 
@@ -12999,8 +13080,16 @@ goog.fs.url.browserSupportsObjectUrls = function() {
 // limitations under the License.
 
 /**
- * @fileoverview Utilities for creating functions. Loosely inspired by the
- * java classes: http://goo.gl/GM0Hmu and http://goo.gl/6k7nI8.
+ * @fileoverview Utilities for creating functions. Loosely inspired by these
+ * java classes from the Guava library:
+ * com.google.common.base.Functions
+ * https://google.github.io/guava/releases/snapshot-jre/api/docs/index.html?com/google/common/base/Functions.html
+ *
+ * com.google.common.base.Predicates
+ * https://google.github.io/guava/releases/snapshot-jre/api/docs/index.html?com/google/common/base/Predicates.html
+ *
+ * More about these can be found at
+ * https://github.com/google/guava/wiki/FunctionalExplained
  *
  * @author nicksantos@google.com (Nick Santos)
  */
@@ -13024,21 +13113,27 @@ goog.functions.constant = function(retValue) {
  * Always returns false.
  * @type {function(...): boolean}
  */
-goog.functions.FALSE = goog.functions.constant(false);
+goog.functions.FALSE = function() {
+  return false;
+};
 
 
 /**
  * Always returns true.
  * @type {function(...): boolean}
  */
-goog.functions.TRUE = goog.functions.constant(true);
+goog.functions.TRUE = function() {
+  return true;
+};
 
 
 /**
  * Always returns NULL.
  * @type {function(...): null}
  */
-goog.functions.NULL = goog.functions.constant(null);
+goog.functions.NULL = function() {
+  return null;
+};
 
 
 /**
@@ -13871,6 +13966,18 @@ goog.html.SafeScript.fromConstantAndArgs = function(code, var_args) {
 
 
 /**
+ * Creates a SafeScript JSON representation from anything that could be passed
+ * to JSON.stringify.
+ * @param {*} val
+ * @return {!goog.html.SafeScript}
+ */
+goog.html.SafeScript.fromJson = function(val) {
+  return goog.html.SafeScript.createSafeScriptSecurityPrivateDoNotAccessOrElse(
+      goog.html.SafeScript.stringify_(val));
+};
+
+
+/**
  * Returns this SafeScript's value as a string.
  *
  * IMPORTANT: In code where it is security relevant that an object's type is
@@ -14059,7 +14166,9 @@ goog.define('goog.i18n.bidi.FORCE_RTL', false);
  *
  * TODO(user): write a test that checks that this is a compile-time constant.
  */
-goog.i18n.bidi.IS_RTL = goog.i18n.bidi.FORCE_RTL ||
+// LINT.IfChange
+goog.i18n.bidi.IS_RTL =
+    goog.i18n.bidi.FORCE_RTL ||
     ((goog.LOCALE.substring(0, 2).toLowerCase() == 'ar' ||
       goog.LOCALE.substring(0, 2).toLowerCase() == 'fa' ||
       goog.LOCALE.substring(0, 2).toLowerCase() == 'he' ||
@@ -14071,10 +14180,35 @@ goog.i18n.bidi.IS_RTL = goog.i18n.bidi.FORCE_RTL ||
       goog.LOCALE.substring(0, 2).toLowerCase() == 'yi') &&
      (goog.LOCALE.length == 2 || goog.LOCALE.substring(2, 3) == '-' ||
       goog.LOCALE.substring(2, 3) == '_')) ||
-    (goog.LOCALE.length >= 3 &&
-     goog.LOCALE.substring(0, 3).toLowerCase() == 'ckb' &&
-     (goog.LOCALE.length == 3 || goog.LOCALE.substring(3, 4) == '-' ||
-      goog.LOCALE.substring(3, 4) == '_'));
+    (  // Specific to CKB (Central Kurdish)
+        goog.LOCALE.length >= 3 &&
+        goog.LOCALE.substring(0, 3).toLowerCase() == 'ckb' &&
+        (goog.LOCALE.length == 3 || goog.LOCALE.substring(3, 4) == '-' ||
+         goog.LOCALE.substring(3, 4) == '_')) ||
+    (  // 2 letter language codes with RTL scripts
+        goog.LOCALE.length >= 7 &&
+        ((goog.LOCALE.substring(2, 3) == '-' ||
+          goog.LOCALE.substring(2, 3) == '_') &&
+         (goog.LOCALE.substring(3, 7).toLowerCase() == 'adlm' ||
+          goog.LOCALE.substring(3, 7).toLowerCase() == 'arab' ||
+          goog.LOCALE.substring(3, 7).toLowerCase() == 'hebr' ||
+          goog.LOCALE.substring(3, 7).toLowerCase() == 'nkoo' ||
+          goog.LOCALE.substring(3, 7).toLowerCase() == 'rohg' ||
+          goog.LOCALE.substring(3, 7).toLowerCase() == 'thaa'))) ||
+    (  // 3 letter languages codes with RTL scripts
+        goog.LOCALE.length >= 8 &&
+        ((goog.LOCALE.substring(3, 4) == '-' ||
+          goog.LOCALE.substring(3, 4) == '_') &&
+         (goog.LOCALE.substring(4, 8).toLowerCase() == 'adlm' ||
+          goog.LOCALE.substring(4, 8).toLowerCase() == 'arab' ||
+          goog.LOCALE.substring(4, 8).toLowerCase() == 'hebr' ||
+          goog.LOCALE.substring(4, 8).toLowerCase() == 'nkoo' ||
+          goog.LOCALE.substring(4, 8).toLowerCase() == 'rohg' ||
+          goog.LOCALE.substring(4, 8).toLowerCase() == 'thaa')));
+//    closure/RtlLocalesTest.java)
+
+// TODO(b/77919903): Add additional scripts and languages that are RTL,
+// e.g., mende, samaritan, etc.
 
 
 /**
@@ -14167,9 +14301,10 @@ goog.i18n.bidi.I18N_LEFT =
 goog.i18n.bidi.toDir = function(givenDir, opt_noNeutral) {
   if (typeof givenDir == 'number') {
     // This includes the non-null goog.i18n.bidi.Dir case.
-    return givenDir > 0 ? goog.i18n.bidi.Dir.LTR : givenDir < 0 ?
-                          goog.i18n.bidi.Dir.RTL :
-                          opt_noNeutral ? null : goog.i18n.bidi.Dir.NEUTRAL;
+    return givenDir > 0 ?
+        goog.i18n.bidi.Dir.LTR :
+        givenDir < 0 ? goog.i18n.bidi.Dir.RTL :
+                       opt_noNeutral ? null : goog.i18n.bidi.Dir.NEUTRAL;
   } else if (givenDir == null) {
     return null;
   } else {
@@ -14180,27 +14315,37 @@ goog.i18n.bidi.toDir = function(givenDir, opt_noNeutral) {
 
 
 /**
- * A practical pattern to identify strong LTR characters. This pattern is not
- * theoretically correct according to the Unicode standard. It is simplified for
- * performance and small code size.
+ * A practical pattern to identify strong LTR character in the BMP.
+ * This pattern is not theoretically correct according to the Unicode
+ * standard. It is simplified for performance and small code size.
+ * It also partially supports LTR scripts beyond U+FFFF by including
+ * UTF-16 high surrogate values corresponding to mostly L-class code
+ * point ranges.
+ * However, low surrogate values and private-use regions are not included
+ * in this RegEx.
  * @type {string}
  * @private
  */
 goog.i18n.bidi.ltrChars_ =
-    'A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02B8\u0300-\u0590\u0800-\u1FFF' +
-    '\u200E\u2C00-\uFB1C\uFE00-\uFE6F\uFEFD-\uFFFF';
-
+    'A-Za-z\u00C0-\u00D6\u00D8-\u00F6\u00F8-\u02B8\u0300-\u0590\u0900-\u1FFF' +
+    '\u200E\u2C00-\uD801\uD804-\uD839\uD83C-\uDBFF' +
+    '\uF900-\uFB1C\uFE00-\uFE6F\uFEFD-\uFFFF';
 
 /**
  * A practical pattern to identify strong RTL character. This pattern is not
  * theoretically correct according to the Unicode standard. It is simplified
  * for performance and small code size.
+ * It also partially supports RTL scripts beyond U+FFFF by including
+ * UTF-16 high surrogate values corresponding to mostly R- or AL-class
+ * code point ranges.
+ * However, low surrogate values and private-use regions are not included
+ * in this RegEx.
  * @type {string}
  * @private
  */
 goog.i18n.bidi.rtlChars_ =
-    '\u0591-\u06EF\u06FA-\u07FF\u200F\uFB1D-\uFDFF\uFE70-\uFEFC';
-
+    '\u0591-\u06EF\u06FA-\u08FF\u200F\uD802-\uD803\uD83A-\uD83B' +
+    '\uFB1D-\uFDFF\uFE70-\uFEFC';
 
 /**
  * Simplified regular expression for an HTML tag (opening or closing) or an HTML
@@ -14231,7 +14376,7 @@ goog.i18n.bidi.stripHtmlIfNeeded_ = function(str, opt_isStripNeeded) {
 
 
 /**
- * Regular expression to check for RTL characters.
+ * Regular expression to check for RTL characters, BMP and high surrogate.
  * @type {RegExp}
  * @private
  */
@@ -14434,7 +14579,8 @@ goog.i18n.bidi.isNeutralText = function(str, opt_isHtml) {
  * @private
  */
 goog.i18n.bidi.ltrExitDirCheckRe_ = new RegExp(
-    '[' + goog.i18n.bidi.ltrChars_ + '][^' + goog.i18n.bidi.rtlChars_ + ']*$');
+    '[' + goog.i18n.bidi.ltrChars_ + ']' +
+    '[^' + goog.i18n.bidi.rtlChars_ + ']*$');
 
 
 /**
@@ -14444,7 +14590,8 @@ goog.i18n.bidi.ltrExitDirCheckRe_ = new RegExp(
  * @private
  */
 goog.i18n.bidi.rtlExitDirCheckRe_ = new RegExp(
-    '[' + goog.i18n.bidi.rtlChars_ + '][^' + goog.i18n.bidi.ltrChars_ + ']*$');
+    '[' + goog.i18n.bidi.rtlChars_ + ']' +
+    '[^' + goog.i18n.bidi.ltrChars_ + ']*$');
 
 
 /**
@@ -14502,12 +14649,13 @@ goog.i18n.bidi.isRtlExitText = goog.i18n.bidi.endsWithRtl;
 /**
  * A regular expression for matching right-to-left language codes.
  * See {@link #isRtlLanguage} for the design.
- * @type {RegExp}
+ * Note that not all RTL scripts are included.
+ * @type {!RegExp}
  * @private
  */
 goog.i18n.bidi.rtlLocalesRe_ = new RegExp(
     '^(ar|ckb|dv|he|iw|fa|nqo|ps|sd|ug|ur|yi|' +
-        '.*[-_](Arab|Hebr|Thaa|Nkoo|Tfng))' +
+        '.*[-_](Adlm|Arab|Hebr|Nkoo|Rohg|Thaa))' +
         '(?!.*[-_](Latn|Cyrl)($|-|_))($|-|_)',
     'i');
 
@@ -14521,12 +14669,13 @@ goog.i18n.bidi.rtlLocalesRe_ = new RegExp(
  *   Latin or Cyrillic script (which are the usual LTR alternatives).<p>
  * The list of right-to-left scripts appears in the 100-199 range in
  * http://www.unicode.org/iso15924/iso15924-num.html, of which Arabic and
- * Hebrew are by far the most widely used. We also recognize Thaana, N'Ko, and
- * Tifinagh, which also have significant modern usage. The rest (Syriac,
- * Samaritan, Mandaic, etc.) seem to have extremely limited or no modern usage
- * and are not recognized to save on code size.
- * The languages usually written in a right-to-left script are taken as those
- * with Suppress-Script: Hebr|Arab|Thaa|Nkoo|Tfng  in
+ * Hebrew are by far the most widely used. We also recognize Thaana, and N'Ko,
+ * which also have significant modern usage. Adlam and Rohingya
+ * scripts are now included since they can be expected to be used in the
+ * future. The rest (Syriac, Samaritan, Mandaic, etc.) seem to have extremely
+ * limited or no modern usage and are not recognized to save on code size. The
+ * languages usually written in a right-to-left script are taken as those with
+ * Suppress-Script: Hebr|Arab|Thaa|Nkoo|Adlm|Rohg in
  * http://www.iana.org/assignments/language-subtag-registry,
  * as well as Central (or Sorani) Kurdish (ckb), Sindhi (sd) and Uyghur (ug).
  * Other subtags of the language code, e.g. regions like EG (Egypt), are
@@ -14568,10 +14717,10 @@ goog.i18n.bidi.guardBracketInText = function(s, opt_isRtlContext) {
 
 
 /**
- * Enforce the html snippet in RTL directionality regardless overall context.
+ * Enforce the html snippet in RTL directionality regardless of overall context.
  * If the html piece was enclosed by tag, dir will be applied to existing
  * tag, otherwise a span tag will be added as wrapper. For this reason, if
- * html snippet start with with tag, this tag must enclose the whole piece. If
+ * html snippet starts with a tag, this tag must enclose the whole piece. If
  * the tag already has a dir specified, this new one will override existing
  * one in behavior (tested on FF and IE).
  * @param {string} html The string that need to be processed.
@@ -14598,10 +14747,10 @@ goog.i18n.bidi.enforceRtlInText = function(text) {
 
 
 /**
- * Enforce the html snippet in RTL directionality regardless overall context.
+ * Enforce the html snippet in RTL directionality regardless or overall context.
  * If the html piece was enclosed by tag, dir will be applied to existing
  * tag, otherwise a span tag will be added as wrapper. For this reason, if
- * html snippet start with with tag, this tag must enclose the whole piece. If
+ * html snippet starts with a tag, this tag must enclose the whole piece. If
  * the tag already has a dir specified, this new one will override existing
  * one in behavior (tested on FF and IE).
  * @param {string} html The string that need to be processed.
@@ -14732,6 +14881,7 @@ goog.i18n.bidi.wordSeparatorRe_ = /\s+/;
  * directionality being RTL. The digits used in Farsi (\u06F0 - \u06F9), on the
  * other hand, are included, since Farsi math (including unary plus and minus)
  * does flow left-to-right.
+ * TODO: Consider other systems of digits, e.g., Adlam.
  *
  * @type {RegExp}
  * @private
@@ -15005,38 +15155,32 @@ goog.html.TrustedResourceUrl.prototype.getDirection = function() {
 
 
 /**
- * Creates a new TrustedResourceUrl with params added to URL.
- * @param {!Object<string, *>} params Parameters to add to URL. Parameters with
- *     value `null` or `undefined` are skipped. Both keys and values
- *     are encoded. If the value is an array then the same parameter is added
- *     for every element in the array. Note that JavaScript doesn't guarantee
- *     the order of values in an object which might result in non-deterministic
- *     order of the parameters. However, browsers currently preserve the order.
+ * Creates a new TrustedResourceUrl with params added to URL. Both search and
+ * hash params can be specified.
+ *
+ * @param {string|?Object<string, *>|undefined} searchParams Search parameters
+ *     to add to URL. See goog.html.TrustedResourceUrl.stringifyParams_ for
+ *     exact format definition.
+ * @param {(string|?Object<string, *>)=} opt_hashParams Hash parameters to add
+ *     to URL. See goog.html.TrustedResourceUrl.stringifyParams_ for exact
+ *     format definition.
  * @return {!goog.html.TrustedResourceUrl} New TrustedResourceUrl with params.
- * @throws {!Error} If the url contains #.
  */
-goog.html.TrustedResourceUrl.prototype.cloneWithParams = function(params) {
+goog.html.TrustedResourceUrl.prototype.cloneWithParams = function(
+    searchParams, opt_hashParams) {
   var url = goog.html.TrustedResourceUrl.unwrap(this);
-  if (/#/.test(url)) {
-    throw new Error(
-        'Found a hash in url (' + url + '), appending not supported.');
-  }
-  var separator = /\?/.test(url) ? '&' : '?';
-  for (var key in params) {
-    var values = goog.isArray(params[key]) ?
-        /** @type {!Array<*>} */ (params[key]) :
-        [params[key]];
-    for (var i = 0; i < values.length; i++) {
-      if (values[i] == null) {
-        continue;
-      }
-      url += separator + encodeURIComponent(key) + '=' +
-          encodeURIComponent(String(values[i]));
-      separator = '&';
-    }
-  }
+  var parts = goog.html.TrustedResourceUrl.URL_PARAM_PARSER_.exec(url);
+  var urlBase = parts[1];
+  var urlSearch = parts[2] || '';
+  var urlHash = parts[3] || '';
+
   return goog.html.TrustedResourceUrl
-      .createTrustedResourceUrlSecurityPrivateDoNotAccessOrElse(url);
+      .createTrustedResourceUrlSecurityPrivateDoNotAccessOrElse(
+          urlBase +
+          goog.html.TrustedResourceUrl.stringifyParams_(
+              '?', urlSearch, searchParams) +
+          goog.html.TrustedResourceUrl.stringifyParams_(
+              '#', urlHash, opt_hashParams));
 };
 
 
@@ -15176,7 +15320,7 @@ goog.html.TrustedResourceUrl.FORMAT_MARKER_ = /%{(\w+)}/g;
  * start with:
  * - https:// followed by allowed origin characters.
  * - // followed by allowed origin characters.
- * - / not followed by / or \. There will only be an absolute path.
+ * - Any absolute or relative path.
  *
  * Based on
  * https://url.spec.whatwg.org/commit-snapshots/56b74ce7cca8883eab62e9a12666e2fac665d03d/#url-parsing
@@ -15198,8 +15342,22 @@ goog.html.TrustedResourceUrl.FORMAT_MARKER_ = /%{(\w+)}/g;
  *   code.
  * @private @const {!RegExp}
  */
-goog.html.TrustedResourceUrl.BASE_URL_ =
-    /^(?:https:)?\/\/[0-9a-z.:[\]-]+\/|^\/[^\/\\]|^about:blank#/i;
+goog.html.TrustedResourceUrl.BASE_URL_ = new RegExp(
+    '^((https:)?//[0-9a-z.:[\\]-]+/'  // Origin.
+        + '|/[^/\\\\]'                // Absolute path.
+        + '|[^:/\\\\]+/'              // Relative path.
+        + '|[^:/\\\\]*[?#]'           // Query string or fragment.
+        + '|about:blank#'             // about:blank with fragment.
+        + ')',
+    'i');
+
+/**
+ * RegExp for splitting a URL into the base, search field, and hash field.
+ *
+ * @private @const {!RegExp}
+ */
+goog.html.TrustedResourceUrl.URL_PARAM_PARSER_ =
+    /^([^?#]*)(\?[^#]*)?(#[\s\S]*)?/;
 
 
 /**
@@ -15220,19 +15378,20 @@ goog.html.TrustedResourceUrl.BASE_URL_ =
  * @param {!Object<string, (string|number|!goog.string.Const)>} args Mapping
  *     of labels to values to be interpolated into the format string.
  *     goog.string.Const values are interpolated without encoding.
- * @param {!Object<string, *>} params Parameters to add to URL. Parameters with
- *     value `null` or `undefined` are skipped. Both keys and values
- *     are encoded. If the value is an array then the same parameter is added
- *     for every element in the array. Note that JavaScript doesn't guarantee
- *     the order of values in an object which might result in non-deterministic
- *     order of the parameters. However, browsers currently preserve the order.
+ * @param {string|?Object<string, *>|undefined} searchParams Parameters to add
+ *     to URL. See goog.html.TrustedResourceUrl.stringifyParams_ for exact
+ *     format definition.
+ * @param {(string|?Object<string, *>)=} opt_hashParams Hash parameters to add
+ *     to URL. See goog.html.TrustedResourceUrl.stringifyParams_ for exact
+ *     format definition.
  * @return {!goog.html.TrustedResourceUrl}
  * @throws {!Error} On an invalid format string or if a label used in the
  *     the format string is not present in args.
  */
-goog.html.TrustedResourceUrl.formatWithParams = function(format, args, params) {
+goog.html.TrustedResourceUrl.formatWithParams = function(
+    format, args, searchParams, opt_hashParams) {
   var url = goog.html.TrustedResourceUrl.format(format, args);
-  return url.cloneWithParams(params);
+  return url.cloneWithParams(searchParams, opt_hashParams);
 };
 
 
@@ -15299,6 +15458,60 @@ goog.html.TrustedResourceUrl
   trustedResourceUrl.privateDoNotAccessOrElseTrustedResourceUrlWrappedValue_ =
       url;
   return trustedResourceUrl;
+};
+
+
+/**
+ * Stringifies the passed params to be used as either a search or hash field of
+ * a URL.
+ *
+ * @param {string} prefix The prefix character for the given field ('?' or '#').
+ * @param {string} currentString The existing field value (including the prefix
+ *     character, if the field is present).
+ * @param {string|?Object<string, *>|undefined} params The params to set or
+ *     append to the field.
+ * - If `undefined` or `null`, the field remains unchanged.
+ * - If a string, then the string will be escaped and the field will be
+ *   overwritten with that value.
+ * - If an Object, that object is treated as a set of key-value pairs to be
+ *   appended to the current field. Note that JavaScript doesn't guarantee the
+ *   order of values in an object which might result in non-deterministic order
+ *   of the parameters. However, browsers currently preserve the order. The
+ *   rules for each entry:
+ *   - If an array, it will be processed as if each entry were an additional
+ *     parameter with exactly the same key, following the same logic below.
+ *   - If `undefined` or `null`, it will be skipped.
+ *   - Otherwise, it will be turned into a string, escaped, and appended.
+ * @return {string}
+ * @private
+ */
+goog.html.TrustedResourceUrl.stringifyParams_ = function(
+    prefix, currentString, params) {
+  if (params == null) {
+    // Do not modify the field.
+    return currentString;
+  }
+  if (goog.isString(params)) {
+    // Set field to the passed string.
+    return params ? prefix + encodeURIComponent(params) : '';
+  }
+  // Add on parameters to field from key-value object.
+  for (var key in params) {
+    var value = params[key];
+    var outputValues = goog.isArray(value) ? value : [value];
+    for (var i = 0; i < outputValues.length; i++) {
+      var outputValue = outputValues[i];
+      if (outputValue != null) {
+        if (!currentString) {
+          currentString = prefix;
+        }
+        currentString += (currentString.length > prefix.length ? '&' : '') +
+            encodeURIComponent(key) + '=' +
+            encodeURIComponent(String(outputValue));
+      }
+    }
+  }
+  return currentString;
 };
 
 //javascript/closure/html/safeurl.js
@@ -15554,7 +15767,7 @@ goog.html.SafeUrl.fromConstant = function(url) {
 goog.html.SAFE_MIME_TYPE_PATTERN_ = new RegExp(
     // Note: Due to content-sniffing concerns, only add MIME types for
     // media formats.
-    '^(?:audio/(?:3gpp2|3gpp|aac|midi|mp3|mp4|mpeg|oga|ogg|opus|x-m4a|x-wav|wav|webm)|' +
+    '^(?:audio/(?:3gpp2|3gpp|aac|L16|midi|mp3|mp4|mpeg|oga|ogg|opus|x-m4a|x-wav|wav|webm)|' +
         'image/(?:bmp|gif|jpeg|jpg|png|tiff|webp)|' +
         // TODO(b/68188949): Due to content-sniffing concerns, text/csv should
         // be removed from the whitelist.
@@ -15601,15 +15814,19 @@ goog.html.DATA_URL_PATTERN_ = /^data:([^;,]*);base64,[a-z0-9+\/]+=*$/i;
  *     wrapped as a SafeUrl if it does not pass.
  */
 goog.html.SafeUrl.fromDataUrl = function(dataUrl) {
+  // RFC4648 suggest to ignore CRLF in base64 encoding.
+  // See https://tools.ietf.org/html/rfc4648.
+  // Remove the CR (%0D) and LF (%0A) from the dataUrl.
+  var filteredDataUrl = dataUrl.replace(/(%0A|%0D)/g, '');
   // There's a slight risk here that a browser sniffs the content type if it
   // doesn't know the MIME type and executes HTML within the data: URL. For this
   // to cause XSS it would also have to execute the HTML in the same origin
   // of the page with the link. It seems unlikely that both of these will
   // happen, particularly in not really old IEs.
-  var match = dataUrl.match(goog.html.DATA_URL_PATTERN_);
+  var match = filteredDataUrl.match(goog.html.DATA_URL_PATTERN_);
   var valid = match && goog.html.SAFE_MIME_TYPE_PATTERN_.test(match[1]);
   return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(
-      valid ? dataUrl : goog.html.SafeUrl.INNOCUOUS_STRING);
+      valid ? filteredDataUrl : goog.html.SafeUrl.INNOCUOUS_STRING);
 };
 
 
@@ -15663,6 +15880,23 @@ goog.html.SafeUrl.fromSipUrl = function(sipUrl) {
 
 
 /**
+ * Creates a SafeUrl wrapping a fb-messenger://share URL.
+ *
+ * @param {string} facebookMessengerUrl A facebook messenger URL.
+ * @return {!goog.html.SafeUrl} A matching safe URL, or {@link INNOCUOUS_STRING}
+ *     wrapped as a SafeUrl if it does not pass.
+ */
+goog.html.SafeUrl.fromFacebookMessengerUrl = function(facebookMessengerUrl) {
+  if (!goog.string.caseInsensitiveStartsWith(
+          facebookMessengerUrl, 'fb-messenger://share')) {
+    facebookMessengerUrl = goog.html.SafeUrl.INNOCUOUS_STRING;
+  }
+  return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(
+      facebookMessengerUrl);
+};
+
+
+/**
  * Creates a SafeUrl wrapping a sms: URL.
  *
  * @param {string} smsUrl A sms URL.
@@ -15681,13 +15915,19 @@ goog.html.SafeUrl.fromSmsUrl = function(smsUrl) {
 
 /**
  * Validates SMS URL `body` parameter, which is optional and should appear at
- * most once and should be percentage-encoded if present.
+ * most once and should be percent-encoded if present. Rejects many malformed
+ * bodies, but may spuriously reject some URLs and does not reject all malformed
+ * sms: URLs.
  *
  * @param {string} smsUrl A sms URL.
  * @return {boolean} Whether SMS URL has a valid `body` parameter if it exists.
  * @private
  */
 goog.html.SafeUrl.isSmsUrlBodyValid_ = function(smsUrl) {
+  var hash = smsUrl.indexOf('#');
+  if (hash > 0) {
+    smsUrl = smsUrl.substring(0, hash);
+  }
   var bodyParams = smsUrl.match(/[?&]body=/gi);
   // "body" param is optional
   if (!bodyParams) {
@@ -15698,16 +15938,106 @@ goog.html.SafeUrl.isSmsUrlBodyValid_ = function(smsUrl) {
     return false;
   }
   // Get the encoded `body` parameter value.
-  var bodyValue = smsUrl.match(/[?&]body=([^&]+)/)[1];
+  var bodyValue = smsUrl.match(/[?&]body=([^&]*)/)[1];
   if (!bodyValue) {
     return true;
   }
   try {
-    return goog.string.urlEncode(bodyValue) === bodyValue ||
-        goog.string.urlDecode(bodyValue) !== bodyValue;
+    decodeURIComponent(bodyValue);
   } catch (error) {
     return false;
   }
+  return /^(?:[a-z0-9\-_.~]|%[0-9a-f]{2})+$/i.test(bodyValue);
+};
+
+
+/**
+ * Sanitizes a Chrome extension URL to SafeUrl, given a compile-time-constant
+ * extension identifier. Can also be restricted to chrome extensions.
+ *
+ * @param {string} url The url to sanitize. Should start with the extension
+ *     scheme and the extension identifier.
+ * @param {!goog.string.Const|!Array<!goog.string.Const>} extensionId The
+ *     extension id to accept, as a compile-time constant or an array of those.
+ *
+ * @return {!goog.html.SafeUrl} Either `url` if it's deemed safe, or
+ *     `INNOCUOUS_STRING` if it's not.
+ */
+goog.html.SafeUrl.sanitizeChromeExtensionUrl = function(url, extensionId) {
+  return goog.html.SafeUrl.sanitizeExtensionUrl_(
+      /^chrome-extension:\/\/([^\/]+)\//, url, extensionId);
+};
+
+/**
+ * Sanitizes a Firefox extension URL to SafeUrl, given a compile-time-constant
+ * extension identifier. Can also be restricted to chrome extensions.
+ *
+ * @param {string} url The url to sanitize. Should start with the extension
+ *     scheme and the extension identifier.
+ * @param {!goog.string.Const|!Array<!goog.string.Const>} extensionId The
+ *     extension id to accept, as a compile-time constant or an array of those.
+ *
+ * @return {!goog.html.SafeUrl} Either `url` if it's deemed safe, or
+ *     `INNOCUOUS_STRING` if it's not.
+ */
+goog.html.SafeUrl.sanitizeFirefoxExtensionUrl = function(url, extensionId) {
+  return goog.html.SafeUrl.sanitizeExtensionUrl_(
+      /^moz-extension:\/\/([^\/]+)\//, url, extensionId);
+};
+
+/**
+ * Sanitizes a Edge extension URL to SafeUrl, given a compile-time-constant
+ * extension identifier. Can also be restricted to chrome extensions.
+ *
+ * @param {string} url The url to sanitize. Should start with the extension
+ *     scheme and the extension identifier.
+ * @param {!goog.string.Const|!Array<!goog.string.Const>} extensionId The
+ *     extension id to accept, as a compile-time constant or an array of those.
+ *
+ * @return {!goog.html.SafeUrl} Either `url` if it's deemed safe, or
+ *     `INNOCUOUS_STRING` if it's not.
+ */
+goog.html.SafeUrl.sanitizeEdgeExtensionUrl = function(url, extensionId) {
+  return goog.html.SafeUrl.sanitizeExtensionUrl_(
+      /^ms-browser-extension:\/\/([^\/]+)\//, url, extensionId);
+};
+
+/**
+ * Private helper for converting extension URLs to SafeUrl, given the scheme for
+ * that particular extension type. Use the sanitizeFirefoxExtensionUrl,
+ * sanitizeChromeExtensionUrl or sanitizeEdgeExtensionUrl unless you're building
+ * new helpers.
+ *
+ * @private
+ * @param {!RegExp} scheme The scheme to accept as a RegExp extracting the
+ *     extension identifier.
+ * @param {string} url The url to sanitize. Should start with the extension
+ *     scheme and the extension identifier.
+ * @param {!goog.string.Const|!Array<!goog.string.Const>} extensionId The
+ *     extension id to accept, as a compile-time constant or an array of those.
+ *
+ * @return {!goog.html.SafeUrl} Either `url` if it's deemed safe, or
+ *     `INNOCUOUS_STRING` if it's not.
+ */
+goog.html.SafeUrl.sanitizeExtensionUrl_ = function(scheme, url, extensionId) {
+  var matches = scheme.exec(url);
+  if (!matches) {
+    url = goog.html.SafeUrl.INNOCUOUS_STRING;
+  } else {
+    var extractedExtensionId = matches[1];
+    var acceptedExtensionIds;
+    if (extensionId instanceof goog.string.Const) {
+      acceptedExtensionIds = [goog.string.Const.unwrap(extensionId)];
+    } else {
+      acceptedExtensionIds = extensionId.map(function unwrap(x) {
+        return goog.string.Const.unwrap(x);
+      });
+    }
+    if (acceptedExtensionIds.indexOf(extractedExtensionId) == -1) {
+      url = goog.html.SafeUrl.INNOCUOUS_STRING;
+    }
+  }
+  return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(url);
 };
 
 
@@ -15746,6 +16076,17 @@ goog.html.SafeUrl.fromTrustedResourceUrl = function(trustedResourceUrl) {
  */
 goog.html.SAFE_URL_PATTERN_ =
     /^(?:(?:https?|mailto|ftp):|[^:/?#]*(?:[/?#]|$))/i;
+
+/**
+ * Public version of goog.html.SAFE_URL_PATTERN_. Updating
+ * goog.html.SAFE_URL_PATTERN_ doesn't seem to be backward compatible.
+ * Namespace is also changed to goog.html.SafeUrl so it can be imported using
+ * goog.require('goog.dom.SafeUrl').
+ *
+ * TODO(bangert): Remove SAFE_URL_PATTERN_
+ * @const {!RegExp}
+ */
+goog.html.SafeUrl.SAFE_URL_PATTERN = goog.html.SAFE_URL_PATTERN_;
 
 
 /**
@@ -15800,7 +16141,9 @@ goog.html.SafeUrl.sanitizeAssertUnchanged = function(url) {
   } else {
     url = String(url);
   }
-  if (!goog.asserts.assert(goog.html.SAFE_URL_PATTERN_.test(url))) {
+  if (!goog.asserts.assert(
+          goog.html.SAFE_URL_PATTERN_.test(url),
+          '%s does not match the safe URL pattern', url)) {
     url = goog.html.SafeUrl.INNOCUOUS_STRING;
   }
   return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(url);
@@ -21509,7 +21852,7 @@ goog.uri.utils.getEffectiveScheme = function(uri) {
     var protocol = goog.global.self.location.protocol;
     scheme = protocol.substr(0, protocol.length - 1);
   }
-  // NOTE: When called from a web worker in Firefox 3.5, location maybe null.
+  // NOTE: When called from a web worker in Firefox 3.5, location may be null.
   // All other browsers with web workers support self.location from the worker.
   return scheme ? scheme.toLowerCase() : '';
 };
@@ -22554,7 +22897,7 @@ goog.Uri.prototype.toString = function() {
  *
  * There are several kinds of relative URIs:<br>
  * 1. foo - replaces the last part of the path, the whole query and fragment<br>
- * 2. /foo - replaces the the path, the query and fragment<br>
+ * 2. /foo - replaces the path, the query and fragment<br>
  * 3. //foo - replaces everything from the domain on.  foo is a domain name<br>
  * 4. ?foo - replace the query and fragment<br>
  * 5. #foo - replace the fragment only
@@ -22903,7 +23246,7 @@ goog.Uri.prototype.getQuery = function() {
  * that key.
  *
  * @param {string} key The parameter to set.
- * @param {*} value The new value.
+ * @param {*} value The new value. Value does not need to be encoded.
  * @return {!goog.Uri} Reference to this URI object.
  */
 goog.Uri.prototype.setParameterValue = function(key, value) {
@@ -22923,7 +23266,8 @@ goog.Uri.prototype.setParameterValue = function(key, value) {
  *
  * @param {string} key The parameter to set.
  * @param {*} values The new values. If values is a single
- *     string then it will be treated as the sole value.
+ *     string then it will be treated as the sole value. Values do not need to
+ *     be encoded.
  * @return {!goog.Uri} Reference to this URI object.
  */
 goog.Uri.prototype.setParameterValues = function(key, values) {
@@ -23374,7 +23718,7 @@ goog.Uri.QueryData = function(opt_query, opt_uri, opt_ignoreCase) {
    * We need to use a Map because we cannot guarantee that the key names will
    * not be problematic for IE.
    *
-   * @private {goog.structs.Map<string, !Array<*>>}
+   * @private {?goog.structs.Map<string, !Array<*>>}
    */
   this.keyMap_ = null;
 
@@ -23874,7 +24218,6 @@ goog.provide('goog.soy.data.SanitizedCss');
 goog.provide('goog.soy.data.SanitizedHtml');
 goog.provide('goog.soy.data.SanitizedHtmlAttribute');
 goog.provide('goog.soy.data.SanitizedJs');
-goog.provide('goog.soy.data.SanitizedStyle');
 goog.provide('goog.soy.data.SanitizedTrustedResourceUri');
 goog.provide('goog.soy.data.SanitizedUri');
 goog.provide('goog.soy.data.UnsanitizedText');
@@ -24095,9 +24438,11 @@ goog.soy.data.SanitizedHtml = function() {
 };
 goog.inherits(goog.soy.data.SanitizedHtml, goog.soy.data.SanitizedContent);
 
+
 /** @override */
 goog.soy.data.SanitizedHtml.prototype.contentKind =
     goog.soy.data.SanitizedContentKind.HTML;
+
 
 /**
  * Checks if the value could be used as the Soy type {html}.
@@ -24110,6 +24455,17 @@ goog.soy.data.SanitizedHtml.isCompatibleWith = function(value) {
       value instanceof goog.html.SafeHtml;
 };
 
+
+/**
+ * Checks if the value could be used as the Soy type {html}.
+ * Strict: disallows strings or UnsanitizedText.
+ * @param {*} value
+ * @return {boolean}
+ */
+goog.soy.data.SanitizedHtml.isCompatibleWithStrict = function(value) {
+  return value instanceof goog.soy.data.SanitizedHtml ||
+      value instanceof goog.html.SafeHtml;
+};
 
 
 /**
@@ -24126,12 +24482,15 @@ goog.soy.data.SanitizedJs = function() {
 };
 goog.inherits(goog.soy.data.SanitizedJs, goog.soy.data.SanitizedContent);
 
+
 /** @override */
 goog.soy.data.SanitizedJs.prototype.contentKind =
     goog.soy.data.SanitizedContentKind.JS;
 
+
 /** @override */
 goog.soy.data.SanitizedJs.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
+
 
 /**
  * Checks if the value could be used as the Soy type {js}.
@@ -24144,6 +24503,16 @@ goog.soy.data.SanitizedJs.isCompatibleWith = function(value) {
       value instanceof goog.html.SafeScript;
 };
 
+/**
+ * Checks if the value could be used as the Soy type {js}.
+ * Strict: disallows strings or UnsanitizedText.
+ * @param {*} value
+ * @return {boolean}
+ */
+goog.soy.data.SanitizedJs.isCompatibleWithStrict = function(value) {
+  return value instanceof goog.soy.data.SanitizedJs ||
+      value instanceof goog.html.SafeHtml;
+};
 
 
 /**
@@ -24164,8 +24533,10 @@ goog.inherits(goog.soy.data.SanitizedUri, goog.soy.data.SanitizedContent);
 goog.soy.data.SanitizedUri.prototype.contentKind =
     goog.soy.data.SanitizedContentKind.URI;
 
+
 /** @override */
 goog.soy.data.SanitizedUri.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
+
 
 /**
  * Checks if the value could be used as the Soy type {uri}.
@@ -24175,6 +24546,20 @@ goog.soy.data.SanitizedUri.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
 goog.soy.data.SanitizedUri.isCompatibleWith = function(value) {
   return goog.isString(value) || value instanceof goog.soy.data.SanitizedUri ||
       value instanceof goog.soy.data.UnsanitizedText ||
+      value instanceof goog.html.SafeUrl ||
+      value instanceof goog.html.TrustedResourceUrl ||
+      value instanceof goog.Uri;
+};
+
+
+/**
+ * Checks if the value could be used as the Soy type {uri}.
+ * Strict: disallows strings or UnsanitizedText.
+ * @param {*} value
+ * @return {boolean}
+ */
+goog.soy.data.SanitizedUri.isCompatibleWithStrict = function(value) {
+  return value instanceof goog.soy.data.SanitizedUri ||
       value instanceof goog.html.SafeUrl ||
       value instanceof goog.html.TrustedResourceUrl ||
       value instanceof goog.Uri;
@@ -24198,13 +24583,16 @@ goog.soy.data.SanitizedTrustedResourceUri = function() {
 goog.inherits(
     goog.soy.data.SanitizedTrustedResourceUri, goog.soy.data.SanitizedContent);
 
+
 /** @override */
 goog.soy.data.SanitizedTrustedResourceUri.prototype.contentKind =
     goog.soy.data.SanitizedContentKind.TRUSTED_RESOURCE_URI;
 
+
 /** @override */
 goog.soy.data.SanitizedTrustedResourceUri.prototype.contentDir =
     goog.i18n.bidi.Dir.LTR;
+
 
 /**
  * Converts sanitized content into TrustedResourceUrl without modification.
@@ -24220,6 +24608,7 @@ goog.soy.data.SanitizedTrustedResourceUri.prototype.toTrustedResourceUrl =
           this.toString());
 };
 
+
 /**
  * Checks if the value could be used as the Soy type {trusted_resource_uri}.
  * @param {*} value
@@ -24229,6 +24618,19 @@ goog.soy.data.SanitizedTrustedResourceUri.isCompatibleWith = function(value) {
   return goog.isString(value) ||
       value instanceof goog.soy.data.SanitizedTrustedResourceUri ||
       value instanceof goog.soy.data.UnsanitizedText ||
+      value instanceof goog.html.TrustedResourceUrl;
+};
+
+
+/**
+ * Checks if the value could be used as the Soy type {trusted_resource_uri}.
+ * Strict: disallows strings or UnsanitizedText.
+ * @param {*} value
+ * @return {boolean}
+ */
+goog.soy.data.SanitizedTrustedResourceUri.isCompatibleWithStrict = function(
+    value) {
+  return value instanceof goog.soy.data.SanitizedTrustedResourceUri ||
       value instanceof goog.html.TrustedResourceUrl;
 };
 
@@ -24249,13 +24651,16 @@ goog.soy.data.SanitizedHtmlAttribute = function() {
 goog.inherits(
     goog.soy.data.SanitizedHtmlAttribute, goog.soy.data.SanitizedContent);
 
+
 /** @override */
 goog.soy.data.SanitizedHtmlAttribute.prototype.contentKind =
     goog.soy.data.SanitizedContentKind.ATTRIBUTES;
 
+
 /** @override */
 goog.soy.data.SanitizedHtmlAttribute.prototype.contentDir =
     goog.i18n.bidi.Dir.LTR;
+
 
 /**
  * Checks if the value could be used as the Soy type {attribute}.
@@ -24269,41 +24674,14 @@ goog.soy.data.SanitizedHtmlAttribute.isCompatibleWith = function(value) {
 };
 
 
-
 /**
- * Content of type {@link goog.soy.data.SanitizedContentKind.STYLE}.
- *
- * The content is non-attacker-exploitable CSS, such as `color:#c3d9ff`.
- * The content direction is LTR.
- *
- * @extends {goog.soy.data.SanitizedContent}
- * @constructor
- */
-goog.soy.data.SanitizedStyle = function() {
-  goog.soy.data.SanitizedStyle.base(this, 'constructor');
-};
-goog.inherits(goog.soy.data.SanitizedStyle, goog.soy.data.SanitizedContent);
-
-
-/** @override */
-goog.soy.data.SanitizedStyle.prototype.contentKind =
-    goog.soy.data.SanitizedContentKind.STYLE;
-
-
-/** @override */
-goog.soy.data.SanitizedStyle.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
-
-
-/**
- * Checks if the value could be used as the Soy type {css}.
+ * Checks if the value could be used as the Soy type {attribute}.
+ * Strict: disallows strings or UnsanitizedText.
  * @param {*} value
  * @return {boolean}
  */
-goog.soy.data.SanitizedStyle.isCompatibleWith = function(value) {
-  return goog.isString(value) ||
-      value instanceof goog.soy.data.SanitizedStyle ||
-      value instanceof goog.soy.data.UnsanitizedText ||
-      value instanceof goog.html.SafeStyle;
+goog.soy.data.SanitizedHtmlAttribute.isCompatibleWithStrict = function(value) {
+  return value instanceof goog.soy.data.SanitizedHtmlAttribute;
 };
 
 
@@ -24340,7 +24718,20 @@ goog.soy.data.SanitizedCss.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
 goog.soy.data.SanitizedCss.isCompatibleWith = function(value) {
   return goog.isString(value) || value instanceof goog.soy.data.SanitizedCss ||
       value instanceof goog.soy.data.UnsanitizedText ||
-      value instanceof goog.html.SafeStyle ||  // TODO(jakubvrana): Delete.
+      value instanceof goog.html.SafeStyle ||
+      value instanceof goog.html.SafeStyleSheet;
+};
+
+
+/**
+ * Checks if the value could be used as the Soy type {css}.
+ * Strict: disallows strings or UnsanitizedText.
+ * @param {*} value
+ * @return {boolean}
+ */
+goog.soy.data.SanitizedCss.isCompatibleWithStrict = function(value) {
+  return value instanceof goog.soy.data.SanitizedCss ||
+      value instanceof goog.html.SafeStyle ||
       value instanceof goog.html.SafeStyleSheet;
 };
 
@@ -24354,8 +24745,6 @@ goog.soy.data.SanitizedCss.isCompatibleWith = function(value) {
  */
 goog.soy.data.SanitizedCss.prototype.toSafeStyleSheet = function() {
   var value = this.toString();
-  // TODO(jakubvrana): Remove this check when there's a separate type for style
-  // declaration.
   goog.asserts.assert(
       /[@{]|^\s*$/.test(value),
       'value doesn\'t look like style sheet: ' + value);
@@ -24365,6 +24754,110 @@ goog.soy.data.SanitizedCss.prototype.toSafeStyleSheet = function() {
               'Soy SanitizedCss produces SafeStyleSheet-contract-compliant ' +
               'value.'),
           value);
+};
+
+//javascript/template/soy/checks.js
+/**
+ * @fileoverview Provides Soy runtime checks for safe types.
+ */
+
+goog.provide('soy.checks');
+
+goog.require('goog.asserts');
+goog.require('goog.soy.data.SanitizedContentKind');
+goog.require('goog.soy.data.SanitizedCss');
+goog.require('goog.soy.data.SanitizedHtml');
+goog.require('goog.soy.data.SanitizedHtmlAttribute');
+goog.require('goog.soy.data.SanitizedJs');
+goog.require('goog.soy.data.SanitizedTrustedResourceUri');
+goog.require('goog.soy.data.SanitizedUri');
+goog.require('goog.soy.data.UnsanitizedText');
+
+/**
+ * Checks whether a given value is of a given content kind.
+ *
+ * @param {?} value The value to be examined.
+ * @param {!goog.soy.data.SanitizedContentKind} contentKind The desired content
+ *     kind.
+ * @param {!Object} constructor
+ * @return {boolean} Whether the given value is of the given kind.
+ * @private
+ */
+soy.checks.isContentKind_ = function(value, contentKind, constructor) {
+  var ret = value != null && value.contentKind === contentKind;
+  if (ret) {
+    goog.asserts.assert(value.constructor === constructor);
+  }
+  return ret;
+};
+
+/**
+ * @param {?} value
+ * @return {boolean}
+ */
+soy.checks.isHtml = function(value) {
+  return soy.checks.isContentKind_(
+      value, goog.soy.data.SanitizedContentKind.HTML,
+      goog.soy.data.SanitizedHtml);
+};
+
+/**
+ * @param {?} value
+ * @return {boolean}
+ */
+soy.checks.isCss = function(value) {
+  return soy.checks.isContentKind_(
+      value, goog.soy.data.SanitizedContentKind.CSS,
+      goog.soy.data.SanitizedCss);
+};
+
+/**
+ * @param {?} value
+ * @return {boolean}
+ */
+soy.checks.isAttribute = function(value) {
+  return soy.checks.isContentKind_(
+      value, goog.soy.data.SanitizedContentKind.ATTRIBUTES,
+      goog.soy.data.SanitizedHtmlAttribute);
+};
+
+/**
+ * @param {?} value
+ * @return {boolean}
+ */
+soy.checks.isJS = function(value) {
+  return soy.checks.isContentKind_(
+      value, goog.soy.data.SanitizedContentKind.JS, goog.soy.data.SanitizedJs);
+};
+
+/**
+ * @param {?} value
+ * @return {boolean}
+ */
+soy.checks.isTrustedResourceURI = function(value) {
+  return soy.checks.isContentKind_(
+      value, goog.soy.data.SanitizedContentKind.TRUSTED_RESOURCE_URI,
+      goog.soy.data.SanitizedTrustedResourceUri);
+};
+
+/**
+ * @param {?} value
+ * @return {boolean}
+ */
+soy.checks.isURI = function(value) {
+  return soy.checks.isContentKind_(
+      value, goog.soy.data.SanitizedContentKind.URI,
+      goog.soy.data.SanitizedUri);
+};
+
+/**
+ * @param {?} value
+ * @return {boolean}
+ */
+soy.checks.isText = function(value) {
+  return soy.checks.isContentKind_(
+      value, goog.soy.data.SanitizedContentKind.TEXT,
+      goog.soy.data.UnsanitizedText);
 };
 
 //javascript/template/soy/soyutils_usegoog.js
@@ -24429,16 +24922,18 @@ goog.require('goog.soy.data.SanitizedCss');
 goog.require('goog.soy.data.SanitizedHtml');
 goog.require('goog.soy.data.SanitizedHtmlAttribute');
 goog.require('goog.soy.data.SanitizedJs');
-goog.require('goog.soy.data.SanitizedStyle');
 goog.require('goog.soy.data.SanitizedTrustedResourceUri');
 goog.require('goog.soy.data.SanitizedUri');
 goog.require('goog.soy.data.UnsanitizedText');
 goog.require('goog.string');
 goog.require('goog.string.Const');
+goog.require('soy.checks');
+
+
 
 // -----------------------------------------------------------------------------
-// soydata: Defines typed strings, e.g. an HTML string {@code "a<b>c"} is
-// semantically distinct from the plain text string {@code "a<b>c"} and smart
+// soydata: Defines typed strings, e.g. an HTML string `"a<b>c"` is
+// semantically distinct from the plain text string `"a<b>c"` and smart
 // templates can take that distinction into account.
 
 /**
@@ -24458,7 +24953,6 @@ soydata.isContentKind_ = function(value, contentKind) {
   // altogether and only at the constructor.
   return value != null && value.contentKind === contentKind;
 };
-
 
 /**
  * Returns a given value's contentDir property, constrained to a
@@ -24512,9 +25006,7 @@ goog.inherits(soydata.SanitizedHtml, goog.soy.data.SanitizedHtml);
  */
 soydata.SanitizedHtml.from = function(value) {
   // The check is soydata.isContentKind_() inlined for performance.
-  if (value != null &&
-      value.contentKind === goog.soy.data.SanitizedContentKind.HTML) {
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedHtml);
+  if (soy.checks.isHtml(value)) {
     return /** @type {!goog.soy.data.SanitizedHtml} */ (value);
   }
   if (value instanceof goog.html.SafeHtml) {
@@ -24725,27 +25217,13 @@ soydata.VERY_UNSAFE.ordainSanitizedTrustedResourceUri =
  * HTML attribute.
  *
  * @param {?} content An attribute name and value, such as
- *     {@code dir="ltr"}.
+ *     `dir="ltr"`.
  * @return {!goog.soy.data.SanitizedHtmlAttribute} Sanitized content wrapper
  *     that indicates to Soy not to escape when printed as an HTML attribute.
  */
 soydata.VERY_UNSAFE.ordainSanitizedHtmlAttribute =
     soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_(
         goog.soy.data.SanitizedHtmlAttribute);
-
-
-/**
- * Takes a leap of faith that the provided content is "safe" to use as STYLE
- * in a style attribute.
- *
- * @param {?} content CSS, such as `color:#c3d9ff`.
- * @return {!goog.soy.data.SanitizedStyle} Sanitized style wrapper that
- *     indicates to Soy there is no need to escape or filter when printed in CSS
- *     context.
- */
-soydata.VERY_UNSAFE.ordainSanitizedStyle =
-    soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_(
-        goog.soy.data.SanitizedStyle);
 
 
 /**
@@ -24759,7 +25237,6 @@ soydata.VERY_UNSAFE.ordainSanitizedStyle =
 soydata.VERY_UNSAFE.ordainSanitizedCss =
     soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_(
         goog.soy.data.SanitizedCss);
-
 
 // -----------------------------------------------------------------------------
 // Soy-generated utilities in the soy namespace.  Contains implementations for
@@ -24924,6 +25401,32 @@ soy.$$parseFloat = function(str) {
   return isNaN(parsed) ? null : parsed;
 };
 
+/**
+ * Returns a random integer.
+ * @return {number} a random integer between 0 and num
+ */
+soy.$$randomInt = function(/** number */ num) {
+  return Math.floor(Math.random() * num);
+};
+
+/**
+ * Rounds the given value to the closest decimal point left (negative numbers)
+ * or right (positive numbers) of the decimal point
+ *
+ * TODO(b/112835292): This is probably not something that anyone should use,
+ * instead they should use an i18n friendly number formatting routine.
+ *
+ * @return {number} the rounded value
+ */
+soy.$$round = function(/** number */ num, /** number */ numDigitsAfterPt) {
+  const shift = Math.pow(10, numDigitsAfterPt);
+  return Math.round(num * shift) / shift;
+};
+
+/** @return {boolean} returns whether the needle was found in the haystack */
+soy.$$strContains = function(/** string */ haystack, /** string */ needle) {
+  return haystack.indexOf(needle) != -1;
+};
 
 /**
  * Coerce the given value into a bool.
@@ -25260,18 +25763,6 @@ soydata.VERY_UNSAFE.$$ordainSanitizedAttributesForInternalBlocks =
 
 
 /**
- * Creates kind="style" block contents (internal use only).
- *
- * @param {?} content Text.
- * @return {goog.soy.data.SanitizedStyle|soydata.$$EMPTY_STRING_} Wrapped
- *     result.
- */
-soydata.VERY_UNSAFE.$$ordainSanitizedStyleForInternalBlocks =
-    soydata.$$makeSanitizedContentFactoryWithDefaultDirOnlyForInternalBlocks_(
-        goog.soy.data.SanitizedStyle);
-
-
-/**
  * Creates kind="css" block contents (internal use only).
  *
  * @param {?} content Text.
@@ -25314,8 +25805,7 @@ soy.$$escapeHtml = function(value) {
  *     value.
  */
 soy.$$cleanHtml = function(value, opt_safeTags) {
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.HTML)) {
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedHtml);
+  if (soy.checks.isHtml(value)) {
     return /** @type {!goog.soy.data.SanitizedHtml} */ (value);
   }
   var tagWhitelist;
@@ -25334,10 +25824,22 @@ soy.$$cleanHtml = function(value, opt_safeTags) {
 /**
  * Converts HTML to plain text by removing tags, normalizing spaces and
  * converting entities.
- * @param {string} html
+ * TODO(tomnguyen): Support IdomFunction in value.
+ * @param {string|?goog.soy.data.SanitizedHtml|?goog.soy.data.UnsanitizedText}
+ *     value
  * @return {string}
  */
-soy.$$htmlToText = function(html) {
+soy.$$htmlToText = function(value) {
+  if (value == null) {
+    return '';
+  }
+  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.TEXT)) {
+    return value.toString();
+  }
+  if (!soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.HTML)) {
+    return goog.asserts.assertString(value);
+  }
+  var html = value.toString();
   var text = '';
   var start = 0;
   // Tag name to stop removing contents, e.g. '/script'.
@@ -25420,13 +25922,13 @@ soy.$$normalizeHtml = function(value) {
  * RCDATA.
  * <p>
  * Escapes HTML special characters so that the value will not prematurely end
- * the body of a tag like {@code <textarea>} or {@code <title>}. RCDATA tags
+ * the body of a tag like `<textarea>` or `<title>`. RCDATA tags
  * cannot contain other HTML entities, so it is not strictly necessary to escape
  * HTML special characters except when part of that text looks like an HTML
- * entity or like a close tag : {@code </textarea>}.
+ * entity or like a close tag : `</textarea>`.
  * <p>
  * Will normalize known safe HTML to make sure that sanitized HTML (which could
- * contain an innocuous {@code </textarea>} don't prematurely end an RCDATA
+ * contain an innocuous `</textarea>` don't prematurely end an RCDATA
  * element.
  *
  * @param {?} value The string-like value to be escaped. May not be a string,
@@ -25434,8 +25936,7 @@ soy.$$normalizeHtml = function(value) {
  * @return {string} An escaped version of value.
  */
 soy.$$escapeHtmlRcdata = function(value) {
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.HTML)) {
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedHtml);
+  if (soy.checks.isHtml(value)) {
     return soy.esc.$$normalizeHtmlHelper(value.getContent());
   }
   return soy.esc.$$escapeHtmlHelper(value);
@@ -25551,7 +26052,7 @@ soy.$$stripHtmlTags = function(value, opt_tagWhitelist) {
 
 /**
  * Make sure that tag boundaries are not broken by Safe CSS when embedded in a
- * {@code <style>} element.
+ * `<style>` element.
  * @param {string} css
  * @return {string}
  * @private
@@ -25565,8 +26066,8 @@ soy.$$embedCssIntoHtml_ = function(css) {
 
 /**
  * Throw out any close tags that don't correspond to start tags.
- * If {@code <table>} is used for formatting, embedded HTML shouldn't be able
- * to use a mismatched {@code </table>} to break page layout.
+ * If `<table>` is used for formatting, embedded HTML shouldn't be able
+ * to use a mismatched `</table>` to break page layout.
  *
  * @param {Array<string>} tags Array of open/close tags (e.g. '<p>', '</p>')
  *    that will be modified in place to be either an open tag, one or more close
@@ -25610,14 +26111,26 @@ soy.$$balanceTags_ = function(tags) {
 soy.$$escapeHtmlAttribute = function(value) {
   // NOTE: We don't accept ATTRIBUTES here because ATTRIBUTES is actually not
   // the attribute value context, but instead k/v pairs.
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.HTML)) {
+  if (soy.checks.isHtml(value)) {
     // NOTE: After removing tags, we also escape quotes ("normalize") so that
     // the HTML can be embedded in attribute context.
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedHtml);
     return soy.esc.$$normalizeHtmlHelper(
         soy.$$stripHtmlTags(value.getContent()));
   }
   return soy.esc.$$escapeHtmlHelper(value);
+};
+
+
+/**
+ * Escapes HTML special characters in an HTML attribute value containing HTML
+ * code, such as <iframe srcdoc>.
+ *
+ * @param {?} value The HTML to be escaped. May not be a string, but the
+ *     value will be coerced to a string.
+ * @return {string} An escaped version of value.
+ */
+soy.$$escapeHtmlHtmlAttribute = function(value) {
+  return String(soy.$$escapeHtml(value));
 };
 
 
@@ -25630,8 +26143,7 @@ soy.$$escapeHtmlAttribute = function(value) {
  * @return {string} An escaped version of value.
  */
 soy.$$escapeHtmlAttributeNospace = function(value) {
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.HTML)) {
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedHtml);
+  if (soy.checks.isHtml(value)) {
     return soy.esc.$$normalizeHtmlNospaceHelper(
         soy.$$stripHtmlTags(value.getContent()));
   }
@@ -25647,15 +26159,12 @@ soy.$$escapeHtmlAttributeNospace = function(value) {
  * @param {?} value The value to escape. May not be a string, but the value
  *     will be coerced to a string.
  * @return {string} A valid HTML attribute name part or name/value pair.
- *     {@code "zSoyz"} if the input is invalid.
+ *     `"zSoyz"` if the input is invalid.
  */
 soy.$$filterHtmlAttributes = function(value) {
   // NOTE: Explicitly no support for SanitizedContentKind.HTML, since that is
   // meaningless in this context, which is generally *between* html attributes.
-  if (soydata.isContentKind_(
-    value, goog.soy.data.SanitizedContentKind.ATTRIBUTES)) {
-    goog.asserts.assert(
-        value.constructor === goog.soy.data.SanitizedHtmlAttribute);
+  if (soy.checks.isAttribute(value)) {
     // Add a space at the end to ensure this won't get merged into following
     // attributes, unless the interpretation is unambiguous (ending with quotes
     // or a space).
@@ -25670,12 +26179,22 @@ soy.$$filterHtmlAttributes = function(value) {
 
 
 /**
+ * Allows only decimal and floating-point numbers.
+ * @param {?} value
+ * @return {number} The number.
+ */
+soy.$$filterNumber = function(value) {
+  return /^\d*\.?\d+$/.test(value) ? value : 'zSoyz';
+};
+
+
+/**
  * Filters out strings that cannot be a substring of a valid HTML element name.
  *
  * @param {?} value The value to escape. May not be a string, but the value
  *     will be coerced to a string.
  * @return {string} A valid HTML element name part.
- *     {@code "zSoyz"} if the input is invalid.
+ *     `"zSoyz"` if the input is invalid.
  */
 soy.$$filterHtmlElementName = function(value) {
   // NOTE: We don't accept any SanitizedContent here. HTML indicates valid
@@ -25719,8 +26238,7 @@ soy.$$escapeJsValue = function(value) {
     // distinct undefined value.
     return ' null ';
   }
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.JS)) {
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedJs);
+  if (soy.checks.isJS(value)) {
     return value.getContent();
   }
   if (value instanceof goog.html.SafeScript) {
@@ -25818,14 +26336,10 @@ soy.$$normalizeUri = function(value) {
  * @return {string} An escaped version of value.
  */
 soy.$$filterNormalizeUri = function(value) {
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.URI)) {
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedUri);
+  if (soy.checks.isURI(value)) {
     return soy.$$normalizeUri(value);
   }
-  if (soydata.isContentKind_(value,
-      goog.soy.data.SanitizedContentKind.TRUSTED_RESOURCE_URI)) {
-    goog.asserts.assert(
-        value.constructor === goog.soy.data.SanitizedTrustedResourceUri);
+  if (soy.checks.isTrustedResourceURI(value)) {
     return soy.$$normalizeUri(value);
   }
   if (value instanceof goog.html.SafeUrl) {
@@ -25849,14 +26363,10 @@ soy.$$filterNormalizeMediaUri = function(value) {
   // Image URIs are filtered strictly more loosely than other types of URIs.
   // TODO(shwetakarwa): Add tests for this in soyutils_test_helper while adding
   // tests for filterTrustedResourceUri.
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.URI)) {
-    goog.asserts.assert(value.constructor === goog.soy.data.SanitizedUri);
+  if (soy.checks.isURI(value)) {
     return soy.$$normalizeUri(value);
   }
-  if (soydata.isContentKind_(value,
-      goog.soy.data.SanitizedContentKind.TRUSTED_RESOURCE_URI)) {
-    goog.asserts.assert(
-        value.constructor === goog.soy.data.SanitizedTrustedResourceUri);
+  if (soy.checks.isTrustedResourceURI(value)) {
     return soy.$$normalizeUri(value);
   }
   if (value instanceof goog.html.SafeUrl) {
@@ -25870,6 +26380,16 @@ soy.$$filterNormalizeMediaUri = function(value) {
 
 
 /**
+ * Like filterNormalizeUri but also escapes ';'.
+ * @param {?} value The value to filter.
+ * @return {string} An escaped version of value.
+ */
+soy.$$filterNormalizeRefreshUri = function(value) {
+  return soy.$$filterNormalizeUri(value).replace(/;/g, '%3B');
+};
+
+
+/**
  * Vets a URI for usage as a resource. Makes sure the input value is a compile
  * time constant or a TrustedResouce not in attacker's control.
  *
@@ -25877,10 +26397,7 @@ soy.$$filterNormalizeMediaUri = function(value) {
  * @return {string} The value content.
  */
 soy.$$filterTrustedResourceUri = function(value) {
-  if (soydata.isContentKind_(value,
-      goog.soy.data.SanitizedContentKind.TRUSTED_RESOURCE_URI)) {
-    goog.asserts.assert(
-        value.constructor === goog.soy.data.SanitizedTrustedResourceUri);
+  if (soy.checks.isTrustedResourceURI(value)) {
     return value.getContent();
   }
   if (value instanceof goog.html.TrustedResourceUrl) {
@@ -25978,8 +26495,7 @@ soy.$$escapeCssString = function(value) {
  * @return {string} A safe CSS identifier part, keyword, or quanitity.
  */
 soy.$$filterCssValue = function(value) {
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.CSS)) {
-    goog.asserts.assertInstanceof(value, goog.soy.data.SanitizedCss);
+  if (soy.checks.isCss(value)) {
     return soy.$$embedCssIntoHtml_(value.getContent());
   }
   // Uses == to intentionally match null and undefined for Java compatibility.
@@ -26255,6 +26771,35 @@ soy.$$bidiDirAttr = function(bidiGlobalDir, text, opt_isHtml) {
   }
   return soydata.VERY_UNSAFE.ordainSanitizedHtmlAttribute(
       formatter.knownDirAttr(contentDir));
+};
+
+/**
+ * Returns the name of the start edge ('left' or 'right') for the current global
+ * bidi directionality.
+ *
+ * @return {string}
+ */
+soy.$$bidiStartEdge = function(/** number */ dir) {
+  return dir < 0 ? 'right' : 'left';
+};
+
+/**
+ * Returns the name of the end edge ('left' or 'right') for the current global
+ * bidi directionality.
+ *
+ * @return {string}
+ */
+soy.$$bidiEndEdge = function(/** number */ dir) {
+  return dir < 0 ? 'left' : 'right';
+};
+
+/**
+ * Returns a bidi mark character (LRM or RLM) for the given bidi directionality.
+ *
+ * @return {string}
+ */
+soy.$$bidiMark = function(/** number */ dir) {
+  return dir < 0 ? '\u200F' /*RLM*/ : '\u200E' /*LRM*/;
 };
 
 
@@ -26712,7 +27257,7 @@ soy.esc.$$MATCHER_FOR_NORMALIZE_URI__AND__FILTER_NORMALIZE_URI__AND__FILTER_NORM
  * A pattern that vets values produced by the named directives.
  * @private {!RegExp}
  */
-soy.esc.$$FILTER_FOR_FILTER_CSS_VALUE_ = /^(?!-*(?:expression|(?:moz-)?binding))(?!\s+)(?:[.#]?-?(?:[_a-z0-9-]+)(?:-[_a-z0-9-]+)*-?|(?:rgb|hsl)a?\([0-9.%,\u0020]+\)|-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[a-z]{1,2}|%)?|!important|\s+)*$/i;
+soy.esc.$$FILTER_FOR_FILTER_CSS_VALUE_ = /^(?!-*(?:expression|(?:moz-)?binding))(?:(?:[.#]?-?(?:[_a-z0-9-]+)(?:-[_a-z0-9-]+)*-?|(?:rgb|hsl)a?\([0-9.%,\u0020]+\)|-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[a-z]{1,4}|%)?|!important)(?:\s+|$))*$/i;
 
 /**
  * A pattern that vets values produced by the named directives.
@@ -26754,7 +27299,7 @@ soy.esc.$$FILTER_FOR_FILTER_TEL_URI_ = /^tel:[0-9a-z;=\-+._!~*'\u0020\/():&$#?@,
  * A pattern that vets values produced by the named directives.
  * @private {!RegExp}
  */
-soy.esc.$$FILTER_FOR_FILTER_HTML_ATTRIBUTES_ = /^(?!on|src|(?:style|action|archive|background|cite|classid|codebase|data|dsync|href|longdesc|usemap)\s*$)(?:[a-z0-9_$:-]*)$/i;
+soy.esc.$$FILTER_FOR_FILTER_HTML_ATTRIBUTES_ = /^(?!on|src|(?:action|archive|background|cite|classid|codebase|content|data|dsync|href|http-equiv|longdesc|style|usemap)\s*$)(?:[a-z0-9_$:-]*)$/i;
 
 /**
  * A pattern that vets values produced by the named directives.

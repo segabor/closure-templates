@@ -60,6 +60,9 @@ public abstract class AbstractSoyNodeVisitor<R> extends AbstractNodeVisitor<SoyN
         visitSoyFileNode((SoyFileNode) node);
         break;
 
+      case TEMPLATE_ELEMENT_NODE:
+        visitTemplateElementNode((TemplateElementNode) node);
+        break;
       case TEMPLATE_BASIC_NODE:
         visitTemplateBasicNode((TemplateBasicNode) node);
         break;
@@ -175,6 +178,10 @@ public abstract class AbstractSoyNodeVisitor<R> extends AbstractNodeVisitor<SoyN
         visitHtmlAttributeValueNode((HtmlAttributeValueNode) node);
         break;
 
+      case KEY_NODE:
+        visitKeyNode((KeyNode) node);
+        break;
+
       case VE_LOG_NODE:
         visitVeLogNode((VeLogNode) node);
         break;
@@ -227,6 +234,10 @@ public abstract class AbstractSoyNodeVisitor<R> extends AbstractNodeVisitor<SoyN
   }
 
   protected void visitTemplateBasicNode(TemplateBasicNode node) {
+    visitTemplateNode(node);
+  }
+
+  protected void visitTemplateElementNode(TemplateElementNode node) {
     visitTemplateNode(node);
   }
 
@@ -384,6 +395,10 @@ public abstract class AbstractSoyNodeVisitor<R> extends AbstractNodeVisitor<SoyN
   }
 
   protected void visitHtmlCommentNode(HtmlCommentNode node) {
+    visitSoyNode(node);
+  }
+
+  protected void visitKeyNode(KeyNode node) {
     visitSoyNode(node);
   }
 

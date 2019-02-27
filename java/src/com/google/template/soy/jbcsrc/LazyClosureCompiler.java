@@ -71,6 +71,7 @@ import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyNode.RenderUnitNode;
 import com.google.template.soy.soytree.defn.LocalVar;
 import com.google.template.soy.soytree.defn.TemplateParam;
+import com.google.template.soy.soytree.defn.TemplatePropVar;
 import com.google.template.soy.types.SoyTypeRegistry;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -174,6 +175,7 @@ final class LazyClosureCompiler {
   private final TemplateVariableManager parentVariables;
   private final ErrorReporter reporter;
   private final SoyTypeRegistry typeRegistry;
+  private final List<TemplatePropVar> propVars;
 
   LazyClosureCompiler(
       CompiledTemplateRegistry registry,
@@ -182,7 +184,8 @@ final class LazyClosureCompiler {
       TemplateVariableManager parentVariables,
       ExpressionToSoyValueProviderCompiler expressionToSoyValueProviderCompiler,
       ErrorReporter reporter,
-      SoyTypeRegistry typeRegistry) {
+      SoyTypeRegistry typeRegistry,
+      List<TemplatePropVar> propVars) {
     this.registry = registry;
     this.innerClasses = innerClasses;
     this.parentVariableLookup = parentVariableLookup;
@@ -190,6 +193,7 @@ final class LazyClosureCompiler {
     this.expressionToSoyValueProviderCompiler = expressionToSoyValueProviderCompiler;
     this.reporter = reporter;
     this.typeRegistry = typeRegistry;
+    this.propVars = propVars;
   }
 
   Expression compileLazyExpression(
@@ -383,7 +387,8 @@ final class LazyClosureCompiler {
               variableSet,
               lookup,
               reporter,
-              typeRegistry);
+              typeRegistry,
+              propVars);
       CompiledMethodBody compileChildren = soyNodeCompiler.compile(renderUnit, prefix, suffix);
       writer.setNumDetachStates(compileChildren.numberOfDetachStates());
       final Statement nodeBody = compileChildren.body();
@@ -561,6 +566,13 @@ final class LazyClosureCompiler {
     }
 
     @Override
+    public SoyExpression getProp(TemplatePropVar propVar) {
+      // We can always just access the parent directly instead of capturing because these are simple
+      // expressions or static field references.
+      return parentParameterLookup.getProp(propVar);
+    }
+
+    @Override
     public Expression getLocal(LocalVar local) {
       if (isDescendantOf(local.declaringNode(), params.node)) {
         // in this case, we just delegate to VariableSet
@@ -620,11 +632,6 @@ final class LazyClosureCompiler {
         @Override
         public Expression getBidiGlobalDir() {
           return getDelegate().getBidiGlobalDir();
-        }
-
-        @Override
-        public Expression getDebugSoyTemplateInfo() {
-          return getDelegate().getDebugSoyTemplateInfo();
         }
 
         @Override

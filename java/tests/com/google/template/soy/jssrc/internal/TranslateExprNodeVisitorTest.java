@@ -25,7 +25,6 @@ import static com.google.template.soy.jssrc.internal.JsSrcSubject.assertThatSoyE
 import static com.google.template.soy.jssrc.internal.JsSrcSubject.assertThatSoyFile;
 
 import com.google.common.collect.ImmutableMap;
-import com.google.template.soy.basetree.SyntaxVersion;
 import com.google.template.soy.jssrc.dsl.Expression;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -226,7 +225,8 @@ public final class TranslateExprNodeVisitorTest {
     String soyFile =
         ""
             + "{namespace ns}\n"
-            + "{template .foo deprecatedV1=\"true\"}\n"
+            + "/** @param goo */\n"
+            + "{template .foo}\n"
             + "  {v1Expression('$goo.length()')}\n"
             + "{/template}";
     String expectedJs =
@@ -246,9 +246,6 @@ public final class TranslateExprNodeVisitorTest {
             + "  ns.foo.soyTemplateName = 'ns.foo';\n"
             + "}\n";
 
-    assertThatSoyFile(soyFile)
-        .withDeclaredSyntaxVersion(SyntaxVersion.V1_0)
-        .generatesTemplateThat()
-        .isEqualTo(expectedJs);
+    assertThatSoyFile(soyFile).generatesTemplateThat().isEqualTo(expectedJs);
   }
 }

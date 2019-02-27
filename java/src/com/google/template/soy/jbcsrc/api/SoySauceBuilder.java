@@ -16,28 +16,57 @@
 
 package com.google.template.soy.jbcsrc.api;
 
+import static java.nio.charset.StandardCharsets.UTF_8;
+
+import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.jbcsrc.shared.CompiledTemplates;
+import com.google.template.soy.jbcsrc.shared.Names;
 import com.google.template.soy.shared.internal.InternalPlugins;
 import com.google.template.soy.shared.internal.SoyScopedData;
 import com.google.template.soy.shared.internal.SoySimpleScope;
 import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.net.URL;
+import java.util.Enumeration;
 import java.util.Map;
 
 /** Constructs {@link SoySauce} implementations. */
 public final class SoySauceBuilder {
-  private ImmutableSet<String> allDeltemplates = ImmutableSet.of();
   private ImmutableMap<String, SoyFunction> userFunctions = ImmutableMap.of();
   private ImmutableMap<String, SoyPrintDirective> userDirectives = ImmutableMap.of();
+  private ImmutableMap<String, Supplier<Object>> userPluginInstances = ImmutableMap.of();
   private SoyScopedData scopedData;
+  private ClassLoader loader;
 
   public SoySauceBuilder() {}
 
-  /** Sets the delTemplates, to be used when constructing the SoySauce. */
-  public SoySauceBuilder withDelTemplates(Iterable<String> delTemplates) {
-    this.allDeltemplates = ImmutableSet.copyOf(delTemplates);
+  /**
+   * Sets the plugin instance factories, to be used when constructing the SoySauce.
+   *
+   * <p>These are used to supply the runtime instances needed by SoyJavaSourceFunction
+   * implementations which use the {@code callInstanceMethod} API.
+   */
+  public SoySauceBuilder withPluginInstances(Map<String, Supplier<Object>> pluginInstances) {
+    this.userPluginInstances = ImmutableMap.copyOf(pluginInstances);
+    return this;
+  }
+
+  /**
+   * Sets the {@link ClassLoader}, to be used when loading generated soy classes.
+   *
+   * <p>In most cases there is no need to use this method, and a default classloader (the one that
+   * loaded this class) will be used. The only use case is when generated templates can not be
+   * located through the standard java binary classpath, so a special classloader can be set to
+   * allow the soy framework to find generated classes.
+   */
+  public SoySauceBuilder withClassLoader(ClassLoader loader) {
+    this.loader = loader;
     return this;
   }
 
@@ -67,8 +96,11 @@ public final class SoySauceBuilder {
     if (scopedData == null) {
       scopedData = new SoySimpleScope();
     }
+    if (loader == null) {
+      loader = SoySauceBuilder.class.getClassLoader();
+    }
     return new SoySauceImpl(
-        new CompiledTemplates(allDeltemplates),
+        new CompiledTemplates(readDelTemplatesFromMetaInf(loader), loader),
         scopedData.enterable(),
         userFunctions, // We don't need internal functions because they only matter at compile time
         ImmutableMap.<String, SoyPrintDirective>builder()
@@ -76,6 +108,27 @@ public final class SoySauceBuilder {
             // in order to handle escaping logging function invocations.
             .putAll(InternalPlugins.internalDirectiveMap(scopedData))
             .putAll(userDirectives)
-            .build());
+            .build(),
+        userPluginInstances);
+  }
+
+  /** Walks all resources with the META_INF_DELTEMPLATE_PATH and collects the deltemplates. */
+  private static ImmutableSet<String> readDelTemplatesFromMetaInf(ClassLoader loader) {
+    try {
+      ImmutableSet.Builder<String> builder = ImmutableSet.builder();
+      Enumeration<URL> resources = loader.getResources(Names.META_INF_DELTEMPLATE_PATH);
+      while (resources.hasMoreElements()) {
+        URL url = resources.nextElement();
+        try (InputStream in = url.openStream()) {
+          BufferedReader reader = new BufferedReader(new InputStreamReader(in, UTF_8));
+          for (String line = reader.readLine(); line != null; line = reader.readLine()) {
+            builder.add(line);
+          }
+        }
+      }
+      return builder.build();
+    } catch (IOException iox) {
+      throw new RuntimeException("Unable to read deltemplate listing", iox);
+    }
   }
 }

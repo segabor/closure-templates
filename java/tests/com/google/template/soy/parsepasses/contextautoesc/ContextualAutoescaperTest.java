@@ -53,33 +53,12 @@ public final class ContextualAutoescaperTest {
           new SoyPrintDirective() {
             @Override
             public String getName() {
-              return "|customEscapeDirective";
-            }
-
-            @Override
-            public Set<Integer> getValidArgsSizes() {
-              return ImmutableSet.of(0);
-            }
-
-            @Override
-            public boolean shouldCancelAutoescape() {
-              return true;
-            }
-          },
-          new SoyPrintDirective() {
-            @Override
-            public String getName() {
               return "|customOtherDirective";
             }
 
             @Override
             public Set<Integer> getValidArgsSizes() {
               return ImmutableSet.of(0);
-            }
-
-            @Override
-            public boolean shouldCancelAutoescape() {
-              return false;
             }
           },
           new SoyPrintDirective() {
@@ -91,11 +70,6 @@ public final class ContextualAutoescaperTest {
             @Override
             public Set<Integer> getValidArgsSizes() {
               return ImmutableSet.of(0);
-            }
-
-            @Override
-            public boolean shouldCancelAutoescape() {
-              return true;
             }
           },
           new FakeBidiSpanWrapDirective());
@@ -136,34 +110,16 @@ public final class ContextualAutoescaperTest {
   }
 
   @Test
-  public void testRecontextualizeCall() throws Exception {
-    // a template with a call to another template in attribute value context
-    String template =
+  public void testHtmlHtmlAttributePosition() throws Exception {
+    assertRewriteFails(
+        "HTML attribute values containing HTML can use dynamic expressions only at the start "
+            + "of the value.",
         join(
             "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\"}\n",
-            "<a href={call .uri data=\"all\" /}>\n",
-            "{/template}\n",
-            "{template .uri autoescape=\"deprecated-contextual\"}\n",
-            "  {@param foo: ?}\n",
-            "'{$foo}'\n",
-            "{/template}");
-
-    // This works in the old autoescaper but fails in the new one
-    // The reason is that the new escaper believes we are about to render an unquoted attribute
-    // containing a uri.  So when it sees the quotation marks it barfs because they aren't part
-    // of a known safe scheme
-    // The old autoescaper allowed this because it delayed deciding on the quoting for the attribute
-    // until later.
-    assertRewriteFails(
-        "Error while re-contextualizing template ns.uri "
-            + "in context (Context URI NORMAL URI SPACE_OR_TAG_END START NORMAL):\n"
-            + "- In file no-path:8:2, template ns.uri__C113757: Soy can't prove this URI has a "
-            + "safe scheme at compile time. Either make sure one of ':', '/', '?', or '#' comes "
-            + "before the dynamic value (e.g. foo/{$bar}), or move the print statement to the "
-            + "start of the URI to enable runtime validation (e.g. href=\"{'foo' + $bar}\" "
-            + "instead of href=\"foo{$bar}\").",
-        template);
+            "{template .foo}\n",
+            "  {@param x: ?}\n",
+            "  <iframe srcdoc='&lt;script&gt;{$x}&lt;/script&gt;'></iframe>\n",
+            "{/template}"));
   }
 
   @Test
@@ -230,7 +186,9 @@ public final class ContextualAutoescaperTest {
             "{namespace ns}\n\n",
             "{template .foo autoescape=\"deprecated-contextual\"}\n",
             "  {@param x: ?}\n",
-            // "<meta http-equiv=refresh content='{$x |filterNormalizeUri |escapeHtmlAttribute}'>",
+            "<meta http-equiv=refresh content='{$x |filterNumber}'>",
+            "<meta http-equiv=refresh content='"
+                + "{$x |filterNumber}; URL={$x |filterNormalizeRefreshUri |escapeHtmlAttribute}'>",
             "<a xml:base='{$x |filterNormalizeUri |escapeHtmlAttribute}' href='/foo'>link</a>",
             "<button formaction='{$x |filterNormalizeUri |escapeHtmlAttribute}'>do</button>",
             "<command icon='{$x |filterNormalizeUri |escapeHtmlAttribute}'></command>",
@@ -241,6 +199,8 @@ public final class ContextualAutoescaperTest {
             "<audio src='{$x |filterNormalizeUri |escapeHtmlAttribute}'></audio>",
             "<base href='{$x |filterTrustedResourceUri |escapeHtmlAttribute}'>",
             "<iframe src='{$x |filterTrustedResourceUri |escapeHtmlAttribute}'></iframe>",
+            "<iframe srcdoc='{$x |escapeHtmlHtmlAttribute |escapeHtmlAttribute}'></iframe>",
+            "<iframe srcdoc={$x |escapeHtmlHtmlAttribute |escapeHtmlAttributeNospace}></iframe>",
             "<link rel='shortcut icon' href='{$x |filterNormalizeUri |escapeHtmlAttribute}'>",
             "<link rel='stylesheet' href='{$x |filterTrustedResourceUri |escapeHtmlAttribute}'>",
             "<link rel='{$x |escapeHtmlAttribute}' "
@@ -251,10 +211,8 @@ public final class ContextualAutoescaperTest {
             "{namespace ns}\n\n",
             "{template .foo autoescape=\"deprecated-contextual\"}\n",
             "  {@param x: ?}\n",
-            // TODO(msamuel): Re-enable content since it is often (but often not) used to convey
-            // URLs in place of <link rel> once we can figure out a good way to distinguish the
-            // URL use-cases from others.
-            // "<meta http-equiv=refresh content='{$x}'>\n",
+            "<meta http-equiv=refresh content='{$x}'>",
+            "<meta http-equiv=refresh content='{$x}; URL={$x}'>",
             "<a xml:base='{$x}' href='/foo'>link</a>\n",
             "<button formaction='{$x}'>do</button>\n",
             "<command icon='{$x}'></command>\n",
@@ -265,6 +223,8 @@ public final class ContextualAutoescaperTest {
             "<audio src='{$x}'></audio>\n",
             "<base href='{$x}'>\n",
             "<iframe src='{$x}'></iframe>",
+            "<iframe srcdoc='{$x}'></iframe>",
+            "<iframe srcdoc={$x}></iframe>",
             "<link rel='shortcut icon' href='{$x}'>\n",
             "<link rel='stylesheet' href='{$x}'>\n",
             "<link rel='{$x}' href='{$x}'>\n",
@@ -510,7 +470,9 @@ public final class ContextualAutoescaperTest {
             "bar(\"{$b |escapeJsString}\"); ",
             "baz(\'{$c |escapeJsString}\'); ",
             "boo(/{$d |escapeJsRegex}/.test(s) ? 1 / {$e |escapeJsValue}",
-            " : /{$f |escapeJsRegex}/);",
+            " : /{$f |escapeJsRegex}/); ",
+            "/* {$a |escapeJsString} */ ",
+            "// {$a |escapeJsString}",
             "</script>\n",
             "{/template}"),
         join(
@@ -527,33 +489,9 @@ public final class ContextualAutoescaperTest {
             "bar(\"{$b}\");\n",
             "baz(\'{$c}\');\n",
             "boo(/{$d}/.test(s) ? 1 / {$e} : /{$f}/);\n",
+            "/{nil}* {$a} */\n",
+            "/{nil}/ {$a}\n",
             "</script>\n",
-            "{/template}"));
-  }
-
-  @Test
-  public void testPrintInsideJsCommentRejected() throws Exception {
-    assertRewriteFails(
-        "JS comments cannot contain dynamic values.",
-        join(
-            "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\"}\n",
-            "  {@param x: ?}\n",
-            // NOTE: Lack of whitespace before "//" makes sure it's not interpreted as a Soy
-            // comment.
-            "<script>// {$x}</script>\n",
-            "{/template}"));
-  }
-
-  @Test
-  public void testJsStringInsideQuotesRejected() throws Exception {
-    assertRewriteFails(
-        "Escaping modes [|escapeJsValue] not compatible with (Context JS_SQ_STRING).",
-        join(
-            "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\"}\n",
-            "  {@param world: ?}\n",
-            "<script>alert('Hello {$world |escapeJsValue}');</script>\n",
             "{/template}"));
   }
 
@@ -677,8 +615,8 @@ public final class ContextualAutoescaperTest {
             "  {@param n: ?}\n",
             "  <style>\n",
             "    {for $i in range($n)}\n",
-            "      .foo{$i |filterCssValue}:before {lb}\n",
-            "        content: '{$i |escapeCssString}\n", // Missing close quote.
+            "      .foo{$i}:before {lb}\n",
+            "        content: '{$i}\n", // Missing close quote.
             "      {rb}\n",
             "    {/for}\n",
             "  </style>\n",
@@ -790,128 +728,6 @@ public final class ContextualAutoescaperTest {
   }
 
   @Test
-  public void testSameTemplateCalledInDifferentContexts() throws Exception {
-    assertContextualRewriting(
-        join(
-            "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\"}\n",
-            "  {@param world: ?}\n",
-            "{call .bar data=\"all\" /}",
-            "<script>",
-            "alert('{call ns.bar__C14 data=\"all\" /}');",
-            "</script>\n",
-            "{/template}\n\n",
-            "{template .bar autoescape=\"deprecated-contextual\"}\n",
-            "  {@param world: ?}\n",
-            "Hello, {$world |escapeHtml}!\n",
-            "{/template}\n\n",
-            "{template .bar__C14 autoescape=\"deprecated-contextual\"}\n",
-            "  {@param world: ?}\n",
-            "Hello, {$world |escapeJsString}!\n",
-            "{/template}"),
-        join(
-            "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\"}\n",
-            "  {@param world: ?}\n",
-            "  {call .bar data=\"all\" /}\n",
-            "  <script>\n",
-            "  alert('{call .bar data=\"all\" /}');\n",
-            "  </script>\n",
-            "{/template}\n\n",
-            "{template .bar autoescape=\"deprecated-contextual\"}\n",
-            "  {@param world: ?}\n",
-            "  Hello, {$world}!\n",
-            "{/template}"));
-  }
-
-  @Test
-  public void testRecursiveTemplateGuessWorks() throws Exception {
-    assertContextualRewriting(
-        join(
-            "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\"}\n",
-            "  {@param x: ?}\n",
-            "<script>",
-            "x = [{call ns.countDown__C4010 data=\"all\" /}]",
-            "</script>\n",
-            "{/template}\n\n",
-            "{template .countDown autoescape=\"deprecated-contextual\"}\n",
-            "  {@param x: ?}\n",
-            "{if $x > 0}",
-            "{print --$x |escapeHtml},",
-            "{call .countDown}{param x : $x - 1 /}{/call}",
-            "{/if}\n",
-            "{/template}\n\n",
-            "{template .countDown__C4010 autoescape=\"deprecated-contextual\"}\n",
-            "  {@param x: ?}\n",
-            "{if $x > 0}",
-            "{print --$x |escapeJsValue},",
-            "{call ns.countDown__C4010}{param x : $x - 1 /}{/call}",
-            "{/if}\n",
-            "{/template}"),
-        join(
-            "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\"}\n",
-            "  {@param x: ?}\n",
-            "  <script>\n",
-            "    x = [{call .countDown data=\"all\" /}]\n",
-            "  </script>\n",
-            "{/template}\n\n",
-            "{template .countDown autoescape=\"deprecated-contextual\"}\n",
-            "  {@param x: ?}\n",
-            "  {if $x > 0}{print --$x},{call .countDown}{param x : $x - 1 /}{/call}{/if}\n",
-            "{/template}"));
-  }
-
-  @Test
-  public void testTemplateWithUnknownJsSlash() throws Exception {
-    assertContextualRewriting(
-        join(
-            "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\"}\n",
-            "  {@param declare: ?}\n",
-            "<script>",
-            "{if $declare}var {/if}",
-            "x = {call ns.bar__C4010 /}{\\n}",
-            "y = 2",
-            "  </script>\n",
-            "{/template}\n\n",
-            "{template .bar autoescape=\"deprecated-contextual\"}\n",
-            "  {@param? declare: ?}\n",
-            "42",
-            "{if $declare}",
-            " , ",
-            "{/if}\n",
-            "{/template}\n\n",
-            "{template .bar__C4010 autoescape=\"deprecated-contextual\"}\n",
-            "  {@param? declare: ?}\n",
-            "42",
-            "{if $declare}",
-            " , ",
-            "{/if}\n",
-            "{/template}"),
-        join(
-            "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\"}\n",
-            "  {@param declare: ?}\n",
-            "  <script>\n",
-            "    {if $declare}var{sp}{/if}\n",
-            "    x = {call .bar /}{\\n}\n",
-            // At this point we don't know whether or not a slash would start
-            // a RegExp or not, but we don't see a slash so it doesn't matter.
-            "    y = 2",
-            "  </script>\n",
-            "{/template}\n\n",
-            "{template .bar autoescape=\"deprecated-contextual\"}\n",
-            "  {@param? declare: ?}\n",
-            // A slash following 42 would be a division operator.
-            "  42\n",
-            // But a slash following a comma would be a RegExp.
-            "  {if $declare} , {/if}\n", //
-            "{/template}"));
-  }
-
-  @Test
   public void testTemplateUnknownJsSlashMatters() throws Exception {
     assertRewriteFails(
         "Slash (/) cannot follow the preceding branches since it is unclear whether the slash"
@@ -923,19 +739,13 @@ public final class ContextualAutoescaperTest {
             "  {@param? declare : ?}\n",
             "  <script>\n",
             "    {if $declare}var{sp}{/if}\n",
-            "    x = {call .bar /}\n",
+            "    x = 42\n",
+            "        {if $declare} ,{/if}\n",
             // At this point we don't know whether or not a slash would start
             // a RegExp or not, so this constitutes an error.
             "    / 2",
             "  </script>\n",
-            "{/template}\n\n",
-            "{template .bar autoescape=\"deprecated-contextual\"}\n",
-            "  {@param? declare : ?}\n",
-            // A slash following 42 would be a division operator.
-            "  42\n",
-            // But a slash following a comma would be a RegExp.
-            "  {if $declare} , {/if}\n", //
-            "{/template}"));
+            "{/template}\n"));
   }
 
   @Test
@@ -1156,27 +966,6 @@ public final class ContextualAutoescaperTest {
   }
 
   @Test
-  public void testRecursiveTemplateGuessFails() throws Exception {
-    assertRewriteFails(
-        "Error while re-contextualizing template ns.quot in"
-            + " context (Context JS REGEX):"
-            + "\n- In file no-path:10:27, template ns.quot__C4010: Error while re-contextualizing"
-            + " template ns.quot in context (Context JS_DQ_STRING):"
-            + "\n- In file no-path:10:5, template ns.quot__C13: {if} command without {else} changes"
-            + " context.",
-        join(
-            "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\"}\n",
-            "  <script>\n",
-            "    {call .quot data=\"all\" /}\n",
-            "  </script>\n",
-            "{/template}\n\n",
-            "{template .quot autoescape=\"deprecated-contextual\"}\n",
-            "  \" {if randomInt(10) < 5}{call .quot data=\"all\" /}{/if}\n",
-            "{/template}"));
-  }
-
-  @Test
   public void testUris() throws Exception {
     assertContextualRewriting(
         join(
@@ -1385,15 +1174,13 @@ public final class ContextualAutoescaperTest {
             "{namespace ns}\n\n",
             "{template .foo autoescape=\"deprecated-contextual\"}\n",
             "  {@param x: ?}\n",
-            "  {@param y: ?}\n",
-            "{$x |customEscapeDirective} - {$y |customOtherDirective |escapeHtml}\n",
+            "{$x |customOtherDirective |escapeHtml}\n",
             "{/template}"),
         join(
             "{namespace ns}\n\n",
             "{template .foo autoescape=\"deprecated-contextual\"}\n",
             "  {@param x: ?}\n",
-            "  {@param y: ?}\n",
-            "  {$x |customEscapeDirective} - {$y |customOtherDirective}\n",
+            "  {$x |customOtherDirective}\n",
             "{/template}"));
   }
 
@@ -1417,31 +1204,6 @@ public final class ContextualAutoescaperTest {
             "var x = {call .bar /},", // Not defined in this compilation unit.
             "y = {$y};",
             "</script>\n",
-            "{/template}"));
-  }
-
-  @Test
-  public void testNonContextualCallers() throws Exception {
-    assertContextualRewriting(
-        join(
-            "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\" visibility=\"private\"}\n",
-            "  {@param? x: ?}\n",
-            "{$x |escapeHtml}\n",
-            "{/template}\n\n",
-            "{template .bar autoescape=\"deprecated-noncontextual\"}\n",
-            "  {@param y: ?}\n",
-            "<b>{call .foo /}</b> {$y |escapeHtml}\n",
-            "{/template}"),
-        join(
-            "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\" visibility=\"private\"}\n",
-            "  {@param? x: ?}\n",
-            "{$x}\n",
-            "{/template}\n\n",
-            "{template .bar autoescape=\"deprecated-noncontextual\"}\n",
-            "  {@param y: ?}\n",
-            "<b>{call .foo /}</b> {$y}\n",
             "{/template}"));
   }
 
@@ -1492,8 +1254,8 @@ public final class ContextualAutoescaperTest {
             " * @param pageIndex 0-indexed index of the current page.\n",
             " * @param pageCount Total count of pages.  Strictly greater than pageIndex.\n",
             " */\n",
-            "{template .pagenum visibility=\"private\"}\n",
-            "{$pageIndex |escapeHtml} of {$pageCount |escapeHtml}\n",
+            "{template .pagenum visibility=\"private\" kind=\"text\"}\n",
+            "{$pageIndex |text} of {$pageCount |text}\n",
             "{/template}"),
         join(
             "{namespace soy.examples.codelab}\n\n",
@@ -1509,7 +1271,7 @@ public final class ContextualAutoescaperTest {
             " * @param pageIndex 0-indexed index of the current page.\n",
             " * @param pageCount Total count of pages.  Strictly greater than pageIndex.\n",
             " */\n",
-            "{template .pagenum visibility=\"private\"}\n",
+            "{template .pagenum visibility=\"private\" kind=\"text\"}\n",
             "  {$pageIndex} of {$pageCount}\n",
             "{/template}"));
   }
@@ -1730,23 +1492,6 @@ public final class ContextualAutoescaperTest {
   }
 
   @Test
-  public void testOptionalValuelessAttributes() throws Exception {
-    assertContextualRewriting(
-        join(
-            "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\"}\n",
-            "<input{if c} checked{/if}>",
-            "<input{if c} id={id |customEscapeDirective}{/if}>\n",
-            "{/template}"),
-        join(
-            "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\"}\n",
-            "<input {if c}checked{/if}>",
-            "<input {if c}id={id |customEscapeDirective}{/if}>\n",
-            "{/template}"));
-  }
-
-  @Test
   public void testDirectivesOrderedProperly() throws Exception {
     // The |bidiSpanWrap directive takes HTML and produces HTML, so the |escapeHTML
     // should appear first.
@@ -1762,21 +1507,6 @@ public final class ContextualAutoescaperTest {
             "{template .foo autoescape=\"deprecated-contextual\"}\n",
             "  {@param x: ?}\n",
             "{$x |bidiSpanWrap}\n",
-            "{/template}"));
-
-    // But if we have a |bidiSpanWrap directive in a non HTML context, then don't reorder.
-    assertContextualRewriting(
-        join(
-            "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\"}\n",
-            "  {@param x: ?}\n",
-            "<script>var html = {$x |bidiSpanWrap |escapeJsValue}</script>\n",
-            "{/template}"),
-        join(
-            "{namespace ns}\n\n",
-            "{template .foo autoescape=\"deprecated-contextual\"}\n",
-            "  {@param x: ?}\n",
-            "<script>var html = {$x |bidiSpanWrap}</script>\n",
             "{/template}"));
   }
 
@@ -1855,19 +1585,6 @@ public final class ContextualAutoescaperTest {
   @Test
   public void testTypedLetBlockIsStrictModeAutoescaped() {
     assertRewriteFails(
-        "Autoescape-cancelling print directives like |customEscapeDirective are only allowed "
-            + "in kind=\"text\" blocks. If you really want to over-escape, try using a let block: "
-            + "{let $foo kind=\"text\"}{$y |customEscapeDirective}{/let}{$foo}.",
-        join(
-            "{namespace ns}\n\n",
-            "{template .t autoescape=\"deprecated-contextual\"}\n",
-            "  {@param y: ?}\n",
-            "{let $l kind=\"html\"}\n",
-            "<b>{$y |customEscapeDirective}</b>",
-            "{/let}\n",
-            "{/template}"));
-
-    assertRewriteFails(
         "noAutoescape is not allowed in strict autoescaping mode. Instead, pass in a {param} "
             + "with kind=\"html\" or SanitizedContent.",
         join(
@@ -1894,8 +1611,8 @@ public final class ContextualAutoescaperTest {
             "{/template}"));
 
     assertRewriteFails(
-        "Soy strict autoescaping currently forbids calls to non-strict templates, unless the "
-            + "context is kind=\"text\", since there's no guarantee the callee is safe.",
+        "Soy strict autoescaping currently forbids calls to non-strict templates. "
+            + "Please migrate the callee to strict.",
         join(
             "{namespace ns}\n\n",
             "{template .t autoescape=\"deprecated-contextual\"}\n",
@@ -1908,8 +1625,8 @@ public final class ContextualAutoescaperTest {
             "{/template}"));
 
     assertRewriteFails(
-        "Soy strict autoescaping currently forbids calls to non-strict templates, unless the "
-            + "context is kind=\"text\", since there's no guarantee the callee is safe.",
+        "Soy strict autoescaping currently forbids calls to non-strict templates. "
+            + "Please migrate the callee to strict.",
         join(
             "{namespace ns}\n\n",
             "{template .t autoescape=\"deprecated-contextual\"}\n",
@@ -2017,25 +1734,6 @@ public final class ContextualAutoescaperTest {
 
   @Test
   public void testTypedParamBlockIsStrictModeAutoescaped() {
-    assertRewriteFails(
-        "Autoescape-cancelling print directives like |customEscapeDirective are only allowed "
-            + "in kind=\"text\" blocks. If you really want to over-escape, try using a let block: "
-            + "{let $foo kind=\"text\"}{$y |customEscapeDirective}{/let}{$foo}.",
-        join(
-            "{namespace ns}\n\n",
-            "{template .caller}\n",
-            "  {@param y: ?}\n",
-            "<div>",
-            "{call .callee}",
-            "{param x kind=\"html\"}<b>{$y |customEscapeDirective}</b>{/param}",
-            "{/call}",
-            "</div>\n",
-            "{/template}\n\n",
-            "{template .callee visibility=\"private\"}\n",
-            "  {@param x: ?}\n",
-            "<b>{$x}</b>\n",
-            "{/template}"));
-
     // noAutoescape has a special error message.
     assertRewriteFails(
         "noAutoescape is not allowed in strict autoescaping mode. Instead, pass in a {param} "
@@ -2057,8 +1755,8 @@ public final class ContextualAutoescaperTest {
 
     // NOTE: This error only works for non-extern templates.
     assertRewriteFails(
-        "Soy strict autoescaping currently forbids calls to non-strict templates, unless the "
-            + "context is kind=\"text\", since there's no guarantee the callee is safe.",
+        "Soy strict autoescaping currently forbids calls to non-strict templates. "
+            + "Please migrate the callee to strict.",
         join(
             "{namespace ns}\n\n",
             "{template .caller}\n",
@@ -2145,30 +1843,10 @@ public final class ContextualAutoescaperTest {
             "<b>{$x}</b>\n",
             "{/template}"));
 
-    // Other escape-cancelling directives are still not allowed.
-    assertRewriteFails(
-        "Autoescape-cancelling print directives like |customEscapeDirective are only allowed "
-            + "in kind=\"text\" blocks. If you really want to over-escape, try using a let block: "
-            + "{let $foo kind=\"text\"}{$y |customEscapeDirective}{/let}{$foo}.",
-        join(
-            "{namespace ns}\n\n",
-            "{template .caller autoescape=\"deprecated-contextual\"}\n",
-            "  {@param y: ?}\n",
-            "<div>",
-            "{call .callee}",
-            "{param x kind=\"html\"}<b>{$y |customEscapeDirective}</b>{/param}",
-            "{/call}",
-            "</div>\n",
-            "{/template}\n\n",
-            "{template .callee autoescape=\"deprecated-contextual\" visibility=\"private\"}\n",
-            "  {@param x: ?}\n",
-            "<b>{$x}</b>\n",
-            "{/template}"));
-
     // NOTE: This error only works for non-extern templates.
     assertRewriteFails(
-        "Soy strict autoescaping currently forbids calls to non-strict templates, unless the "
-            + "context is kind=\"text\", since there's no guarantee the callee is safe.",
+        "Soy strict autoescaping currently forbids calls to non-strict templates. "
+            + "Please migrate the callee to strict.",
         join(
             "{namespace ns}\n\n",
             "{template .caller autoescape=\"deprecated-contextual\"}\n",
@@ -2290,17 +1968,6 @@ public final class ContextualAutoescaperTest {
   @Test
   public void testStrictModeRejectsAutoescapeCancellingDirectives() {
     assertRewriteFails(
-        "Autoescape-cancelling print directives like |customEscapeDirective are only allowed "
-            + "in kind=\"text\" blocks. If you really want to over-escape, try using a let block: "
-            + "{let $foo kind=\"text\"}{$foo |customEscapeDirective}{/let}{$foo}.",
-        join(
-            "{namespace ns}\n\n",
-            "{template .main}\n",
-            "  {@param foo: ?}\n",
-            "<b>{$foo|customEscapeDirective}</b>\n",
-            "{/template}"));
-
-    assertRewriteFails(
         "noAutoescape is not allowed in strict autoescaping mode. Instead, pass in a {param} "
             + "with kind=\"html\" or SanitizedContent.",
         join(
@@ -2355,8 +2022,8 @@ public final class ContextualAutoescaperTest {
   @Test
   public void testStrictModeRejectsNonStrictCalls() {
     assertRewriteFails(
-        "Soy strict autoescaping currently forbids calls to non-strict templates, unless the "
-            + "context is kind=\"text\", since there's no guarantee the callee is safe.",
+        "Soy strict autoescaping currently forbids calls to non-strict templates. "
+            + "Please migrate the callee to strict.",
         join(
             "{namespace ns}\n\n",
             "{template .main stricthtml=\"false\"}\n",
@@ -2365,8 +2032,8 @@ public final class ContextualAutoescaperTest {
             "Hello World\n",
             "{/template}"));
     assertRewriteFails(
-        "Soy strict autoescaping currently forbids calls to non-strict templates, unless the "
-            + "context is kind=\"text\", since there's no guarantee the callee is safe.",
+        "Soy strict autoescaping currently forbids calls to non-strict templates. "
+            + "Please migrate the callee to strict.",
         join(
             "{namespace ns}\n\n",
             "{template .main}\n",
@@ -2458,6 +2125,17 @@ public final class ContextualAutoescaperTest {
         "A strict block of kind=\"js\" cannot end in context (Context JS_SQ_STRING). "
             + "Likely cause is an unterminated string literal.",
         join("{namespace ns}\n\n", "{template .main kind=\"js\"}\nvar x='\n{/template}\n"));
+  }
+
+  @Test
+  public void testDeprecatedContextualModeRequiresStartAndEndToBeCompatible() {
+    assertRewriteFails(
+        "A deprecated-contextual block cannot end in context "
+            + "(Context HTML_PCDATA templateNestDepth=1). Likely cause is an unterminated "
+            + "<template> element.",
+        join(
+            "{namespace ns}\n\n",
+            "{template .main autoescape=\"deprecated-contextual\"}<template>{/template}"));
   }
 
   @Test
@@ -2608,7 +2286,6 @@ public final class ContextualAutoescaperTest {
         "{namespace ns}\n\n"
             + "{template .main}\n"
             + "{call .htmltemplate /}"
-            + "<script>var x={call .htmltemplate /};</script>\n"
             + "<script>var x={call .jstemplate /};</script>\n"
             + "{call .externtemplate /}"
             + "\n{/template}\n\n"
@@ -2622,16 +2299,13 @@ public final class ContextualAutoescaperTest {
     TemplateNode mainTemplate = rewrite(source).getChild(0);
     assertWithMessage("Sanity check").that(mainTemplate.getTemplateName()).isEqualTo("ns.main");
     final List<CallNode> callNodes = SoyTreeUtils.getAllNodesOfType(mainTemplate, CallNode.class);
-    assertThat(callNodes).hasSize(4);
+    assertThat(callNodes).hasSize(3);
     assertWithMessage("HTML->HTML escaping should be pruned")
         .that(callNodes.get(0).getEscapingDirectives())
         .isEmpty();
-    assertWithMessage("JS -> HTML call should be escaped")
-        .that(getDirectiveNames(callNodes.get(1).getEscapingDirectives()))
-        .containsExactly("|escapeJsValue");
-    assertWithMessage("JS -> JS pruned").that(callNodes.get(2).getEscapingDirectives()).isEmpty();
+    assertWithMessage("JS -> JS pruned").that(callNodes.get(1).getEscapingDirectives()).isEmpty();
     assertWithMessage("HTML -> extern call should be escaped")
-        .that(getDirectiveNames(callNodes.get(3).getEscapingDirectives()))
+        .that(getDirectiveNames(callNodes.get(2).getEscapingDirectives()))
         .containsExactly("|escapeHtml");
   }
 
@@ -2834,11 +2508,15 @@ public final class ContextualAutoescaperTest {
     return Joiner.on("").join(lines);
   }
 
+  private static String normalizeContextualNames(String s) {
+    return s.replaceAll("__C\\d+", "__C");
+  }
+
   private void assertContextualRewriting(String expectedOutput, String... inputs) {
     String source = rewrite(inputs).toSourceString();
     // remove the nonce, it is just distracting
     source = source.replace(NONCE, "");
-    assertThat(source.trim()).isEqualTo(expectedOutput);
+    assertThat(normalizeContextualNames(source.trim())).isEqualTo(expectedOutput);
   }
 
   public SoyFileNode rewrite(String... inputs) {
@@ -2898,8 +2576,9 @@ public final class ContextualAutoescaperTest {
       rewrite(inputs);
       fail();
     } catch (RewriteError ex) {
-      if (msg != null && !msg.equals(ex.origMessage)) {
-        ComparisonFailure comparisonFailure = new ComparisonFailure("", msg, ex.origMessage);
+      String origMessage = normalizeContextualNames(ex.origMessage);
+      if (msg != null && !msg.equals(origMessage)) {
+        ComparisonFailure comparisonFailure = new ComparisonFailure("", msg, origMessage);
         comparisonFailure.initCause(ex);
         throw comparisonFailure;
       }
@@ -2916,11 +2595,6 @@ public final class ContextualAutoescaperTest {
     @Override
     public Set<Integer> getValidArgsSizes() {
       return ImmutableSet.of(0);
-    }
-
-    @Override
-    public boolean shouldCancelAutoescape() {
-      return false;
     }
 
     @Override

@@ -16,6 +16,7 @@
 
 package com.google.template.soy.passes;
 
+import com.google.errorprone.annotations.concurrent.LazyInit;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.soytree.SoyFileNode;
 
@@ -30,34 +31,20 @@ import com.google.template.soy.soytree.SoyFileNode;
  * 'freeze/unfreeze' API.
  */
 public abstract class CompilerFilePass {
+  @LazyInit private String name;
+
   public abstract void run(SoyFileNode file, IdGenerator nodeIdGen);
 
-  /**
-   * Whether or not this pass should run on files that are dependencies of the current compilation
-   * unit.
-   *
-   * <p>Currently when running the soy compiler incrementally the user will pass Soy files as
-   * sources to be compiled to the output and other Soy files as dependencies and indirect
-   * dependencies in order to type check calls. This flag decides whether or not the pass needs to
-   * run on the dependencies or indirect dependencies. Because we are not generating code for
-   * dependencies most passes do not need to run, in the long run we will change the compiler to no
-   * longer parse dependencies but instead to use an 'object format' to represent the information we
-   * need from dependencies. See b/63212073
-   *
-   * <p>The default is {@code false} since you can assume that the pass has already been run on the
-   * dependency when it was a source in its compilation unit. If overriding to change this to {@code
-   * true}, be sure to provide a justification.
-   */
-  public boolean shouldRunOnDepsAndIndirectDeps() {
-    return false;
-  }
-
   public String name() {
-    String simpleName = getClass().getSimpleName();
-    if (simpleName.endsWith("Pass")) {
-      return simpleName.substring(0, simpleName.length() - "Pass".length());
+    String localName = this.name;
+    if (localName == null) {
+      localName = getClass().getSimpleName();
+      if (localName.endsWith("Pass")) {
+        localName = localName.substring(0, localName.length() - "Pass".length());
+      }
+      this.name = localName;
     }
-    return simpleName;
+    return localName;
   }
 
   @Override

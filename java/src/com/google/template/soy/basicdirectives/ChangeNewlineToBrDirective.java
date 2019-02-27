@@ -65,11 +65,6 @@ final class ChangeNewlineToBrDirective
   }
 
   @Override
-  public boolean shouldCancelAutoescape() {
-    return false;
-  }
-
-  @Override
   @Nonnull
   public SanitizedContent.ContentKind getContentKind() {
     // This directive expects HTML as input and produces HTML as output.

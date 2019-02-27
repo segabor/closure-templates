@@ -16,7 +16,8 @@
 
 package com.google.template.soy.passes;
 
-import com.google.common.base.Preconditions;
+import com.google.common.base.Predicate;
+import com.google.common.base.Predicates;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -27,8 +28,8 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.Sets;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.IdGenerator;
+import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.base.internal.SanitizedContentKind;
-import com.google.template.soy.basicfunctions.FloatFunction;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.error.SoyErrorKind.StyleAllowance;
@@ -36,8 +37,8 @@ import com.google.template.soy.error.SoyErrors;
 import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.FunctionNode;
-import com.google.template.soy.passes.FindIndirectParamsVisitor.IndirectParamsInfo;
-import com.google.template.soy.shared.restricted.SoyFunction;
+import com.google.template.soy.passes.IndirectParamsCalculator.IndirectParamsInfo;
+import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.soytree.CallBasicNode;
 import com.google.template.soy.soytree.CallDelegateNode;
 import com.google.template.soy.soytree.CallNode;
@@ -47,12 +48,12 @@ import com.google.template.soy.soytree.CallParamValueNode;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
-import com.google.template.soy.soytree.TemplateDelegateNode;
+import com.google.template.soy.soytree.TemplateMetadata;
+import com.google.template.soy.soytree.TemplateMetadata.Parameter;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.defn.HeaderParam;
 import com.google.template.soy.soytree.defn.TemplateParam;
-import com.google.template.soy.soytree.defn.TemplateParam.DeclLoc;
 import com.google.template.soy.types.FloatType;
 import com.google.template.soy.types.IntType;
 import com.google.template.soy.types.SanitizedType;
@@ -107,17 +108,18 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
   /** The error reporter that is used in this compiler pass. */
   private final ErrorReporter errorReporter;
 
-  private static final ImmutableTable<SoyType, SoyType, SoyFunction> AVAILABLE_CALL_SITE_COERCIONS =
-      new ImmutableTable.Builder<SoyType, SoyType, SoyFunction>()
-          .put(IntType.getInstance(), FloatType.getInstance(), FloatFunction.INSTANCE)
-          .build();
+  private static final ImmutableTable<SoyType, SoyType, BuiltinFunction>
+      AVAILABLE_CALL_SITE_COERCIONS =
+          new ImmutableTable.Builder<SoyType, SoyType, BuiltinFunction>()
+              .put(IntType.getInstance(), FloatType.getInstance(), BuiltinFunction.TO_FLOAT)
+              .build();
 
   CheckTemplateCallsPass(ErrorReporter errorReporter) {
     this.errorReporter = errorReporter;
   }
 
   @Override
-  public void run(
+  public Result run(
       ImmutableList<SoyFileNode> sourceFiles, IdGenerator idGenerator, TemplateRegistry registry) {
     CheckCallsHelper helper = new CheckCallsHelper(registry);
     for (SoyFileNode file : sourceFiles) {
@@ -132,6 +134,8 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
         }
       }
     }
+
+    return Result.CONTINUE;
   }
 
   private final class CheckCallsHelper {
@@ -140,16 +144,16 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
     private final TemplateRegistry templateRegistry;
 
     /** Map of all template parameters, both explicit and implicit, organized by template. */
-    private final Map<TemplateNode, TemplateParamTypes> paramTypesMap = new HashMap<>();
+    private final Map<TemplateMetadata, TemplateParamTypes> paramTypesMap = new HashMap<>();
 
     CheckCallsHelper(TemplateRegistry registry) {
       this.templateRegistry = registry;
     }
 
     void checkCall(TemplateNode callerTemplate, CallBasicNode node) {
-      TemplateNode callee = templateRegistry.getBasicTemplate(node.getCalleeName());
+      TemplateMetadata callee = templateRegistry.getBasicTemplateOrElement(node.getCalleeName());
       if (callee != null) {
-        Set<TemplateParam> paramsToRuntimeCheck = checkCallParamTypes(callerTemplate, node, callee);
+        Predicate<String> paramsToRuntimeCheck = checkCallParamTypes(callerTemplate, node, callee);
         node.setParamsToRuntimeCheck(paramsToRuntimeCheck);
         checkCallParamNames(node, callee);
         checkPassesUnusedParams(node, callee);
@@ -158,16 +162,16 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
     }
 
     void checkCall(TemplateNode callerTemplate, CallDelegateNode node) {
-      ImmutableMap.Builder<TemplateDelegateNode, ImmutableList<TemplateParam>>
-          paramsToCheckByTemplate = ImmutableMap.builder();
-      ImmutableList<TemplateDelegateNode> potentialCallees =
+      ImmutableMap.Builder<String, Predicate<String>> paramsToCheckByTemplate =
+          ImmutableMap.builder();
+      ImmutableList<TemplateMetadata> potentialCallees =
           templateRegistry
               .getDelTemplateSelector()
               .delTemplateNameToValues()
               .get(node.getDelCalleeName());
-      for (TemplateDelegateNode delTemplate : potentialCallees) {
-        Set<TemplateParam> params = checkCallParamTypes(callerTemplate, node, delTemplate);
-        paramsToCheckByTemplate.put(delTemplate, ImmutableList.copyOf(params));
+      for (TemplateMetadata delTemplate : potentialCallees) {
+        Predicate<String> params = checkCallParamTypes(callerTemplate, node, delTemplate);
+        paramsToCheckByTemplate.put(delTemplate.getTemplateName(), params);
         checkCallParamNames(node, delTemplate);
         // We don't call checkPassesUnusedParams here because we might not know all delegates.
       }
@@ -184,8 +188,8 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
      * Returns the subset of {@link TemplateNode#getParams() callee params} that require runtime
      * type checking.
      */
-    private Set<TemplateParam> checkCallParamTypes(
-        TemplateNode callerTemplate, CallNode call, TemplateNode callee) {
+    private Predicate<String> checkCallParamTypes(
+        TemplateNode callerTemplate, CallNode call, TemplateMetadata callee) {
       TemplateParamTypes calleeParamTypes = getTemplateParamTypes(callee);
       // Explicit params being passed by the CallNode
       Set<String> explicitParams = new HashSet<>();
@@ -287,25 +291,7 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
         }
       }
 
-      /**
-       * We track the set as names above and transform to TemplateParams here because the above
-       * loops are over the {param}s of the caller and TemplateParams of the callers template, so
-       * all we have are the names of the parameters. To convert them to a TemplateParam of the
-       * callee we need to match the names and it is easier to do that as one pass at the end
-       * instead of iteratively throughout.
-       */
-      Set<TemplateParam> paramsToRuntimeCheck = new HashSet<>();
-      for (TemplateParam param : callee.getParams()) {
-        if (paramNamesToRuntimeCheck.remove(param.name())) {
-          paramsToRuntimeCheck.add(param);
-        }
-      }
-      // sanity check
-      Preconditions.checkState(
-          paramNamesToRuntimeCheck.isEmpty(),
-          "Unexpected callee params %s",
-          paramNamesToRuntimeCheck);
-      return paramsToRuntimeCheck;
+      return Predicates.in(paramNamesToRuntimeCheck);
     }
 
     /**
@@ -336,7 +322,7 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
         }
       }
       for (SoyType coercionTargetType : AVAILABLE_CALL_SITE_COERCIONS.row(argType).keySet()) {
-        SoyFunction function = null;
+        BuiltinFunction function = null;
         for (SoyType formalType : declaredTypes) {
           if (!formalType.isAssignableFrom(coercionTargetType)) {
             continue;
@@ -356,7 +342,11 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
         ExprRootNode root = paramNode.getExpr();
 
         // create a node to wrap param in coercion
-        FunctionNode newParam = new FunctionNode(function, root.getRoot().getSourceLocation());
+        FunctionNode newParam =
+            new FunctionNode(
+                Identifier.create(function.getName(), root.getRoot().getSourceLocation()),
+                function,
+                root.getRoot().getSourceLocation());
         newParam.setType(coercionTargetType);
 
         newParam.addChild(root.getRoot());
@@ -400,7 +390,11 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
           // migration tool (e.g. upgrading a callee's param to `map` without inserting
           // `legacyObjectMapToMap` calls in the caller). But it may be useful in order to work with
           // recursive map-like structures such as JSON.
-          && SoyTypes.tryRemoveNull(formalType).getKind() != Kind.MAP) {
+          && SoyTypes.tryRemoveNull(formalType).getKind() != Kind.MAP
+          // ve and ve_data usage is limited to prevent abuse, so don't allow the unknown type to be
+          // upgraded to the ve or ve_data types.
+          && SoyTypes.tryRemoveNull(formalType).getKind() != Kind.VE
+          && SoyTypes.tryRemoveNull(formalType).getKind() != Kind.VE_DATA) {
         // Special rules for unknown / any
         //
         // This check disabled: We now allow maps created from protos to be passed
@@ -432,28 +426,28 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
     /**
      * Get the parameter types for a callee.
      *
-     * @param node The template being called.
+     * @param callee The template being called.
      * @return The set of template parameters, both explicit and implicit.
      */
-    private TemplateParamTypes getTemplateParamTypes(TemplateNode node) {
-      TemplateParamTypes paramTypes = paramTypesMap.get(node);
+    private TemplateParamTypes getTemplateParamTypes(TemplateMetadata callee) {
+      TemplateParamTypes paramTypes = paramTypesMap.get(callee);
       if (paramTypes == null) {
         paramTypes = new TemplateParamTypes();
 
         // Store all of the explicitly declared param types
-        for (TemplateParam param : node.getParams()) {
-          if (param.declLoc() == DeclLoc.SOY_DOC) {
+        for (Parameter param : callee.getParameters()) {
+          if (param.isDeclaredInSoyDoc()) {
             paramTypes.isStrictlyTyped = false;
           }
-          Preconditions.checkNotNull(param.type());
-          paramTypes.params.put(param.name(), param.type());
+          paramTypes.params.put(param.getName(), param.getType());
         }
 
         // Store indirect params where there's no conflict with explicit params.
         // Note that we don't check here whether the explicit type and the implicit
         // types are in agreement - that will be done when it's this template's
         // turn to be analyzed as a caller.
-        IndirectParamsInfo ipi = new FindIndirectParamsVisitor(templateRegistry).exec(node);
+        IndirectParamsInfo ipi =
+            new IndirectParamsCalculator(templateRegistry).calculateIndirectParams(callee);
         for (String indirectParamName : ipi.indirectParamTypes.keySet()) {
           if (paramTypes.params.containsKey(indirectParamName)) {
             continue;
@@ -464,7 +458,7 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
         }
 
         // Save the param types map
-        paramTypesMap.put(node, paramTypes);
+        paramTypesMap.put(callee, paramTypes);
       }
       return paramTypes;
     }
@@ -474,7 +468,7 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
      * template from HTML context.
      */
     private void checkStrictHtml(
-        TemplateNode callerTemplate, CallNode caller, @Nullable TemplateNode callee) {
+        TemplateNode callerTemplate, CallNode caller, @Nullable TemplateMetadata callee) {
       // We should only check strict html if 1) the current template
       // sets stricthtml to true, and 2) the current call node is in HTML context.
       // Then we report an error if the callee is HTML but is not a strict HTML template.
@@ -495,7 +489,7 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
      *   <li>Required parameters in callee template are not presented in the caller.
      * </ul>
      */
-    private void checkCallParamNames(CallNode caller, TemplateNode callee) {
+    private void checkCallParamNames(CallNode caller, TemplateMetadata callee) {
       if (callee != null) {
         // Get param keys passed by caller.
         Set<String> callerParamKeys = Sets.newHashSet();
@@ -514,9 +508,11 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
         if (!caller.isPassingData()) {
           // Check param keys required by callee.
           List<String> missingParamKeys = Lists.newArrayListWithCapacity(2);
-          for (TemplateParam calleeParam : callee.getParams()) {
-            if (calleeParam.isRequired() && !callerParamKeys.contains(calleeParam.name())) {
-              missingParamKeys.add(calleeParam.name());
+          for (Parameter calleeParam : callee.getParameters()) {
+            if (!calleeParam.isInjected()
+                && calleeParam.isRequired()
+                && !callerParamKeys.contains(calleeParam.getName())) {
+              missingParamKeys.add(calleeParam.getName());
             }
           }
           // Report errors.
@@ -532,18 +528,13 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
     }
 
     /** Reports error if unused params are passed to a template. */
-    private void checkPassesUnusedParams(CallNode caller, TemplateNode callee) {
+    private void checkPassesUnusedParams(CallNode caller, TemplateMetadata callee) {
       if (caller.numChildren() == 0) {
         return;
       }
-      // If we are calling a deprecatedV1 template, we cannot check it since the declarations are
-      // likely wrong.
-      if (callee.isDeprecatedV1()) {
-        return;
-      }
       Set<String> paramNames = Sets.newHashSet();
-      for (TemplateParam param : callee.getParams()) {
-        paramNames.add(param.name());
+      for (Parameter param : callee.getParameters()) {
+        paramNames.add(param.getName());
       }
       IndirectParamsInfo ipi = null; // Compute only if necessary.
       for (CallParamNode callerParam : caller.getChildren()) {
@@ -552,7 +543,7 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
           continue;
         }
         if (ipi == null) {
-          ipi = new FindIndirectParamsVisitor(templateRegistry).exec(callee);
+          ipi = new IndirectParamsCalculator(templateRegistry).calculateIndirectParams(callee);
           // If the callee has unknown indirect params then we can't validate that this isn't one
           // of them. So just give up.
           if (ipi.mayHaveIndirectParamsInExternalCalls
