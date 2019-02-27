@@ -80,9 +80,7 @@ public class SwiftSrcMain {
       ErrorReporter errorReporter)
       throws IOException {
 
-    ImmutableList<SoyFileNode> srcsToCompile =
-        ImmutableList.copyOf(
-            Iterables.filter(soyTree.getChildren(), SoyFileNode.MATCH_SRC_FILENODE));
+    ImmutableList<SoyFileNode> srcsToCompile = ImmutableList.copyOf(soyTree.getChildren());
 
     // Determine the output paths.
     List<String> soyNamespaces = getSoyNamespaces(soyTree);

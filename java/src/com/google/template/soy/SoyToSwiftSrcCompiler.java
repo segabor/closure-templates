@@ -7,7 +7,6 @@ import java.util.List;
 import org.kohsuke.args4j.Option;
 
 import com.google.common.collect.ImmutableMap;
-import com.google.template.soy.basetree.SyntaxVersion;
 import com.google.template.soy.swiftsrc.SoySwiftSrcOptions;
 
 public class SoyToSwiftSrcCompiler extends AbstractSoyCompiler {
@@ -46,7 +45,7 @@ public class SoyToSwiftSrcCompiler extends AbstractSoyCompiler {
   }
 
   @Override
-  void compile(SoyFileSet.Builder sfsBuilder) throws IOException {
+  protected void compile(SoyFileSet.Builder sfsBuilder) throws IOException {
     // Disallow external call entirely in Swift.
     sfsBuilder.setAllowExternalCalls(false);
     // Require strict templates in Swift.
