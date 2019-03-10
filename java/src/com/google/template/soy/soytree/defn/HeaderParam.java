@@ -16,12 +16,14 @@
 
 package com.google.template.soy.soytree.defn;
 
-import com.google.common.base.Preconditions;
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.ast.TypeNode;
 import javax.annotation.Nullable;
-import javax.annotation.concurrent.Immutable;
 
 /**
  * A parameter declared in the template header.
@@ -29,26 +31,24 @@ import javax.annotation.concurrent.Immutable;
  * <p>Important: Do not use outside of Soy code (treat as superpackage-private).
  *
  */
-@Immutable
 public final class HeaderParam extends TemplateParam {
   private final TypeNode typeNode;
 
   public HeaderParam(
       String name,
       SourceLocation nameLocation,
-      SoyType type,
-      TypeNode typeNode,
+      @Nullable TypeNode typeNode,
       boolean isRequired,
       boolean isInjected,
-      @Nullable String desc) {
-    super(name, type, isRequired, isInjected, desc, nameLocation);
-    Preconditions.checkArgument(type != null);
+      @Nullable String desc,
+      @Nullable ExprNode defaultValue) {
+    super(name, /*type=*/ null, isRequired, isInjected, desc, nameLocation, defaultValue);
     this.typeNode = typeNode;
   }
 
-  @Override
-  public DeclLoc declLoc() {
-    return DeclLoc.HEADER;
+  private HeaderParam(HeaderParam old) {
+    super(old);
+    this.typeNode = old.typeNode == null ? null : old.typeNode.copy();
   }
 
   /**
@@ -62,11 +62,13 @@ public final class HeaderParam extends TemplateParam {
   }
 
   @Override
-  public HeaderParam copyEssential() {
-    // Note: 'desc', nameLocation is nonessential.
-    HeaderParam headerParam =
-        new HeaderParam(name(), null, type, null, isRequired(), isInjected(), null);
-    headerParam.setLocalVariableIndex(localVariableIndex());
-    return headerParam;
+  public void setType(SoyType type) {
+    checkState(this.type == null, "type has already been assigned");
+    this.type = checkNotNull(type);
+  }
+
+  @Override
+  public HeaderParam copy() {
+    return new HeaderParam(this);
   }
 }

@@ -24,7 +24,6 @@ import com.google.common.io.CharSource;
 import com.google.protobuf.TextFormat;
 import com.google.protobuf.TextFormat.ParseException;
 import com.google.template.soy.SoyFileSetParserBuilder;
-import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.base.internal.SoyFileSupplier;
 import com.google.template.soy.base.internal.StableSoyFileSupplier;
 import com.google.template.soy.error.ErrorReporter;
@@ -135,38 +134,6 @@ public class SoyConformanceTest {
   }
 
   @Test
-  public void testSoyDocParamsCauseErrorWhenSoyDocParamsAreBanned() {
-    assertViolation(
-        "requirement: {\n"
-            + "  custom: {\n"
-            + "    java_class: 'com.google.template.soy.conformance.NoSoyDocParams'\n"
-            + "  }\n"
-            + "  error_message: 'foo'"
-            + "}",
-        "{namespace ns}\n"
-            + "/** @param foo */\n"
-            + "{template .bar}\n"
-            + "  {$foo}\n"
-            + "{/template}\n");
-  }
-
-  @Test
-  public void testHeaderParamsDoNotCauseErrorWhenSoyDocParamsAreBanned() {
-    assertNoViolation(
-        "requirement: {\n"
-            + "  custom: {\n"
-            + "    java_class: 'com.google.template.soy.conformance.NoSoyDocParams'\n"
-            + "  }\n"
-            + "  error_message: 'foo'"
-            + "}",
-        "{namespace ns}\n"
-            + "{template .bar}\n"
-            + "  {@param foo: string}\n"
-            + "  {$foo}\n"
-            + "{/template}\n");
-  }
-
-  @Test
   public void testWhitelistedFileDoesNotCauseErrors() {
     assertNoViolation(
         "requirement: {\n"
@@ -182,7 +149,6 @@ public class SoyConformanceTest {
                     + "{template .foo}\n"
                     + "{checkNotNull(['xxx', 'bar', 'yyy', 'baz'])}\n"
                     + "{/template}"),
-            SoyFileKind.SRC,
             "foo/bar/baz.soy"));
   }
 
@@ -202,7 +168,6 @@ public class SoyConformanceTest {
                     + "{template .foo}\n"
                     + "{checkNotNull(['xxx', 'bar', 'yyy', 'baz'])}\n"
                     + "{/template}"),
-            SoyFileKind.SRC,
             "a/b/c/foo/bar/baz.soy"));
   }
 
@@ -222,7 +187,6 @@ public class SoyConformanceTest {
                     + "{template .foo}\n"
                     + "{checkNotNull(['xxx', 'bar', 'yyy', 'baz'])}\n"
                     + "{/template}"),
-            SoyFileKind.SRC,
             "a/b/c/foo/bar/baz.soy"));
   }
 
@@ -421,7 +385,6 @@ public class SoyConformanceTest {
                     + "{template .foo}\n"
                     + "<script onload='foo();'></script>\n"
                     + "{/template}"),
-            SoyFileKind.SRC,
             "foo/bar/baz.soy"));
   }
 
@@ -443,11 +406,9 @@ public class SoyConformanceTest {
                     + "{template .foo}\n"
                     + "<script onload='foo();'></script>\n"
                     + "{/template}"),
-            SoyFileKind.SRC,
             "foo/bar/baz.soy"),
         new StableSoyFileSupplier(
             CharSource.wrap("{namespace ns}\n" + "{template .noViolation}{/template}"),
-            SoyFileKind.SRC,
             "foo/bar/quux.soy"));
   }
 

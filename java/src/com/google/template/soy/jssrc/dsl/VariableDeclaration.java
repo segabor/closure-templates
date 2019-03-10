@@ -18,8 +18,8 @@ package com.google.template.soy.jssrc.dsl;
 
 import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableSet;
+import com.google.errorprone.annotations.Immutable;
 import javax.annotation.Nullable;
-import javax.annotation.concurrent.Immutable;
 
 /** Represents a variable declaration. */
 @AutoValue
@@ -84,6 +84,9 @@ public abstract class VariableDeclaration extends Statement {
     }
     if (rhs() != null) {
       rhs().collectRequires(collector);
+    }
+    if (jsDoc() != null) {
+      jsDoc().collectRequires(collector);
     }
   }
 

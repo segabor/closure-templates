@@ -28,7 +28,6 @@ import com.google.common.primitives.UnsignedLongs;
 import com.google.protobuf.Message;
 import com.google.protobuf.ProtocolMessageEnum;
 import com.google.template.soy.data.Dir;
-import com.google.template.soy.data.LogStatement;
 import com.google.template.soy.data.LoggingAdvisingAppendable;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
 import com.google.template.soy.data.SoyLegacyObjectMap;
@@ -38,6 +37,8 @@ import com.google.template.soy.data.SoyProtoValue;
 import com.google.template.soy.data.SoyRecord;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.SoyValueProvider;
+import com.google.template.soy.data.SoyVisualElement;
+import com.google.template.soy.data.SoyVisualElementData;
 import com.google.template.soy.data.UnsafeSanitizedContentOrdainer;
 import com.google.template.soy.data.internal.DictImpl;
 import com.google.template.soy.data.internal.ListImpl;
@@ -415,9 +416,9 @@ public abstract class MethodRef {
   public static final MethodRef LOGGING_ADVISING_APPENDABLE_BUFFERING =
       create(LoggingAdvisingAppendable.class, "buffering").asNonNullable();
 
-  public static final MethodRef LOG_STATEMENT_CREATE =
-      create(LogStatement.class, "create", long.class, Message.class, boolean.class)
-          .asNonNullable();
+  public static final MethodRef CREATE_LOG_STATEMENT =
+      MethodRef.create(
+          JbcSrcRuntime.class, "createLogStatement", SoyVisualElementData.class, boolean.class);
 
   public static final MethodRef CLOSEABLE_CLOSE = MethodRef.create(Closeable.class, "close");
 
@@ -426,6 +427,12 @@ public abstract class MethodRef {
 
   public static final MethodRef PROTOCOL_ENUM_GET_NUMBER =
       MethodRef.create(ProtocolMessageEnum.class, "getNumber").asCheap();
+
+  public static final MethodRef SOY_VISUAL_ELEMENT_CREATE =
+      MethodRef.create(SoyVisualElement.class, "create", long.class, String.class);
+
+  public static final MethodRef SOY_VISUAL_ELEMENT_DATA_CREATE =
+      MethodRef.create(SoyVisualElementData.class, "create", SoyVisualElement.class, Message.class);
 
   public static MethodRef create(Class<?> clazz, String methodName, Class<?>... params) {
     java.lang.reflect.Method m;

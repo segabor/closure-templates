@@ -23,13 +23,13 @@ import static com.google.template.soy.jssrc.dsl.Expression.LITERAL_NULL;
 import static com.google.template.soy.jssrc.dsl.Expression.LITERAL_TRUE;
 import static com.google.template.soy.jssrc.dsl.Expression.arrayLiteral;
 import static com.google.template.soy.jssrc.dsl.Expression.construct;
-import static com.google.template.soy.jssrc.dsl.Expression.dontTrustPrecedenceOf;
 import static com.google.template.soy.jssrc.dsl.Expression.id;
 import static com.google.template.soy.jssrc.dsl.Expression.not;
 import static com.google.template.soy.jssrc.dsl.Expression.number;
 import static com.google.template.soy.jssrc.dsl.Expression.operation;
 import static com.google.template.soy.jssrc.dsl.Expression.stringLiteral;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_ARRAY_MAP;
+import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_DEBUG;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_GET_CSS_NAME;
 import static com.google.template.soy.jssrc.internal.JsRuntime.JS_TO_PROTO_PACK_FN;
 import static com.google.template.soy.jssrc.internal.JsRuntime.OPT_DATA;
@@ -39,6 +39,8 @@ import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_EQUALS;
 import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_MAP_MAYBE_COERCE_KEY_TO_STRING;
 import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_MAP_POPULATE;
 import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_NEWMAPS_TRANSFORM_VALUES;
+import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_VISUAL_ELEMENT;
+import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_VISUAL_ELEMENT_DATA;
 import static com.google.template.soy.jssrc.internal.JsRuntime.XID;
 import static com.google.template.soy.jssrc.internal.JsRuntime.extensionField;
 import static com.google.template.soy.jssrc.internal.JsRuntime.protoConstructor;
@@ -48,9 +50,9 @@ import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import com.google.common.collect.Iterables;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
+import com.google.protobuf.Descriptors.FileDescriptor.Syntax;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.exprtree.AbstractReturningExprNodeVisitor;
@@ -80,25 +82,26 @@ import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.VarDefn;
 import com.google.template.soy.exprtree.VarRefNode;
+import com.google.template.soy.exprtree.VeLiteralNode;
 import com.google.template.soy.internal.proto.ProtoUtils;
 import com.google.template.soy.jssrc.dsl.CodeChunk;
-import com.google.template.soy.jssrc.dsl.CodeChunk.RequiresCollector;
 import com.google.template.soy.jssrc.dsl.Expression;
 import com.google.template.soy.jssrc.dsl.GoogRequire;
+import com.google.template.soy.jssrc.dsl.SoyJsPluginUtils;
 import com.google.template.soy.jssrc.dsl.Statement;
 import com.google.template.soy.jssrc.internal.NullSafeAccumulator.FieldAccess;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcFunction;
-import com.google.template.soy.jssrc.restricted.SoyLibraryAssistedJsSrcFunction;
 import com.google.template.soy.logging.LoggingFunction;
 import com.google.template.soy.plugin.javascript.restricted.SoyJavaScriptSourceFunction;
 import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.soytree.LetContentNode;
 import com.google.template.soy.soytree.MsgFallbackGroupNode;
 import com.google.template.soy.soytree.defn.LocalVar;
-import com.google.template.soy.soytree.defn.TemplatePropVar;
+import com.google.template.soy.soytree.defn.TemplateStateVar;
 import com.google.template.soy.types.SoyProtoType;
 import com.google.template.soy.types.SoyType;
+import com.google.template.soy.types.SoyType.Kind;
 import com.google.template.soy.types.SoyTypes;
 import com.google.template.soy.types.UnionType;
 import java.util.ArrayList;
@@ -197,21 +200,21 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
     Expression source = OPT_DATA;
     if (varDefn.isInjected()) {
       source = OPT_IJ_DATA;
-    } else if (varDefn.kind() == VarDefn.Kind.PROP) {
-      return genCodeForPropAccess(paramName, (TemplatePropVar) varDefn);
+    } else if (varDefn.kind() == VarDefn.Kind.STATE) {
+      return genCodeForStateAccess(paramName, (TemplateStateVar) varDefn);
     }
     return source.dotAccess(paramName);
   }
 
   /**
-   * Method that returns code to access a named prop parameter.
+   * Method that returns code to access a named state parameter.
    *
-   * @param paramName The name of the prop parameter.
-   * @param propVar The variable definition of the prop parameter
+   * @param paramName The name of the state parameter.
+   * @param stateVar The variable definition of the state parameter
    * @return The code to access the value of that parameter.
    */
-  protected Expression genCodeForPropAccess(String paramName, TemplatePropVar propVar) {
-    return visit(propVar.initialValue());
+  protected Expression genCodeForStateAccess(String paramName, TemplateStateVar stateVar) {
+    return Expression.id(paramName);
   }
 
   @Override
@@ -363,31 +366,17 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
           NullSafeAccumulator base = visitNullSafeNode(itemAccess.getBaseExprChild());
           ExprNode keyNode = itemAccess.getKeyExprChild();
           SoyType baseType = itemAccess.getBaseExprChild().getType();
-          return isSoyMapAtRuntime(baseType)
+          return SoyTypes.isKindOrUnionOfKind(SoyTypes.removeNull(baseType), Kind.MAP)
               ? base.mapGetAccess(genMapKeyCode(keyNode), itemAccess.isNullSafe()) // soy.Map
               : base.bracketAccess(
-                  visit(keyNode), itemAccess.isNullSafe()); // vanilla bracket access
+                  // The key type may not match JsCompiler's type system (passing number as enum, or
+                  // nullable proto field).  I could instead cast this to the map's key type.
+                  visit(keyNode).castAs("?"), itemAccess.isNullSafe()); // vanilla bracket access
         }
 
       default:
         return new NullSafeAccumulator(visit(node));
     }
-  }
-
-  /** Returns true if this type will be represented by a {@code SoyMap} at runtime. */
-  private static boolean isSoyMapAtRuntime(SoyType type) {
-    if (type.getKind() == SoyType.Kind.MAP) {
-      return true;
-    }
-    if (type.getKind() == SoyType.Kind.UNION) {
-      for (SoyType member : ((UnionType) type).getMembers()) {
-        if (member.getKind() != SoyType.Kind.NULL && member.getKind() != SoyType.Kind.MAP) {
-          return false;
-        }
-      }
-      return true;
-    }
-    return false;
   }
 
   /**
@@ -550,6 +539,14 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
                 : sanitizedContentPackFn.call(fieldValue);
       }
 
+      if (fieldDesc.getType() == FieldDescriptor.Type.ENUM && !fieldDesc.isRepeated()) {
+        // At runtime, this may be null, but we can't tell if this is a non-nullable proto3 field.
+        fieldValue =
+            fieldValue.castAs(
+                (fieldDesc.getFile().getSyntax() == Syntax.PROTO3 ? "!" : "?")
+                    + ProtoUtils.calculateJsEnumName(fieldDesc.getEnumType()));
+      }
+
       if (fieldDesc.isExtension()) {
         Expression extInfo = extensionField(fieldDesc);
         initialStatements.add(
@@ -606,11 +603,9 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
           // this is a no-op in js
           return visit(node.getChild(0));
         case DEBUG_SOY_TEMPLATE_INFO:
-          return Expression.dottedIdNoRequire("goog.DEBUG")
-              .and(JsRuntime.SOY_DEBUG_SOY_TEMPLATE_INFO, codeGenerator);
+          return GOOG_DEBUG.and(JsRuntime.SOY_DEBUG_SOY_TEMPLATE_INFO, codeGenerator);
         case VE_DATA:
-          // TODO(b/71641483): Implement this once we have ve runtime objects.
-          throw new UnsupportedOperationException();
+          return visitVeDataFunction(node);
         case REMAINDER:
         case MSG_WITH_ID:
           // should have been removed earlier in the compiler
@@ -638,37 +633,25 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
         soyFunction = getUnknownFunction(node.getFunctionName(), node.numChildren());
       }
 
-      List<Expression> args = visitChildren(node);
-      List<JsExpr> functionInputs = new ArrayList<>(args.size());
-      List<Statement> initialStatements = new ArrayList<>();
-      RequiresCollector.IntoImmutableSet collector = new RequiresCollector.IntoImmutableSet();
-
-      // SoyJsSrcFunction doesn't understand CodeChunks; it needs JsExprs.
-      // Grab the JsExpr for each CodeChunk arg to deliver to the SoyToJsSrcFunction as input.
-      for (Expression arg : args) {
-        arg.collectRequires(collector);
-        functionInputs.add(arg.singleExprOrName());
-        Iterables.addAll(initialStatements, arg.initialStatements());
-      }
-
-      // Compute the function on the JsExpr inputs.
-      SoyJsSrcFunction soyJsSrcFunction = (SoyJsSrcFunction) soyFunction;
-      if (soyJsSrcFunction instanceof SoyLibraryAssistedJsSrcFunction) {
-        for (String name :
-            ((SoyLibraryAssistedJsSrcFunction) soyJsSrcFunction).getRequiredJsLibNames()) {
-          collector.add(GoogRequire.create(name));
-        }
-      }
-
-      JsExpr outputExpr = soyJsSrcFunction.computeForJsSrc(functionInputs);
-      Expression functionOutput = dontTrustPrecedenceOf(outputExpr, collector.get());
-
-      return functionOutput.withInitialStatements(initialStatements);
+      return SoyJsPluginUtils.applySoyFunction(
+          (SoyJsSrcFunction) soyFunction,
+          visitChildren(node),
+          node.getSourceLocation(),
+          errorReporter);
     }
   }
 
+  protected JsType jsTypeFor(SoyType type) {
+    return JsType.forJsSrcStrict(type);
+  }
+
   private Expression visitCheckNotNullFunction(FunctionNode node) {
-    return SOY_CHECK_NOT_NULL.call(visit(node.getChild(0)));
+    return SOY_CHECK_NOT_NULL
+        .call(visit(node.getChild(0)))
+        // It is impossible to make a Closure template function that takes T|null and returns T.  To
+        // avoid JSCompiler errors when passing checkNotNull to a function that doesn't accept null,
+        // we manually cast away the nullness.
+        .castAs(jsTypeFor(SoyTypes.tryRemoveNull(node.getChild(0).getType())).typeExpr());
   }
 
   private Expression visitIsFirstFunction(FunctionNode node) {
@@ -715,6 +698,10 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
     return Expression.fromExpr(jsExpr, ImmutableList.<GoogRequire>of());
   }
 
+  private Expression visitVeDataFunction(FunctionNode node) {
+    return construct(SOY_VISUAL_ELEMENT_DATA, visit(node.getChild(0)), visit(node.getChild(1)));
+  }
+
   private static SoyJsSrcFunction getUnknownFunction(final String name, final int argSize) {
     return new SoyJsSrcFunction() {
       @Override
@@ -736,5 +723,17 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
         return ImmutableSet.of(argSize);
       }
     };
+  }
+
+  @Override
+  protected Expression visitVeLiteralNode(VeLiteralNode node) {
+    return Expression.ifExpression(
+            GOOG_DEBUG,
+            construct(
+                SOY_VISUAL_ELEMENT,
+                Expression.number(node.getId()),
+                Expression.stringLiteral(node.getName().identifier())))
+        .setElse(construct(SOY_VISUAL_ELEMENT, Expression.number(node.getId())))
+        .build(codeGenerator);
   }
 }

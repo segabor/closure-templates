@@ -40,6 +40,8 @@ import com.google.template.soy.data.SoyProtoValue;
 import com.google.template.soy.data.SoyRecord;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.SoyValueProvider;
+import com.google.template.soy.data.SoyVisualElement;
+import com.google.template.soy.data.SoyVisualElementData;
 import com.google.template.soy.data.restricted.IntegerData;
 import com.google.template.soy.data.restricted.SoyString;
 import com.google.template.soy.jbcsrc.api.RenderResult;
@@ -104,6 +106,8 @@ public final class BytecodeUtils {
   public static final Type STRING_TYPE = Type.getType(String.class);
   public static final Type THROWABLE_TYPE = Type.getType(Throwable.class);
   public static final Type ILLEGAL_STATE_EXCEPTION_TYPE = Type.getType(IllegalStateException.class);
+  public static final Type SOY_VISUAL_ELEMENT_TYPE = Type.getType(SoyVisualElement.class);
+  public static final Type SOY_VISUAL_ELEMENT_DATA_TYPE = Type.getType(SoyVisualElementData.class);
 
   public static final Method CLASS_INIT = Method.getMethod("void <clinit>()");
   public static final Method NULLARY_INIT = Method.getMethod("void <init>()");
@@ -577,17 +581,17 @@ public final class BytecodeUtils {
     SoyRuntimeType leftRuntimeType = left.soyRuntimeType();
     SoyRuntimeType rightRuntimeType = right.soyRuntimeType();
     if (leftRuntimeType.isKnownString()) {
-      return doEqualsString(left.unboxAs(String.class), right);
+      return doEqualsString(left.unboxAsString(), right);
     }
     if (rightRuntimeType.isKnownString()) {
       // TODO(lukes): we are changing the order of evaluation here.
-      return doEqualsString(right.unboxAs(String.class), left);
+      return doEqualsString(right.unboxAsString(), left);
     }
     if (leftRuntimeType.isKnownInt()
         && rightRuntimeType.isKnownInt()
         && left.isNonNullable()
         && right.isNonNullable()) {
-      return compare(Opcodes.IFEQ, left.unboxAs(long.class), right.unboxAs(long.class));
+      return compare(Opcodes.IFEQ, left.unboxAsLong(), right.unboxAsLong());
     }
     if (leftRuntimeType.isKnownNumber()
         && rightRuntimeType.isKnownNumber()
@@ -611,9 +615,9 @@ public final class BytecodeUtils {
     SoyRuntimeType otherRuntimeType = other.soyRuntimeType();
     if (otherRuntimeType.isKnownStringOrSanitizedContent()) {
       if (stringExpr.isNonNullable()) {
-        return stringExpr.invoke(MethodRef.EQUALS, other.unboxAs(String.class));
+        return stringExpr.invoke(MethodRef.EQUALS, other.unboxAsString());
       } else {
-        return MethodRef.OBJECTS_EQUALS.invoke(stringExpr, other.unboxAs(String.class));
+        return MethodRef.OBJECTS_EQUALS.invoke(stringExpr, other.unboxAsString());
       }
     }
     if (otherRuntimeType.isKnownNumber() && other.isNonNullable()) {

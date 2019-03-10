@@ -75,12 +75,14 @@ public final class MsgFuncGenerator {
 
   MsgFuncGenerator(
       GenPyExprsVisitorFactory genPyExprsVisitorFactory,
+      PythonValueFactoryImpl pluginFactoryImpl,
       MsgNode msgNode,
       LocalVariableStack localVarExprs,
       ErrorReporter errorReporter) {
     this.msgNode = msgNode;
     this.genPyExprsVisitor = genPyExprsVisitorFactory.create(localVarExprs, errorReporter);
-    this.translateToPyExprVisitor = new TranslateToPyExprVisitor(localVarExprs, errorReporter);
+    this.translateToPyExprVisitor =
+        new TranslateToPyExprVisitor(localVarExprs, pluginFactoryImpl, errorReporter);
     String translator = PyExprUtils.TRANSLATOR_NAME;
 
     if (this.msgNode.isPlrselMsg()) {
@@ -274,22 +276,12 @@ public final class MsgFuncGenerator {
    * @see "https://docs.python.org/2/library/string.html#formatstrings"
    */
   private static final Function<String, String> escaperForPyFormatString =
-      new Function<String, String>() {
-        @Override
-        public String apply(String str) {
-          return str.replaceAll("\\{", "{{").replaceAll("\\}", "}}").replace("'", "\\\'");
-        }
-      };
+      str -> str.replaceAll("\\{", "{{").replaceAll("\\}", "}}").replace("'", "\\\'");
 
   /**
    * ICU messages use single quotes for escaping internal parts. This will escape the single quotes
    * so they can be embedded in a python string literal.
    */
   private static final Function<String, String> escaperForIcuSection =
-      new Function<String, String>() {
-        @Override
-        public String apply(String str) {
-          return str.replace("'", "\\\'");
-        }
-      };
+      str -> str.replace("'", "\\\'");
 }

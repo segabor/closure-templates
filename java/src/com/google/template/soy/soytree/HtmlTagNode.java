@@ -17,10 +17,13 @@
 package com.google.template.soy.soytree;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
 
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.soytree.SoyNode.StandaloneNode;
+import java.util.ArrayList;
+import java.util.List;
 import javax.annotation.Nullable;
 
 /**
@@ -28,20 +31,72 @@ import javax.annotation.Nullable;
  *
  * <p>The first child is guaranteed to be the tag name, any after that are guaranteed to be in
  * attribute context. There is always at least one child.
+ *
+ * <p>TODO(b/123090196): Merge {@link TagName} API into this class.
  */
 public abstract class HtmlTagNode extends AbstractParentSoyNode<StandaloneNode>
     implements StandaloneNode {
 
+  /**
+   * Indicates whether this tag was created organically from the template source, or if it is a a
+   * synthetic tag node, created by injecting it into the AST during a validation phase, such as
+   * {@link StrictHtmlValidationPass}
+   *
+   * <p>Some backends do not render synthetic tags, others (like iDOM) do special processing on
+   * synthetic tags.
+   *
+   * <ul>
+   *   <li>{@code IN_TEMPLATE} tags come from parsing the original template.
+   *   <li>{@code SYNTHETIC} tags are injected during an AST rewrite.
+   * </ul>
+   */
+  public enum TagExistence {
+    IN_TEMPLATE,
+    SYNTHETIC
+  }
+
   private final TagName tagName;
 
-  protected HtmlTagNode(int id, TagName tagName, SourceLocation sourceLocation) {
+  private final TagExistence tagExistence;
+
+  /**
+   * Represents a list of tags that this HtmlTagNode might be paired with. For example, if we have
+   * an element `<div></div>`, the HTMLOpenTagNode would have the HTMLCloseTagNode in its
+   * taggedPairs (and vice versa). This is a list because an open tag node might have multiple close
+   * tag nodes (and vice versa) depending on control flow.
+   */
+  private final List<HtmlTagNode> taggedPairs = new ArrayList<>();
+
+  protected HtmlTagNode(
+      int id, StandaloneNode node, SourceLocation sourceLocation, TagExistence tagExistence) {
     super(id, sourceLocation);
-    this.tagName = checkNotNull(tagName);
+    checkNotNull(node);
+    checkState(node.getParent() == null);
+    addChild(node);
+    this.tagName = tagNameFromNode(node);
+    this.tagExistence = tagExistence;
   }
 
   protected HtmlTagNode(HtmlTagNode orig, CopyState copyState) {
     super(orig, copyState);
-    this.tagName = orig.tagName;
+    this.tagExistence = orig.tagExistence;
+    //  Rebuild the TagName object
+    StandaloneNode tagChild = getChild(0);
+    this.tagName = tagNameFromNode(tagChild);
+    // The taggedPairs field contains references to other tag nodes.
+    // We need to register ourselves so that people who reference us get updated and we need to
+    // listen to updates
+    copyState.updateRefs(orig, this);
+    for (HtmlTagNode matchingNode : orig.taggedPairs) {
+      copyState.registerRefListener(
+          matchingNode,
+          new CopyState.Listener<HtmlTagNode>() {
+            @Override
+            public void newVersion(HtmlTagNode newMatchingNode) {
+              taggedPairs.add(newMatchingNode);
+            }
+          });
+    }
   }
 
   @SuppressWarnings("unchecked")
@@ -52,6 +107,21 @@ public abstract class HtmlTagNode extends AbstractParentSoyNode<StandaloneNode>
 
   public final TagName getTagName() {
     return tagName;
+  }
+
+  public List<HtmlTagNode> getTaggedPairs() {
+    return this.taggedPairs;
+  }
+
+  public void addTagPair(HtmlTagNode node) {
+    if (!this.taggedPairs.contains(node)) {
+      this.taggedPairs.add(node);
+    }
+  }
+
+  /** Returns true if this node was inserted by the {@code StrictHtmlValidationPass}. */
+  public boolean isSynthetic() {
+    return tagExistence == TagExistence.SYNTHETIC;
   }
 
   /** Returns an attribute with the given static name if it is a direct child. */
@@ -68,5 +138,13 @@ public abstract class HtmlTagNode extends AbstractParentSoyNode<StandaloneNode>
       }
     }
     return null;
+  }
+
+  private static final TagName tagNameFromNode(StandaloneNode rawTextOrPrintNode) {
+    checkState(
+        rawTextOrPrintNode instanceof RawTextNode || rawTextOrPrintNode instanceof PrintNode);
+    return rawTextOrPrintNode instanceof RawTextNode
+        ? new TagName((RawTextNode) rawTextOrPrintNode)
+        : new TagName((PrintNode) rawTextOrPrintNode);
   }
 }

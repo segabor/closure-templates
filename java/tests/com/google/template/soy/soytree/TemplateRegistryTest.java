@@ -21,12 +21,10 @@ import static com.google.template.soy.soytree.TemplateRegistrySubject.assertThat
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
-import com.google.template.soy.SoyFileSetParser.ParseResult;
 import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.base.internal.SanitizedContentKind;
-import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.base.internal.SoyFileSupplier;
 import com.google.template.soy.error.ErrorReporter;
 import org.junit.Test;
@@ -56,17 +54,16 @@ public final class TemplateRegistryTest {
                         + "/** Simple deltemplate. */\n"
                         + "{deltemplate bar.baz}\n"
                         + "{/deltemplate}",
-                    SoyFileKind.SRC,
                     "example.soy"))
             .parse()
             .registry();
     assertThatRegistry(registry)
         .containsBasicTemplate("ns.foo")
-        .definedAt(new SourceLocation("example.soy", 3, 1, 3, 15));
+        .definedAt(new SourceLocation("example.soy", 3, 1, 4, 11));
     assertThatRegistry(registry).doesNotContainBasicTemplate("foo");
     assertThatRegistry(registry)
         .containsDelTemplate("bar.baz")
-        .definedAt(new SourceLocation("example.soy", 6, 1, 6, 21));
+        .definedAt(new SourceLocation("example.soy", 6, 1, 7, 14));
     assertThatRegistry(registry).doesNotContainDelTemplate("ns.bar.baz");
   }
 
@@ -79,24 +76,22 @@ public final class TemplateRegistryTest {
                         + "/** Template. */\n"
                         + "{template .foo}\n"
                         + "{/template}\n",
-                    SoyFileKind.SRC,
                     "bar.soy"),
                 SoyFileSupplier.Factory.create(
                     "{namespace ns2}\n"
                         + "/** Template. */\n"
                         + "{template .foo}\n"
                         + "{/template}\n",
-                    SoyFileKind.SRC,
                     "baz.soy"))
             .parse()
             .registry();
 
     assertThatRegistry(registry)
         .containsBasicTemplate("ns.foo")
-        .definedAt(new SourceLocation("bar.soy", 3, 1, 3, 15));
+        .definedAt(new SourceLocation("bar.soy", 3, 1, 4, 11));
     assertThatRegistry(registry)
         .containsBasicTemplate("ns2.foo")
-        .definedAt(new SourceLocation("baz.soy", 3, 1, 3, 15));
+        .definedAt(new SourceLocation("baz.soy", 3, 1, 4, 11));
   }
 
   @Test
@@ -108,7 +103,6 @@ public final class TemplateRegistryTest {
                         + "/** Deltemplate. */\n"
                         + "{deltemplate foo.bar}\n"
                         + "{/deltemplate}",
-                    SoyFileKind.SRC,
                     "foo.soy"),
                 SoyFileSupplier.Factory.create(
                     "{delpackage foo}\n"
@@ -116,17 +110,16 @@ public final class TemplateRegistryTest {
                         + "/** Deltemplate. */\n"
                         + "{deltemplate foo.bar}\n"
                         + "{/deltemplate}",
-                    SoyFileKind.SRC,
                     "bar.soy"))
             .parse()
             .registry();
 
     assertThatRegistry(registry)
         .containsDelTemplate("foo.bar")
-        .definedAt(new SourceLocation("foo.soy", 3, 1, 3, 21));
+        .definedAt(new SourceLocation("foo.soy", 3, 1, 4, 14));
     assertThatRegistry(registry)
         .containsDelTemplate("foo.bar")
-        .definedAt(new SourceLocation("bar.soy", 4, 1, 4, 21));
+        .definedAt(new SourceLocation("bar.soy", 4, 1, 5, 14));
   }
 
   @Test
@@ -190,7 +183,6 @@ public final class TemplateRegistryTest {
                         + "/** Simple template. */\n"
                         + "{template .foo kind=\"attributes\"}\n"
                         + "{/template}\n",
-                    SoyFileKind.SRC,
                     "example.soy"))
             .parse()
             .registry();
@@ -215,7 +207,6 @@ public final class TemplateRegistryTest {
                         + "/** Simple template. */\n"
                         + "{template .foo kind=\"attributes\"}\n"
                         + "{/template}\n",
-                    SoyFileKind.SRC,
                     "example.soy"))
             .parse()
             .registry();
@@ -239,7 +230,6 @@ public final class TemplateRegistryTest {
                         + "/** Simple template. */\n"
                         + "{deltemplate ns.foo kind=\"attributes\"}\n"
                         + "{/deltemplate}\n",
-                    SoyFileKind.SRC,
                     "example.soy"))
             .parse()
             .registry();
@@ -262,7 +252,6 @@ public final class TemplateRegistryTest {
                         + "/** Simple template. */\n"
                         + "{deltemplate ns.foo kind=\"attributes\"}\n"
                         + "{/deltemplate}\n",
-                    SoyFileKind.SRC,
                     "example.soy"))
             .parse()
             .registry();
@@ -274,202 +263,5 @@ public final class TemplateRegistryTest {
             NO_ATTRS,
             FAIL);
     assertThat(registry.getCallContentKind(node)).isAbsent();
-  }
-
-  @Test
-  public void testSimpleTransiiveCallees() {
-
-    // aaa -> {bbb, ccc}, bbb -> ddd.
-    String fileContent =
-        ""
-            + "{namespace ns}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .aaa}\n"
-            + "  {call .bbb /} {$ij.boo} {call .ccc /} {$ij.foo}\n"
-            + "{/template}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .bbb}\n"
-            + "  {$ij.boo} {$ij.goo} {call .ddd /}\n"
-            + "{/template}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .ccc}\n"
-            + "  {$ij.boo} {$ij.moo + $ij.woo}\n"
-            + "{/template}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .ddd}\n"
-            + "  {$ij.boo} {$ij.moo} {round($ij.zoo)}\n"
-            + "{/template}\n";
-
-    TemplateRegistry templateRegistry =
-        SoyFileSetParserBuilder.forFileContents(fileContent).parse().registry();
-
-    TemplateMetadata aaa = templateRegistry.getAllTemplates().get(0);
-    TemplateMetadata bbb = templateRegistry.getAllTemplates().get(1);
-    TemplateMetadata ccc = templateRegistry.getAllTemplates().get(2);
-    TemplateMetadata ddd = templateRegistry.getAllTemplates().get(3);
-
-    assertThat(templateRegistry.getCallGraph(ddd).transitiveCallees()).containsExactly(ddd);
-    assertThat(templateRegistry.getCallGraph(ccc).transitiveCallees()).containsExactly(ccc);
-    assertThat(templateRegistry.getCallGraph(bbb).transitiveCallees()).containsExactly(bbb, ddd);
-    assertThat(templateRegistry.getCallGraph(aaa).transitiveCallees())
-        .containsExactly(aaa, bbb, ccc, ddd);
-  }
-
-  @Test
-  public void testTwoPathsToSameTemplate() {
-
-    // aaa -> {bbb, ccc}, ccc -> bbb.
-    String fileContent =
-        ""
-            + "{namespace ns}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .aaa}\n"
-            + "  {call .bbb /} {$ij.boo} {call .ccc /} {$ij.foo}\n"
-            + "{/template}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .bbb}\n"
-            + "  {$ij.boo} {$ij.goo}\n"
-            + "{/template}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .ccc}\n"
-            + "  {$ij.boo} {$ij.moo + $ij.woo} {call .bbb /}\n"
-            + "{/template}\n";
-
-    TemplateRegistry templateRegistry =
-        SoyFileSetParserBuilder.forFileContents(fileContent).parse().registry();
-
-    TemplateMetadata aaa = templateRegistry.getAllTemplates().get(0);
-    TemplateMetadata bbb = templateRegistry.getAllTemplates().get(1);
-    TemplateMetadata ccc = templateRegistry.getAllTemplates().get(2);
-
-    assertThat(templateRegistry.getCallGraph(bbb).transitiveCallees()).containsExactly(bbb);
-    assertThat(templateRegistry.getCallGraph(ccc).transitiveCallees()).containsExactly(ccc, bbb);
-    assertThat(templateRegistry.getCallGraph(aaa).transitiveCallees())
-        .containsExactly(aaa, bbb, ccc);
-  }
-
-  @Test
-  public void testSimpleRecursion() {
-
-    // Tests direct recursion (cycle of 1) and indirect recursion with a cycle of 2.
-
-    // aaa -> bbb, bbb -> {bbb, ccc}, ccc -> bbb.
-    String fileContent =
-        ""
-            + "{namespace ns}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .aaa}\n"
-            + "  {call .bbb /} {$ij.boo} {$ij.foo}\n"
-            + "{/template}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .bbb}\n"
-            + "  {$ij.boo} {$ij.goo} {call .bbb /} {call .ccc /}\n"
-            + "{/template}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .ccc}\n"
-            + "  {$ij.boo} {call .bbb /} {$ij.moo}\n"
-            + "{/template}\n";
-
-    TemplateRegistry templateRegistry =
-        SoyFileSetParserBuilder.forFileContents(fileContent).parse().registry();
-
-    TemplateMetadata aaa = templateRegistry.getAllTemplates().get(0);
-    TemplateMetadata bbb = templateRegistry.getAllTemplates().get(1);
-    TemplateMetadata ccc = templateRegistry.getAllTemplates().get(2);
-
-    assertThat(templateRegistry.getCallGraph(ccc).transitiveCallees()).containsExactly(ccc, bbb);
-    assertThat(templateRegistry.getCallGraph(bbb).transitiveCallees()).containsExactly(bbb, ccc);
-    assertThat(templateRegistry.getCallGraph(aaa).transitiveCallees())
-        .containsExactly(aaa, bbb, ccc);
-  }
-
-  @Test
-  public void testGetTransitiveCallees() {
-    // aaa -> {bbb, ccc}, bbb -> ddd.
-    String fileContent =
-        ""
-            + "{namespace ns}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .bbb}\n"
-            + "  {$ij.boo} {$ij.goo} {call .ddd /}\n"
-            + "{/template}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .aaa}\n"
-            + "  {call .bbb /} {$ij.boo} {call .ccc /} {$ij.foo}\n"
-            + "{/template}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .ccc}\n"
-            + "  {$ij.boo} {$ij.moo + $ij.woo}\n"
-            + "{/template}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .ddd}\n"
-            + "  {$ij.boo} {$ij.moo} {round($ij.zoo)}\n"
-            + "{/template}\n";
-
-    ParseResult result = SoyFileSetParserBuilder.forFileContents(fileContent).parse();
-    TemplateRegistry templateRegistry = result.registry();
-
-    TemplateMetadata bbb = templateRegistry.getAllTemplates().get(0);
-    TemplateMetadata aaa = templateRegistry.getAllTemplates().get(1);
-    TemplateMetadata ccc = templateRegistry.getAllTemplates().get(2);
-    TemplateMetadata ddd = templateRegistry.getAllTemplates().get(3);
-
-    assertThat(templateRegistry.getCallGraph(ddd).transitiveCallees()).containsExactly(ddd);
-    assertThat(templateRegistry.getCallGraph(ccc).transitiveCallees()).containsExactly(ccc);
-    assertThat(templateRegistry.getCallGraph(bbb).transitiveCallees()).containsExactly(bbb, ddd);
-    assertThat(templateRegistry.getCallGraph(aaa).transitiveCallees())
-        .containsExactly(aaa, bbb, ccc, ddd);
-  }
-
-  @Test
-  public void testSmallerRecursiveCycleInLargerRecursiveCycle() {
-
-    // aaa -> {bbb, ccc}, bbb -> aaa, ccc -> bbb.
-    String fileContent =
-        ""
-            + "{namespace ns}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .aaa}\n"
-            + "  {$ij.foo} {$ij.boo} {call .bbb /} {call .ccc /}\n"
-            + "{/template}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .bbb}\n"
-            + "  {$ij.goo} {$ij.boo} {call .aaa /}\n"
-            + "{/template}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .ccc}\n"
-            + "  {$ij.moo} {$ij.boo} {call .bbb /}\n"
-            + "{/template}\n";
-
-    ParseResult result = SoyFileSetParserBuilder.forFileContents(fileContent).parse();
-    TemplateRegistry templateRegistry = result.registry();
-
-    TemplateMetadata bbb = templateRegistry.getAllTemplates().get(0);
-    TemplateMetadata aaa = templateRegistry.getAllTemplates().get(1);
-    TemplateMetadata ccc = templateRegistry.getAllTemplates().get(2);
-
-    assertThat(templateRegistry.getCallGraph(ccc).transitiveCallees())
-        .containsExactly(ccc, bbb, aaa);
-    assertThat(templateRegistry.getCallGraph(bbb).transitiveCallees())
-        .containsExactly(bbb, aaa, ccc);
-    assertThat(templateRegistry.getCallGraph(aaa).transitiveCallees())
-        .containsExactly(aaa, bbb, ccc);
   }
 }

@@ -25,13 +25,13 @@ import com.google.template.soy.plugin.javascript.restricted.JavaScriptPluginCont
 import com.google.template.soy.plugin.javascript.restricted.JavaScriptValue;
 import com.google.template.soy.plugin.javascript.restricted.JavaScriptValueFactory;
 import com.google.template.soy.plugin.javascript.restricted.SoyJavaScriptSourceFunction;
-import com.google.template.soy.pysrc.restricted.PyExpr;
-import com.google.template.soy.pysrc.restricted.PyListExpr;
-import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
+import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
+import com.google.template.soy.plugin.python.restricted.PythonValue;
+import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
+import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
-import com.google.template.soy.shared.restricted.TypedSoyFunction;
 import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.google.template.soy.swiftsrc.restricted.SwiftListExpr;
@@ -54,12 +54,12 @@ import java.util.List;
  */
 @SoyFunctionSignature(
     name = "keys",
-    // TODO(b/70946095): should take a legacy_object_map, or maybe we should add special support in
-    // the type checker in order to infer the returned list type
+    // TODO(b/70946095): should take a legacy_object_map.
+    // Note: the return type is overridden in ResolveTypeExpressionsPass
     value = @Signature(parameterTypes = "any", returnType = "?"))
 @SoyPureFunction
-public final class KeysFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPySrcFunction, SoySwiftSrcFunction {
+public final class KeysFunction
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
 
   @Override
   public JavaScriptValue applyForJavaScriptSource(
@@ -68,10 +68,9 @@ public final class KeysFunction extends TypedSoyFunction
   }
 
   @Override
-  public PyExpr computeForPySrc(List<PyExpr> args) {
-    PyExpr arg = args.get(0);
-
-    return new PyListExpr("(" + arg.getText() + ").keys()", Integer.MAX_VALUE);
+  public PythonValue applyForPythonSource(
+      PythonValueFactory factory, List<PythonValue> args, PythonPluginContext context) {
+    return args.get(0).getProp("keys").call();
   }
 
   // lazy singleton pattern, allows other backends to avoid the work.

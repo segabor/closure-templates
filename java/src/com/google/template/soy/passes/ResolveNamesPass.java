@@ -47,7 +47,7 @@ import com.google.template.soy.soytree.defn.InjectedParam;
 import com.google.template.soy.soytree.defn.LocalVar;
 import com.google.template.soy.soytree.defn.LoopVar;
 import com.google.template.soy.soytree.defn.TemplateParam;
-import com.google.template.soy.soytree.defn.TemplatePropVar;
+import com.google.template.soy.soytree.defn.TemplateStateVar;
 import com.google.template.soy.soytree.defn.UndeclaredVar;
 import java.util.ArrayDeque;
 import java.util.BitSet;
@@ -64,7 +64,7 @@ import java.util.Map;
 public final class ResolveNamesPass extends CompilerFilePass {
   private static final SoyErrorKind GLOBAL_MATCHES_VARIABLE =
       SoyErrorKind.of(
-          "Found global reference aliasing a local variable ''{0}'', did you mean " + "''${0}''?");
+          "Found global reference aliasing a local variable ''{0}'', did you mean ''${0}''?");
 
   private static final SoyErrorKind VARIABLE_ALREADY_DEFINED =
       SoyErrorKind.of("Variable ''${0}'' already defined{1}.");
@@ -245,8 +245,8 @@ public final class ResolveNamesPass extends CompilerFilePass {
         localVariables.define(param, node);
       }
       if (node instanceof TemplateElementNode) {
-        for (TemplatePropVar propVar : ((TemplateElementNode) node).getPropVars()) {
-          localVariables.define(propVar, node);
+        for (TemplateStateVar stateVar : ((TemplateElementNode) node).getStateVars()) {
+          localVariables.define(stateVar, node);
         }
       }
 
@@ -328,14 +328,13 @@ public final class ResolveNamesPass extends CompilerFilePass {
         return Optional.of(((TemplateParam) varDefn).nameLocation());
       case LOCAL_VAR:
         return Optional.of(((LocalVar) varDefn).declaringNode().getSourceLocation());
-      case PROP:
-        return Optional.of(((TemplatePropVar) varDefn).nameLocation());
+      case STATE:
+        return Optional.of(((TemplateStateVar) varDefn).nameLocation());
       case IJ_PARAM:
       case UNDECLARED:
         return Optional.absent();
-      default:
-        throw new AssertionError();
     }
+    throw new AssertionError(varDefn.kind());
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -387,19 +386,21 @@ public final class ResolveNamesPass extends CompilerFilePass {
 
     @Override
     protected void visitVarRefNode(VarRefNode varRef) {
+      if (varRef.getDefnDecl() != null) {
+        // some passes (e.g. ContentSecurityPolicyNonceInjectionPass) add var refs with accurate
+        // defns.
+        return;
+      }
       if (varRef.isDollarSignIjParameter()) {
-        InjectedParam ijParam = ijParams.get(varRef.getName());
-        if (ijParam == null) {
-          ijParam = new InjectedParam(varRef.getName(), varRef.getSourceLocation());
-          ijParams.put(varRef.getName(), ijParam);
-        }
+        InjectedParam ijParam =
+            ijParams.computeIfAbsent(
+                varRef.getName(), k -> new InjectedParam(k, varRef.getSourceLocation()));
         varRef.setDefn(ijParam);
         return;
       }
       VarDefn varDefn = localVariables.lookup(varRef.getName());
       if (varDefn == null) {
-        // this case is mostly about supporting v1 templates.  Undeclared vars for v2 templates are
-        // flagged as errors in the CheckTemplateParamsPass
+        // Undeclared vars are flagged as errors in the CheckTemplateHeaderVarsPass.
         varDefn = new UndeclaredVar(varRef.getName(), varRef.getSourceLocation());
       }
       varRef.setDefn(varDefn);

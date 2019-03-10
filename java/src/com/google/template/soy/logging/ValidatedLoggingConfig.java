@@ -33,8 +33,20 @@ import javax.annotation.Nullable;
  * <p>Ensures that there are no duplicate names or ids and Enables easy lookup.
  */
 public final class ValidatedLoggingConfig {
-  public static final ValidatedLoggingConfig EMPTY =
-      new ValidatedLoggingConfig(ImmutableMap.<String, ValidatedLoggableElement>of());
+  private static final ValidatedLoggableElement UNDEFINED_VE =
+      ValidatedLoggableElement.create(
+          LoggableElement.newBuilder()
+              .setName("UndefinedVe")
+              .setId(SoyLogger.UNDEFINED_VE_ID)
+              .build());
+
+  public static final ValidatedLoggingConfig EMPTY = create(LoggingConfig.getDefaultInstance());
+
+  /** The maximum safe integer value in JavaScript: 2^53 - 1 */
+  private static final long MAX_ID_VALUE = 9007199254740991L;
+
+  /** The minimum safe integer value in JavaScript. */
+  private static final long MIN_ID_VALUE = -MAX_ID_VALUE;
 
   /**
    * Parses the logging config proto into a {@link ValidatedLoggingConfig}.
@@ -44,10 +56,19 @@ public final class ValidatedLoggingConfig {
   public static ValidatedLoggingConfig create(LoggingConfig configProto) {
     Map<String, ValidatedLoggableElement> elementsByName = new LinkedHashMap<>();
     Map<Long, ValidatedLoggableElement> elementsById = new LinkedHashMap<>();
+    elementsByName.put(UNDEFINED_VE.getName(), UNDEFINED_VE);
+    elementsById.put(UNDEFINED_VE.getId(), UNDEFINED_VE);
     // perfect duplicates are allowed, though not encouraged.
     for (LoggableElement element : ImmutableSet.copyOf(configProto.getElementList())) {
       String name = element.getName();
       checkArgument(BaseUtils.isDottedIdentifier(name), "'%s' is not a valid identifier", name);
+      checkArgument(
+          MIN_ID_VALUE <= element.getId() && element.getId() <= MAX_ID_VALUE,
+          "ID %s for '%s' must be between %s and %s (inclusive).",
+          element.getId(),
+          name,
+          MIN_ID_VALUE,
+          MAX_ID_VALUE);
       ValidatedLoggableElement elementConfig = ValidatedLoggableElement.create(element);
       ValidatedLoggableElement oldWithSameId =
           elementsById.put(elementConfig.getId(), elementConfig);
@@ -94,7 +115,7 @@ public final class ValidatedLoggingConfig {
           element.getName(),
           element.getId(),
           element.getProtoType().isEmpty()
-              ? Optional.<String>absent()
+              ? Optional.absent()
               : Optional.of(element.getProtoType()));
     }
 

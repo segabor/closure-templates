@@ -24,11 +24,8 @@ import static com.google.template.soy.data.SoyValueConverter.EMPTY_DICT;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Optional;
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.truth.FailureMetadata;
@@ -76,6 +73,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 import javax.annotation.CheckReturnValue;
 
 /** Utilities for testing compiled soy templates. */
@@ -84,17 +82,14 @@ public final class TemplateTester {
   private static RenderContext.Builder createDefaultBuilder() {
     return new RenderContext.Builder()
         .withSoyPrintDirectives(
-            InternalPlugins.internalDirectiveMap(new SoySimpleScope())
-                .entrySet()
-                .stream()
+            InternalPlugins.internalDirectiveMap(new SoySimpleScope()).entrySet().stream()
                 .filter(e -> e.getValue() instanceof SoyJavaPrintDirective)
                 .collect(
                     toImmutableMap(Map.Entry::getKey, e -> (SoyJavaPrintDirective) e.getValue())));
   }
 
   static RenderContext getDefaultContext(CompiledTemplates templates) {
-    return getDefaultContext(
-        templates, Predicates.<String>alwaysFalse(), /* debugSoyTemplateInfo= */ false);
+    return getDefaultContext(templates, arg -> false, /* debugSoyTemplateInfo= */ false);
   }
 
   static RenderContext getDefaultContext(
@@ -114,12 +109,8 @@ public final class TemplateTester {
   }
 
   static RenderContext getDefaultContextWithDebugInfo(CompiledTemplates templates) {
-    return getDefaultContext(
-        templates, Predicates.<String>alwaysFalse(), /* debugSoyTemplateInfo= */ true);
+    return getDefaultContext(templates, arg -> false, /* debugSoyTemplateInfo= */ true);
   }
-
-  private static final Subject.Factory<CompiledTemplateSubject, String> FACTORY =
-      CompiledTemplateSubject::new;
 
   /**
    * Returns a truth subject that can be used to assert on an template given the template body.
@@ -142,7 +133,7 @@ public final class TemplateTester {
   }
 
   static CompiledTemplateSubject assertThatFile(String... template) {
-    return Truth.assertAbout(FACTORY).that(Joiner.on('\n').join(template));
+    return Truth.assertAbout(CompiledTemplateSubject::new).that(Joiner.on('\n').join(template));
   }
 
   /**
@@ -275,9 +266,7 @@ public final class TemplateTester {
 
     @CheckReturnValue
     public IterableSubject failsToCompileWithErrorsThat() {
-      SoyFileSetParserBuilder builder =
-          SoyFileSetParserBuilder.forFileContents(actual())
-              .enableExperimentalFeatures(ImmutableList.of("prop_vars"));
+      SoyFileSetParserBuilder builder = SoyFileSetParserBuilder.forFileContents(actual());
       for (SoyFunction function : soyFunctions) {
         builder.addSoyFunction(function);
       }
@@ -366,7 +355,6 @@ public final class TemplateTester {
                 .typeRegistry(typeRegistry)
                 .options(generalOptions)
                 .errorReporter(ErrorReporter.exploding())
-                .enableExperimentalFeatures(ImmutableList.of("prop_vars"))
                 .parse();
         SoyFileSetNode fileSet = parseResult.fileSet();
 

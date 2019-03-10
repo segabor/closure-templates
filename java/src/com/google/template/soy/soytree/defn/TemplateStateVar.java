@@ -17,55 +17,55 @@
 package com.google.template.soy.soytree.defn;
 
 import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.ast.TypeNode;
 import javax.annotation.Nullable;
-import javax.annotation.concurrent.Immutable;
 
 /**
- * An explicitly declared template prop variable.
+ * An explicitly declared template state variable.
  *
  * <p>Important: Do not use outside of Soy code (treat as superpackage-private).
  */
-@Immutable
-public final class TemplatePropVar extends AbstractVarDefn implements TemplateHeaderVarDefn {
+public final class TemplateStateVar extends AbstractVarDefn implements TemplateHeaderVarDefn {
   private final String desc;
   @Nullable private final TypeNode typeNode;
   private final ExprRootNode initialValue;
 
-  public TemplatePropVar(
+  public TemplateStateVar(
       String name,
-      @Nullable SoyType type,
       @Nullable TypeNode typeNode,
       ExprNode initialValue,
       @Nullable String desc,
       @Nullable SourceLocation nameLocation) {
-    super(name, nameLocation, type);
+    super(name, nameLocation, /*type=*/ null);
     this.typeNode = typeNode;
     this.desc = desc;
     this.initialValue = new ExprRootNode(initialValue);
   }
 
-  TemplatePropVar(TemplatePropVar propVar) {
-    super(propVar);
-    this.typeNode = propVar.typeNode;
-    this.desc = propVar.desc;
-    this.initialValue = propVar.initialValue;
+  private TemplateStateVar(TemplateStateVar old) {
+    super(old);
+    this.typeNode = old.typeNode == null ? null : old.typeNode.copy();
+    this.desc = old.desc;
+    this.initialValue = old.initialValue.copy(new CopyState());
   }
 
-  public TypeNode typeNode() {
+  @Nullable
+  public TypeNode getTypeNode() {
     return typeNode;
   }
 
-  public ExprRootNode initialValue() {
+  @Override
+  public ExprRootNode defaultValue() {
     return initialValue;
   }
 
   @Override
   public Kind kind() {
-    return Kind.PROP;
+    return Kind.STATE;
   }
 
   @Override
@@ -98,5 +98,10 @@ public final class TemplatePropVar extends AbstractVarDefn implements TemplateHe
     description.append("{name = ").append(name());
     description.append(", desc = ").append(desc).append("}");
     return description.toString();
+  }
+
+  @Override
+  public TemplateStateVar copy() {
+    return new TemplateStateVar(this);
   }
 }

@@ -18,22 +18,22 @@ package com.google.template.soy.passes.htmlmatcher;
 
 import static com.google.common.truth.Truth.assertThat;
 
+import com.google.common.collect.ImmutableList;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.IncrementingIdGenerator;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.passes.htmlmatcher.HtmlMatcherTagNode.TagKind;
-import com.google.template.soy.soyparse.PluginResolver;
-import com.google.template.soy.soyparse.PluginResolver.Mode;
 import com.google.template.soy.soyparse.SoyFileParser;
 import com.google.template.soy.soytree.HtmlCloseTagNode;
 import com.google.template.soy.soytree.HtmlOpenTagNode;
+import com.google.template.soy.soytree.HtmlTagNode.TagExistence;
 import com.google.template.soy.soytree.IfCondNode;
 import com.google.template.soy.soytree.IfNode;
 import com.google.template.soy.soytree.RawTextNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyNode.Kind;
-import com.google.template.soy.soytree.TagName;
+import com.google.template.soy.soytree.SwitchCaseNode;
 
 /** Utility functions for HTML Matcher Graph tests. */
 public final class TestUtils {
@@ -42,41 +42,32 @@ public final class TestUtils {
   public static HtmlOpenTagNode soyHtmlOpenTagNode() {
     return new HtmlOpenTagNode(
         idGenerator.genId(),
-        new TagName(new RawTextNode(idGenerator.genId(), "div", SourceLocation.UNKNOWN)),
+        new RawTextNode(idGenerator.genId(), "div", SourceLocation.UNKNOWN),
         SourceLocation.UNKNOWN,
         /** selfClosing */
-        false);
+        false,
+        TagExistence.IN_TEMPLATE);
   }
 
   public static HtmlCloseTagNode soyHtmlCloseTagNode() {
     return new HtmlCloseTagNode(
         idGenerator.genId(),
-        new TagName(new RawTextNode(idGenerator.genId(), "div", SourceLocation.UNKNOWN)),
-        SourceLocation.UNKNOWN);
+        new RawTextNode(idGenerator.genId(), "div", SourceLocation.UNKNOWN),
+        SourceLocation.UNKNOWN,
+        TagExistence.IN_TEMPLATE);
   }
 
   public static HtmlMatcherTagNode htmlMatcherOpenTagNode(HtmlOpenTagNode soyNode) {
-    return new HtmlMatcherTagNode(soyNode) {
-      @Override
-      public TagKind getTagKind() {
-        return TagKind.OPEN_TAG;
-      }
-    };
+    return new HtmlMatcherTagNode(soyNode);
   }
 
   public static HtmlMatcherTagNode htmlMatcherCloseTagNode(HtmlCloseTagNode soyNode) {
-    return new HtmlMatcherTagNode(soyNode) {
-      @Override
-      public TagKind getTagKind() {
-        return TagKind.CLOSE_TAG;
-      }
-    };
+    return new HtmlMatcherTagNode(soyNode);
   }
 
   public static ExprNode soyExprNode(String exprText) {
     return SoyFileParser.parseExpression(
         exprText,
-        PluginResolver.nullResolver(Mode.ALLOW_UNDEFINED, ErrorReporter.exploding()),
         ErrorReporter.exploding());
   }
 
@@ -92,6 +83,15 @@ public final class TestUtils {
     IfCondNode soyNode =
         new IfCondNode(
             idGenerator.genId(), SourceLocation.UNKNOWN, "elseif", soyExprNode(exprText));
+    IfNode parentIfNode = new IfNode(idGenerator.genId(), SourceLocation.UNKNOWN);
+    parentIfNode.addChild(soyNode);
+    return soyNode;
+  }
+
+  public static SwitchCaseNode soySwitchCaseNode(String exprText) {
+    SwitchCaseNode soyNode =
+        new SwitchCaseNode(
+            idGenerator.genId(), SourceLocation.UNKNOWN, ImmutableList.of(soyExprNode(exprText)));
     IfNode parentIfNode = new IfNode(idGenerator.genId(), SourceLocation.UNKNOWN);
     parentIfNode.addChild(soyNode);
     return soyNode;

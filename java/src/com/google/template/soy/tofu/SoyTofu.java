@@ -16,7 +16,6 @@
 
 package com.google.template.soy.tofu;
 
-import com.google.common.base.Predicate;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.template.soy.data.SanitizedContent;
@@ -26,6 +25,7 @@ import com.google.template.soy.parseinfo.SoyTemplateInfo;
 import com.google.template.soy.shared.SoyCssRenamingMap;
 import com.google.template.soy.shared.SoyIdRenamingMap;
 import java.util.Map;
+import java.util.function.Predicate;
 import javax.annotation.Nullable;
 
 /**
@@ -85,11 +85,6 @@ public interface SoyTofu {
 
   /**
    * Gets the set of injected param keys used by a template (and its transitive callees).
-   *
-   * <p>Note: The {@code SoyTemplateInfo} object already has a method {@code getUsedIjParams()}.
-   * That method should produce the same results as this method, unless the bundle of Soy files
-   * included when running the SoyParseInfoGenerator is different from the bundle of Soy files
-   * included when creating this SoyTofu object.
    *
    * @param templateInfo Info for the template to get injected params of.
    * @return The set of injected param keys used by the given template.

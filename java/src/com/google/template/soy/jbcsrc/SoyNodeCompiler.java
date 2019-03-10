@@ -35,7 +35,6 @@ import com.google.auto.value.AutoValue;
 import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Ints;
-import com.google.protobuf.Message;
 import com.google.template.soy.base.internal.FixedIdGenerator;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
 import com.google.template.soy.data.SoyRecord;
@@ -105,7 +104,7 @@ import com.google.template.soy.soytree.SwitchDefaultNode;
 import com.google.template.soy.soytree.SwitchNode;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.VeLogNode;
-import com.google.template.soy.soytree.defn.TemplatePropVar;
+import com.google.template.soy.soytree.defn.TemplateStateVar;
 import com.google.template.soy.types.SoyTypeRegistry;
 import java.util.ArrayList;
 import java.util.List;
@@ -144,7 +143,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
       TemplateParameterLookup parameterLookup,
       ErrorReporter reporter,
       SoyTypeRegistry typeRegistry,
-      List<TemplatePropVar> propVars) {
+      List<TemplateStateVar> stateVars) {
     DetachState detachState = new DetachState(variables, thisVar, stateField);
     ExpressionCompiler expressionCompiler =
         ExpressionCompiler.create(detachState, parameterLookup, variables, reporter, typeRegistry);
@@ -167,7 +166,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
             soyValueProviderCompiler,
             reporter,
             typeRegistry,
-            propVars));
+            stateVars));
   }
 
   private final Expression thisVar;
@@ -377,7 +376,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
               },
               DERIVED);
     } else {
-      SoyExpression expr = exprCompiler.compile(node.getExpr()).unboxAs(List.class);
+      SoyExpression expr = exprCompiler.compile(node.getExpr()).unboxAsList();
       Variable listVar =
           scope.createSynthetic(SyntheticVarName.foreachLoopList(nonEmptyNode), expr, STORE);
       initializers.add(listVar.initializer());
@@ -515,7 +514,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
       // runtime with IllegalArgumentException.
       Expression startExpression =
           MethodRef.INTS_CHECKED_CAST.invoke(
-              exprCompiler.compile(expression.get(), startDetachPoint).unboxAs(long.class));
+              exprCompiler.compile(expression.get(), startDetachPoint).unboxAsLong());
       if (!startExpression.isCheap()) {
         // bounce it into a local variable
         Variable startVar = scope.createSynthetic(varName, startExpression, STORE);
@@ -594,7 +593,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     SoyExpression value = basic.compile(node.getExpr());
     // We may have print directives, that means we need to pass the render value through a bunch of
     // SoyJavaPrintDirective.apply methods.  This means lots and lots of boxing.
-    // TODO(user): tracks adding streaming print directives which would help with this,
+    // TODO(b/18260376): tracks adding streaming print directives which would help with this,
     // because instead of wrapping the soy value, we would just wrap the appendable.
     for (PrintDirectiveNode printDirective : node.getChildren()) {
       value =
@@ -857,10 +856,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
   @Override
   protected Statement visitVeLogNode(final VeLogNode node) {
     final Label restartPoint = new Label();
-    final Expression configExpression =
-        node.getConfigExpression() == null
-            ? BytecodeUtils.constantNull(BytecodeUtils.MESSAGE_TYPE)
-            : exprCompiler.compile(node.getConfigExpression(), restartPoint).unboxAs(Message.class);
+    final Expression veData = exprCompiler.compile(node.getVeDataExpression(), restartPoint);
     final Expression hasLogger = parameterLookup.getRenderContext().hasLogger();
     final Statement body = Statement.concat(visitChildren(node));
     final Statement exitStatement =
@@ -869,16 +865,14 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
             .asStatement();
     if (node.getLogonlyExpression() != null) {
       final Expression logonlyExpression =
-          exprCompiler.compile(node.getLogonlyExpression(), restartPoint).unboxAs(boolean.class);
-      final Expression appendable = appendableExpression;
+          exprCompiler.compile(node.getLogonlyExpression(), restartPoint).unboxAsBoolean();
       return new Statement() {
         @Override
         protected void doGen(CodeBuilder cb) {
           // Key
           // LO: logonly
           // HL: hasLogger
-          // id: logging id
-          // data: config expression
+          // veData: SoyVisualElementData
           // LS: LogStatement
           // A: appendable
           //
@@ -892,15 +886,12 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
           Label noLogger = new Label();
           hasLogger.gen(cb); // HL, LO
           cb.ifZCmp(EQ, noLogger); // LO
-          cb.pushLong(node.getLoggingId()); // id, LO
-          cb.dup2X1(); // id, LO, id
-          cb.pop2(); // LO, id
-          configExpression.gen(cb); // data, LO, id
-          cb.swap(); // LO, data, id
-          MethodRef.LOG_STATEMENT_CREATE.invokeUnchecked(cb); // LS
-          appendable.gen(cb); // A, LS
+          veData.gen(cb); // veData, LO
+          cb.swap(); // LO, veData
+          MethodRef.CREATE_LOG_STATEMENT.invokeUnchecked(cb); // LS
+          appendableExpression.gen(cb); // A, LS
           cb.swap(); // LS, A
-          AppendableExpression.ENTER_LOGGABLE_STATEMENT.invokeUnchecked(cb); // appendable
+          AppendableExpression.ENTER_LOGGABLE_STATEMENT.invokeUnchecked(cb); // A
           cb.pop();
           Label bodyLabel = new Label();
           cb.goTo(bodyLabel);
@@ -915,21 +906,17 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
           exitStatement.gen(cb);
         }
       };
-
     } else {
       final Statement enterStatement =
           ControlFlow.IfBlock.create(
                   hasLogger,
                   appendableExpression
                       .enterLoggableElement(
-                          MethodRef.LOG_STATEMENT_CREATE.invoke(
-                              BytecodeUtils.constant(node.getLoggingId()),
-                              configExpression,
-                              BytecodeUtils.constant(false)))
+                          MethodRef.CREATE_LOG_STATEMENT.invoke(
+                              veData, BytecodeUtils.constant(false)))
                       .toStatement()
                       .labelStart(restartPoint))
               .asStatement();
-      ;
       return Statement.concat(enterStatement, body, exitStatement);
     }
   }

@@ -23,12 +23,12 @@ import com.google.template.soy.plugin.javascript.restricted.JavaScriptPluginCont
 import com.google.template.soy.plugin.javascript.restricted.JavaScriptValue;
 import com.google.template.soy.plugin.javascript.restricted.JavaScriptValueFactory;
 import com.google.template.soy.plugin.javascript.restricted.SoyJavaScriptSourceFunction;
-import com.google.template.soy.pysrc.restricted.PyExpr;
-import com.google.template.soy.pysrc.restricted.PyFunctionExprBuilder;
-import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
+import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
+import com.google.template.soy.plugin.python.restricted.PythonValue;
+import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
+import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
-import com.google.template.soy.shared.restricted.TypedSoyFunction;
 import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
@@ -59,8 +59,8 @@ import java.util.List;
           parameterTypes = {"number", "number", "number"},
           returnType = "list<int>")
     })
-public final class RangeFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPySrcFunction, SoySwiftSrcFunction {
+public final class RangeFunction
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
 
   private static final class Methods {
     static final Method RANGE =
@@ -97,11 +97,12 @@ public final class RangeFunction extends TypedSoyFunction
   }
 
   @Override
-  public PyExpr computeForPySrc(List<PyExpr> args) {
+  public PythonValue applyForPythonSource(
+      PythonValueFactory factory, List<PythonValue> args, PythonPluginContext context) {
     // Coincidentally, soy range is identical to python 2 xrange and python 3 range
     // Use range which is guaranteed to produce either a list (python 2) or a lazy iterable
     // (python 3) -- both of which are enumerable -- because xrange does not exist in python 3.
-    return new PyFunctionExprBuilder("range").addArgs(args).asPyExpr();
+    return factory.global("range").call(args.toArray(new PythonValue[0]));
   }
 
   @Override

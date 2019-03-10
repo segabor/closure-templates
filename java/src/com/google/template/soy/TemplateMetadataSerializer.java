@@ -19,26 +19,27 @@ import static com.google.common.base.Strings.emptyToNull;
 
 import com.google.common.base.Converter;
 import com.google.common.base.Strings;
+import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.ImmutableSortedMap;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.SanitizedContentKind;
 import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.error.ErrorReporter;
-import com.google.template.soy.soyparse.SoyFileParser;
-import com.google.template.soy.soytree.CallSituationP;
+import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.soytree.CompilationUnit;
+import com.google.template.soy.soytree.DataAllCallSituationP;
 import com.google.template.soy.soytree.ParameterP;
 import com.google.template.soy.soytree.SanitizedContentKindP;
-import com.google.template.soy.soytree.SourceLocationP;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileP;
 import com.google.template.soy.soytree.SoyFileSetNode;
+import com.google.template.soy.soytree.SoyTypeP;
 import com.google.template.soy.soytree.TemplateDelegateNodeBuilder;
 import com.google.template.soy.soytree.TemplateKindP;
 import com.google.template.soy.soytree.TemplateMetadata;
-import com.google.template.soy.soytree.TemplateMetadata.CallSituation;
+import com.google.template.soy.soytree.TemplateMetadata.DataAllCallSituation;
 import com.google.template.soy.soytree.TemplateMetadata.Kind;
 import com.google.template.soy.soytree.TemplateMetadata.Parameter;
 import com.google.template.soy.soytree.TemplateMetadataP;
@@ -46,8 +47,26 @@ import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.Visibility;
 import com.google.template.soy.soytree.VisibilityP;
+import com.google.template.soy.types.AnyType;
+import com.google.template.soy.types.BoolType;
+import com.google.template.soy.types.ErrorType;
+import com.google.template.soy.types.FloatType;
+import com.google.template.soy.types.IntType;
+import com.google.template.soy.types.NullType;
+import com.google.template.soy.types.SanitizedType.AttributesType;
+import com.google.template.soy.types.SanitizedType.HtmlType;
+import com.google.template.soy.types.SanitizedType.JsType;
+import com.google.template.soy.types.SanitizedType.StyleType;
+import com.google.template.soy.types.SanitizedType.TrustedResourceUriType;
+import com.google.template.soy.types.SanitizedType.UriType;
+import com.google.template.soy.types.SoyProtoEnumType;
+import com.google.template.soy.types.SoyProtoType;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyTypeRegistry;
+import com.google.template.soy.types.StringType;
+import com.google.template.soy.types.UnknownType;
+import com.google.template.soy.types.VeDataType;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
@@ -56,15 +75,12 @@ import javax.annotation.Nullable;
 
 /** Utilities to transform TemplateMetadata objects to and From CompilationUnit protos */
 public final class TemplateMetadataSerializer {
-  /** A simple interface to abstract type parsing to avoid a package cycle. */
-  public interface TypeResolver {
-    /**
-     * Returns a soy type for the given string.
-     *
-     * @throws IllegalArgumentException with a syntax error if appropriate.
-     */
-    SoyType parseType(String typeString);
-  }
+  private static final SoyErrorKind UNABLE_TO_PARSE_TEMPLATE_HEADER =
+      SoyErrorKind.of("Unable to parse template header for {0} from Soy file {1}: {2}.");
+  private static final SoyErrorKind UNABLE_TO_FIND_TYPE =
+      SoyErrorKind.of("Unable to {0}: {1} referenced by dependency.");
+  private static final SoyErrorKind UNEXPECTED_TYPE =
+      SoyErrorKind.of("Expected {0} to be a {1} but it was a {2}.");
 
   private static final Converter<VisibilityP, Visibility> VISIBILITY_CONVERTER =
       createEnumConverter(VisibilityP.class, Visibility.class);
@@ -95,21 +111,25 @@ public final class TemplateMetadataSerializer {
   }
 
   public static ImmutableList<TemplateMetadata> templatesFromCompilationUnit(
-      CompilationUnit compilationUnit, SoyFileKind fileKind, SoyTypeRegistry typeRegistry) {
+      CompilationUnit compilationUnit,
+      SoyFileKind fileKind,
+      SoyTypeRegistry typeRegistry,
+      String filePath,
+      ErrorReporter errorReporter) {
     ImmutableList.Builder<TemplateMetadata> templates = ImmutableList.builder();
     for (SoyFileP fileProto : compilationUnit.getFileList()) {
       for (TemplateMetadataP templateProto : fileProto.getTemplateList()) {
         try {
-          templates.add(metadataFromProto(fileProto, templateProto, fileKind, typeRegistry));
+          templates.add(
+              metadataFromProto(
+                  fileProto, templateProto, fileKind, typeRegistry, filePath, errorReporter));
         } catch (IllegalArgumentException iae) {
-          throw new IllegalArgumentException(
-              "Unable to parse template: "
-                  + templateProto.getTemplateName()
-                  + " from file: "
-                  + fileProto.getFilePath()
-                  + ": "
-                  + iae.getMessage(),
-              iae);
+          errorReporter.report(
+              new SourceLocation(filePath),
+              UNABLE_TO_PARSE_TEMPLATE_HEADER,
+              templateProto.getTemplateName(),
+              fileProto.getFilePath(),
+              iae.getMessage());
         }
       }
     }
@@ -128,10 +148,10 @@ public final class TemplateMetadataSerializer {
             meta.getContentKind() == null
                 ? SanitizedContentKindP.NONE
                 : CONTENT_KIND_CONVERTER.reverse().convert(meta.getContentKind()))
-        .setSourceLocation(protoFromSourceLocation(meta.getSourceLocation()))
         .setDelTemplateVariant(Strings.nullToEmpty(meta.getDelTemplateVariant()))
         .setStrictHtml(meta.isStrictHtml())
-        .addAllCallSituation(protosFromCallSitatuations(meta.getCallSituations(), fileNode))
+        .addAllDataAllCallSituation(
+            protosFromCallSitatuations(meta.getDataAllCallSituations(), fileNode))
         .addAllParameter(protosFromParameters(meta.getParameters()))
         .build();
   }
@@ -140,7 +160,9 @@ public final class TemplateMetadataSerializer {
       SoyFileP fileProto,
       TemplateMetadataP templateProto,
       SoyFileKind fileKind,
-      SoyTypeRegistry typeRegistry) {
+      SoyTypeRegistry typeRegistry,
+      String filePath,
+      ErrorReporter errorReporter) {
     TemplateMetadata.Builder builder = TemplateMetadata.builder();
     TemplateMetadata.Kind templateKind =
         TEMPLATE_KIND_CONVERTER.convert(templateProto.getTemplateKind());
@@ -169,44 +191,185 @@ public final class TemplateMetadataSerializer {
         .setDelPackageName(delPackageName)
         .setStrictHtml(templateProto.getStrictHtml())
         .setTemplateKind(templateKind)
-        .setSourceLocation(sourceLocationFromProto(fileProto, templateProto.getSourceLocation()))
+        .setSourceLocation(new SourceLocation(fileProto.getFilePath()))
         .setContentKind(
             templateProto.getContentKind() == SanitizedContentKindP.NONE
                 ? null
                 : CONTENT_KIND_CONVERTER.convert(templateProto.getContentKind()))
         .setVisibility(VISIBILITY_CONVERTER.convert(templateProto.getVisibility()))
-        .setCallSituations(callSituationsFromProto(templateProto.getCallSituationList(), fileProto))
-        .setParameters(parametersFromProto(templateProto.getParameterList(), typeRegistry))
+        .setDataAllCallSituations(
+            callSituationsFromProto(templateProto.getDataAllCallSituationList(), fileProto))
+        .setParameters(
+            parametersFromProto(
+                templateProto.getParameterList(), typeRegistry, filePath, errorReporter))
         .build();
   }
 
   private static ImmutableList<Parameter> parametersFromProto(
-      List<ParameterP> parameterList, SoyTypeRegistry typeRegistry) {
+      List<ParameterP> parameterList,
+      SoyTypeRegistry typeRegistry,
+      String filePath,
+      ErrorReporter errorReporter) {
     ImmutableList.Builder<Parameter> builder =
         ImmutableList.builderWithExpectedSize(parameterList.size());
     for (ParameterP parameter : parameterList) {
-      ErrorReporter errorReporter = ErrorReporter.create(ImmutableMap.of());
-      SoyType type =
-          SoyFileParser.parseType(
-              parameter.getType(), typeRegistry, /*filePath=*/ "---", errorReporter);
-      if (type == null) {
-        throw new IllegalArgumentException(
-            "Unable to parse the type for parameter: "
-                + parameter.getName()
-                + ": "
-                + parameter.getType()
-                + ": "
-                + errorReporter.getErrors().asList().get(0).message());
-      }
       builder.add(
           Parameter.builder()
               .setName(parameter.getName())
-              .setType(type)
-              .setInjected(parameter.getInjected())
               .setRequired(parameter.getRequired())
+              .setTypeLazily(
+                  new SoyTypeSupplier(parameter.getType(), typeRegistry, filePath, errorReporter))
               .build());
     }
     return builder.build();
+  }
+
+  /**
+   * Lazily parses a type.
+   *
+   * <p>We do this lazily because for many compiles we never access these types. For many
+   * dependencies there are templates that are never called by the source templates, so there is no
+   * point in fully resolving its types.
+   */
+  private static final class SoyTypeSupplier implements Supplier<SoyType> {
+    final SoyTypeP typeProto;
+    final SoyTypeRegistry typeRegistry;
+    final String filePath;
+    final ErrorReporter errorReporter;
+
+    SoyTypeSupplier(
+        SoyTypeP type, SoyTypeRegistry typeRegistry, String filePath, ErrorReporter errorReporter) {
+      this.typeProto = type;
+      this.typeRegistry = typeRegistry;
+      this.filePath = filePath;
+      this.errorReporter = errorReporter;
+    }
+
+    @Override
+    public SoyType get() {
+      return fromProto(typeProto, typeRegistry, filePath, errorReporter);
+    }
+  }
+
+  private static SoyType fromProto(
+      SoyTypeP proto, SoyTypeRegistry typeRegistry, String filePath, ErrorReporter errorReporter) {
+    switch (proto.getTypeKindCase()) {
+      case PRIMITIVE:
+        switch (proto.getPrimitive()) {
+          case ANY:
+            return AnyType.getInstance();
+          case UNKNOWN:
+            return UnknownType.getInstance();
+          case INT:
+            return IntType.getInstance();
+          case NULL:
+            return NullType.getInstance();
+          case BOOL:
+            return BoolType.getInstance();
+          case FLOAT:
+            return FloatType.getInstance();
+          case STRING:
+            return StringType.getInstance();
+          case HTML:
+            return HtmlType.getInstance();
+          case ATTRIBUTES:
+            return AttributesType.getInstance();
+          case JS:
+            return JsType.getInstance();
+          case CSS:
+            return StyleType.getInstance();
+          case URI:
+            return UriType.getInstance();
+          case TRUSTED_RESOURCE_URI:
+            return TrustedResourceUriType.getInstance();
+          case VE_DATA:
+            return VeDataType.getInstance();
+          case UNRECOGNIZED:
+          case UNKNOWN_PRIMITIVE_TYPE:
+            // fall-through
+        }
+        throw new AssertionError("Unknown primitive: " + proto.getPrimitive());
+      case LIST_ELEMENT:
+        return typeRegistry.getOrCreateListType(
+            fromProto(proto.getListElement(), typeRegistry, filePath, errorReporter));
+
+      case LEGACY_OBJECT_MAP:
+        return typeRegistry.getOrCreateLegacyObjectMapType(
+            fromProto(proto.getLegacyObjectMap().getKey(), typeRegistry, filePath, errorReporter),
+            fromProto(
+                proto.getLegacyObjectMap().getValue(), typeRegistry, filePath, errorReporter));
+      case MAP:
+        return typeRegistry.getOrCreateMapType(
+            fromProto(proto.getMap().getKey(), typeRegistry, filePath, errorReporter),
+            fromProto(proto.getMap().getValue(), typeRegistry, filePath, errorReporter));
+      case PROTO:
+        {
+          SoyType type = typeRegistry.getType(proto.getProto());
+          if (type == null) {
+            errorReporter.report(
+                new SourceLocation(filePath), UNABLE_TO_FIND_TYPE, "proto", proto.getProto());
+            return ErrorType.getInstance();
+          }
+          // allow unknown to support message extraction which configures the DEFAULT_UNKNOWN type
+          // registry
+          if (type instanceof SoyProtoType || type == UnknownType.getInstance()) {
+            return type;
+          }
+          errorReporter.report(
+              new SourceLocation(filePath),
+              UNEXPECTED_TYPE,
+              proto.getProto(),
+              "proto",
+              type.getKind());
+          return ErrorType.getInstance();
+        }
+      case PROTO_ENUM:
+        {
+          SoyType type = typeRegistry.getType(proto.getProtoEnum());
+          if (type == null) {
+            errorReporter.report(
+                new SourceLocation(filePath),
+                UNABLE_TO_FIND_TYPE,
+                "proto enum",
+                proto.getProtoEnum());
+            return ErrorType.getInstance();
+          }
+          // allow unknown to support message extraction which configures the DEFAULT_UNKNOWN type
+          // registry
+          if (type instanceof SoyProtoEnumType || type == UnknownType.getInstance()) {
+            return type;
+          }
+          errorReporter.report(
+              new SourceLocation(filePath),
+              UNEXPECTED_TYPE,
+              proto.getProtoEnum(),
+              "proto enum",
+              type.getKind());
+          return ErrorType.getInstance();
+        }
+      case RECORD:
+        {
+          ImmutableSortedMap.Builder<String, SoyType> members = ImmutableSortedMap.naturalOrder();
+          for (Map.Entry<String, SoyTypeP> entry : proto.getRecord().getFieldMap().entrySet()) {
+            members.put(
+                entry.getKey(), fromProto(entry.getValue(), typeRegistry, filePath, errorReporter));
+          }
+          return typeRegistry.getOrCreateRecordType(members.build());
+        }
+      case UNION:
+        {
+          List<SoyType> members = new ArrayList<>(proto.getUnion().getMemberCount());
+          for (SoyTypeP member : proto.getUnion().getMemberList()) {
+            members.add(fromProto(member, typeRegistry, filePath, errorReporter));
+          }
+          return typeRegistry.getOrCreateUnionType(members);
+        }
+      case VE:
+        return typeRegistry.getOrCreateVeType(proto.getVe());
+      case TYPEKIND_NOT_SET:
+        // fall-through
+    }
+    throw new AssertionError("unhandled typeKind: " + proto.getTypeKindCase());
   }
 
   private static ImmutableList<ParameterP> protosFromParameters(List<Parameter> parameterList) {
@@ -216,50 +379,46 @@ public final class TemplateMetadataSerializer {
       builder.add(
           ParameterP.newBuilder()
               .setName(parameter.getName())
-              .setType(parameter.getType().toString())
-              .setInjected(parameter.isInjected())
+              .setType(parameter.getType().toProto())
               .setRequired(parameter.isRequired())
               .build());
     }
     return builder.build();
   }
 
-  private static ImmutableList<CallSituation> callSituationsFromProto(
-      List<CallSituationP> callSituationList, SoyFileP fileProto) {
-    ImmutableList.Builder<CallSituation> builder =
+  private static ImmutableList<DataAllCallSituation> callSituationsFromProto(
+      List<DataAllCallSituationP> callSituationList, SoyFileP fileProto) {
+    ImmutableList.Builder<DataAllCallSituation> builder =
         ImmutableList.builderWithExpectedSize(callSituationList.size());
-    for (CallSituationP call : callSituationList) {
+    for (DataAllCallSituationP call : callSituationList) {
       String templateName = call.getTemplateName();
       if (templateName.startsWith(".")) {
         templateName = fileProto.getNamespace() + templateName;
       }
       builder.add(
-          CallSituation.builder()
+          DataAllCallSituation.builder()
               .setTemplateName(templateName)
               .setDelCall(call.getDelCall())
-              .setDataAllCall(call.getDataAllCall())
-              .setExplicitlyPassedParametersForDataAllCalls(
-                  ImmutableSet.copyOf(call.getExplicitlyPassedParametersForDataAllCallsList()))
+              .setExplicitlyPassedParameters(
+                  ImmutableSet.copyOf(call.getExplicitlyPassedParametersList()))
               .build());
     }
     return builder.build();
   }
 
-  private static ImmutableList<CallSituationP> protosFromCallSitatuations(
-      ImmutableList<CallSituation> callSituationList, SoyFileNode fileNode) {
-    ImmutableList.Builder<CallSituationP> builder =
+  private static ImmutableList<DataAllCallSituationP> protosFromCallSitatuations(
+      ImmutableList<DataAllCallSituation> callSituationList, SoyFileNode fileNode) {
+    ImmutableList.Builder<DataAllCallSituationP> builder =
         ImmutableList.builderWithExpectedSize(callSituationList.size());
-    for (CallSituation call : callSituationList) {
+    for (DataAllCallSituation call : callSituationList) {
       builder.add(
-          CallSituationP.newBuilder()
+          DataAllCallSituationP.newBuilder()
               .setTemplateName(
                   call.isDelCall()
                       ? call.getTemplateName()
                       : maybeShortenTemplateName(fileNode.getNamespace(), call.getTemplateName()))
               .setDelCall(call.isDelCall())
-              .setDataAllCall(call.isDataAllCall())
-              .addAllExplicitlyPassedParametersForDataAllCalls(
-                  call.getExplicitlyPassedParametersForDataAllCalls())
+              .addAllExplicitlyPassedParameters(call.getExplicitlyPassedParameters())
               .build());
     }
     return builder.build();
@@ -271,25 +430,6 @@ public final class TemplateMetadataSerializer {
       return templateName.substring(namespace.length());
     }
     return templateName;
-  }
-
-  private static SourceLocation sourceLocationFromProto(
-      SoyFileP fileProto, SourceLocationP sourceLocation) {
-    return new SourceLocation(
-        fileProto.getFilePath(),
-        sourceLocation.getStartLine(),
-        sourceLocation.getStartColumn(),
-        sourceLocation.getEndLine(),
-        sourceLocation.getEndColumn());
-  }
-
-  private static SourceLocationP protoFromSourceLocation(SourceLocation location) {
-    return SourceLocationP.newBuilder()
-        .setStartLine(location.getBeginLine())
-        .setStartColumn(location.getBeginColumn())
-        .setEndLine(location.getEndLine())
-        .setEndColumn(location.getEndColumn())
-        .build();
   }
 
   private static <T1 extends Enum<T1>, T2 extends Enum<T2>> Converter<T1, T2> createEnumConverter(

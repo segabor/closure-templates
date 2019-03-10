@@ -16,41 +16,29 @@
 
 package com.google.template.soy.types;
 
+import static java.util.Comparator.comparing;
+
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
-import com.google.common.collect.Collections2;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.common.collect.Iterables;
+import com.google.template.soy.soytree.SoyTypeP;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.Objects;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Type representing a set of possible alternative types.
  *
  */
 public final class UnionType extends SoyType {
-  private static final Predicate<SoyType> IS_NULL =
-      new Predicate<SoyType>() {
-        @Override
-        public boolean apply(SoyType memberType) {
-          return memberType.getKind() == SoyType.Kind.NULL;
-        }
-      };
 
   /** Comparator that defines the ordering of types. */
-  private static final Comparator<SoyType> MEMBER_ORDER =
-      new Comparator<SoyType>() {
-        @Override
-        public int compare(SoyType st1, SoyType st2) {
-          return st1.toString().compareTo(st2.toString());
-        }
-      };
+  private static final Comparator<SoyType> MEMBER_ORDER = comparing(SoyType::toString);
 
   private final ImmutableSortedSet<SoyType> members;
 
@@ -84,13 +72,24 @@ public final class UnionType extends SoyType {
    *     not be a UnionType.
    */
   public static SoyType of(Collection<SoyType> members) {
-    ImmutableSet<SoyType> flattenedMembers = flatten(members);
+    // sort and flatten the set of types
+    ImmutableSortedSet.Builder<SoyType> builder = ImmutableSortedSet.orderedBy(MEMBER_ORDER);
+    for (SoyType type : members) {
+      // simplify unions containing these types
+      if (type.getKind() == Kind.UNKNOWN
+          || type.getKind() == Kind.ERROR
+          || type.getKind() == Kind.ANY) {
+        return type;
+      }
+      if (type.getKind() == Kind.UNION) {
+        builder.addAll(((UnionType) type).members);
+      } else {
+        builder.add(type);
+      }
+    }
+    ImmutableSet<SoyType> flattenedMembers = builder.build();
     if (flattenedMembers.size() == 1) {
       return Iterables.getOnlyElement(flattenedMembers);
-    }
-    // unions with the error type should just resolve to the error type to simplify analysis.
-    if (flattenedMembers.contains(ErrorType.getInstance())) {
-      return ErrorType.getInstance();
     }
     return new UnionType(flattenedMembers);
   }
@@ -119,13 +118,16 @@ public final class UnionType extends SoyType {
 
   /** Returns true if the union includes the null type. */
   public boolean isNullable() {
-    return Iterables.any(members, IS_NULL);
+    return members.stream().anyMatch(t -> t.getKind() == SoyType.Kind.NULL);
   }
 
   /** Returns a Soy type that is equivalent to this one but with 'null' removed. */
   public SoyType removeNullability() {
     if (isNullable()) {
-      return of(Collections2.filter(members, Predicates.not(IS_NULL)));
+      return of(
+          members.stream()
+              .filter(t -> t.getKind() != SoyType.Kind.NULL)
+              .collect(Collectors.toList()));
     }
     return this;
   }
@@ -133,6 +135,14 @@ public final class UnionType extends SoyType {
   @Override
   public String toString() {
     return Joiner.on('|').join(members);
+  }
+
+  @Override
+  void doToProto(SoyTypeP.Builder builder) {
+    SoyTypeP.UnionTypeP.Builder unionBuilder = builder.getUnionBuilder();
+    for (SoyType member : members) {
+      unionBuilder.addMember(member.toProto());
+    }
   }
 
   @Override
@@ -145,28 +155,5 @@ public final class UnionType extends SoyType {
   @Override
   public int hashCode() {
     return Objects.hash(this.getClass(), members);
-  }
-
-  /**
-   * Create a set containing all of the types contained in the input collection. If any of the
-   * members of the input collection are unions, add the individual members to the result union,
-   * thus "flattening" the union.
-   *
-   * @param members The input types.
-   * @return The set of all types in the input collection.
-   */
-  private static ImmutableSet<SoyType> flatten(Collection<SoyType> members) {
-    ImmutableSet.Builder<SoyType> builder = ImmutableSet.builder();
-    for (SoyType type : members) {
-      if (type.getKind() == Kind.UNKNOWN) {
-        return ImmutableSet.of(type);
-      }
-      if (type.getKind() == Kind.UNION) {
-        builder.addAll(((UnionType) type).members);
-      } else {
-        builder.add(type);
-      }
-    }
-    return builder.build();
   }
 }

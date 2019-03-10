@@ -55,18 +55,9 @@ public final class InternalPlugins {
   }
 
   /** Returns a map (whose key is the name of the function) of the functions shipped with Soy. */
-  public static ImmutableMap<String, SoySourceFunction> internalFunctionMap(
-      final SoyScopedData soyScopedData) {
-    Supplier<BidiGlobalDir> bidiProvider =
-        new Supplier<BidiGlobalDir>() {
-          @Override
-          public BidiGlobalDir get() {
-            return soyScopedData.getBidiGlobalDir();
-          }
-        };
+  public static ImmutableMap<String, SoySourceFunction> internalFunctionMap() {
     // TODO(b/19252021): Include BuiltInFunctions
-    return fromFunctions(
-        Iterables.concat(BasicFunctions.functions(), BidiFunctions.functions(bidiProvider)));
+    return fromFunctions(Iterables.concat(BasicFunctions.functions(), BidiFunctions.functions()));
   }
 
   public static ImmutableMap<String, SoySourceFunction> fromFunctions(
@@ -82,20 +73,8 @@ public final class InternalPlugins {
 
   public static ImmutableMap<String, SoyPrintDirective> internalDirectiveMap(
       final SoyScopedData soyScopedData) {
-    Supplier<BidiGlobalDir> bidiProvider =
-        new Supplier<BidiGlobalDir>() {
-          @Override
-          public BidiGlobalDir get() {
-            return soyScopedData.getBidiGlobalDir();
-          }
-        };
-    Supplier<String> localeProvider =
-        new Supplier<String>() {
-          @Override
-          public String get() {
-            return soyScopedData.getLocale();
-          }
-        };
+    Supplier<BidiGlobalDir> bidiProvider = soyScopedData::getBidiGlobalDir;
+    Supplier<String> localeProvider = soyScopedData::getLocale;
     return fromDirectives(
         Iterables.concat(
             CoreDirectives.directives(),

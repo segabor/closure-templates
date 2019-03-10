@@ -20,7 +20,7 @@ import java.util.List;
 
 /**
  * A {@link SoySourceFunction} that generates code to be called at JavaScript render time. All
- * SoyJavaScriptSourceFunction must be annotated with {@literal @}{@link
+ * SoyJavaScriptSourceFunction implementations must be annotated with {@literal @}{@link
  * com.google.template.soy.shared.restricted.SoyFunctionSignature}.
  */
 public interface SoyJavaScriptSourceFunction extends SoySourceFunction {

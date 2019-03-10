@@ -25,7 +25,6 @@ import static org.junit.Assert.fail;
 import com.google.common.base.Joiner;
 import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.base.SourceLocation;
-import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.base.internal.SoyFileSupplier;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.soytree.AbstractSoyNodeVisitor;
@@ -192,8 +191,7 @@ public final class SourceLocationTest {
     // JavaCC is pretty good about never using null as a token value.
     ErrorReporter reporter = ErrorReporter.createForTest();
     SoyFileSetParserBuilder.forSuppliers(
-            SoyFileSupplier.Factory.create(
-                "{template t}\nHello, World!\n", SoyFileKind.SRC, "broken.soy"))
+            SoyFileSupplier.Factory.create("{template t}\nHello, World!\n", "broken.soy"))
         .errorReporter(reporter)
         .parse();
     assertThat(reporter.getErrors()).isNotEmpty();
@@ -210,8 +208,8 @@ public final class SourceLocationTest {
     assertEquals(2, location.getBeginLine());
     assertEquals(1, location.getBeginColumn());
     // End after .t}
-    assertEquals(2, location.getEndLine());
-    assertEquals(13, location.getEndColumn());
+    assertEquals(4, location.getEndLine());
+    assertEquals(11, location.getEndColumn());
   }
 
   @Test
@@ -342,7 +340,7 @@ public final class SourceLocationTest {
   private void assertSourceLocations(String asciiArtExpectedOutput, String soySourceCode) {
     SoyFileSetNode soyTree =
         SoyFileSetParserBuilder.forSuppliers(
-                SoyFileSupplier.Factory.create(soySourceCode, SoyFileKind.SRC, "/example/file.soy"))
+                SoyFileSupplier.Factory.create(soySourceCode, "/example/file.soy"))
             .parse()
             .fileSet();
     String actual = new AsciiArtVisitor().exec(soyTree);

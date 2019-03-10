@@ -16,8 +16,6 @@
 
 package com.google.template.soy.passes;
 
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -68,6 +66,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import javax.annotation.CheckReturnValue;
 import javax.annotation.Nullable;
 
@@ -291,7 +290,7 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
         }
       }
 
-      return Predicates.in(paramNamesToRuntimeCheck);
+      return ImmutableSet.copyOf(paramNamesToRuntimeCheck)::contains;
     }
 
     /**
@@ -373,8 +372,7 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
         SoyType argType,
         SoyType formalType,
         TemplateParamTypes calleeParams) {
-      if ((!calleeParams.isStrictlyTyped && formalType.getKind() == SoyType.Kind.UNKNOWN)
-          || formalType.getKind() == SoyType.Kind.ANY) {
+      if (formalType.getKind() == SoyType.Kind.ANY) {
         // Special rules for unknown / any
         if (argType.getKind() == SoyType.Kind.PROTO) {
           errorReporter.report(
@@ -436,9 +434,6 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
 
         // Store all of the explicitly declared param types
         for (Parameter param : callee.getParameters()) {
-          if (param.isDeclaredInSoyDoc()) {
-            paramTypes.isStrictlyTyped = false;
-          }
           paramTypes.params.put(param.getName(), param.getType());
         }
 
@@ -509,9 +504,7 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
           // Check param keys required by callee.
           List<String> missingParamKeys = Lists.newArrayListWithCapacity(2);
           for (Parameter calleeParam : callee.getParameters()) {
-            if (!calleeParam.isInjected()
-                && calleeParam.isRequired()
-                && !callerParamKeys.contains(calleeParam.getName())) {
+            if (calleeParam.isRequired() && !callerParamKeys.contains(calleeParam.getName())) {
               missingParamKeys.add(calleeParam.getName());
             }
           }
@@ -568,7 +561,6 @@ final class CheckTemplateCallsPass extends CompilerFileSetPass {
     }
 
     private class TemplateParamTypes {
-      public boolean isStrictlyTyped = true;
       public final Multimap<String, SoyType> params = HashMultimap.create();
       public final Set<String> indirectParamNames = new HashSet<>();
 

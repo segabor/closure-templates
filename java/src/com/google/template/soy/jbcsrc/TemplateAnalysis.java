@@ -42,7 +42,6 @@ import com.google.template.soy.exprtree.OperatorNodes.OrOpNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.VarDefn;
 import com.google.template.soy.exprtree.VarRefNode;
-import com.google.template.soy.jbcsrc.api.RenderResult;
 import com.google.template.soy.jbcsrc.runtime.JbcSrcRuntime;
 import com.google.template.soy.msgs.internal.MsgUtils;
 import com.google.template.soy.msgs.restricted.SoyMsgPart;
@@ -107,7 +106,8 @@ import java.util.Set;
  * <ul>
  *   <li>{@link #isResolved(DataAccessNode)} can tell us whether or not a particular variable or
  *       field reference has already been referenced at a given point and therefore {code
- *       SoyValueProvider#status()} has already returned {@link RenderResult#done()}.
+ *       SoyValueProvider#status()} has already returned {@link
+ *       com.google.template.soy.jbcsrc.api.RenderResult#done()}.
  * </ul>
  *
  * <p>TODO(lukes): consider adding the following
@@ -239,8 +239,6 @@ final class TemplateAnalysis {
           case UNKNOWN:
             this.current = Block.merge(loopEnd, ifEmptyEnd);
             break;
-          default:
-            throw new AssertionError();
         }
       } else {
         switch (isLoopEmpty) {
@@ -253,8 +251,6 @@ final class TemplateAnalysis {
           case UNKNOWN:
             this.current = Block.merge(loopEnd, loopBegin);
             break;
-          default:
-            throw new AssertionError();
         }
       }
     }

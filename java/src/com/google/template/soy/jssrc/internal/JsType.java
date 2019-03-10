@@ -31,6 +31,7 @@ import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_SOY_DATA_SAN
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_SOY_DATA_UNSANITIZED_TEXT;
 import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_ASSERTS_ASSERT_TYPE;
 import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_MAP_IS_SOY_MAP;
+import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_VELOG;
 import static com.google.template.soy.jssrc.internal.JsRuntime.sanitizedContentType;
 
 import com.google.common.base.Joiner;
@@ -195,20 +196,41 @@ public final class JsType {
   private static final ImmutableMap<SanitizedContentKind, JsType> SANITIZED_TYPES_STRICT;
 
   private static final JsType IDOM_ATTRIBUTES =
-      builder().addType("function()").setPredicate(GOOG_IS_FUNCTION).build();
+      builder()
+          .addType("function()")
+          .addType("!google3.javascript.template.soy.element_lib_idom.IdomFunction")
+          .addRequire(
+              GoogRequire.createTypeRequire("google3.javascript.template.soy.element_lib_idom"))
+          .setPredicate(GOOG_IS_FUNCTION)
+          .build();
+
+  private static final GoogRequire SANITIZED_CONTENT_KIND =
+      GoogRequire.createWithAlias("goog.soy.data.SanitizedContentKind", "SanitizedContentKind");
+  // This cannot use a goog.require() alias to avoid conflicts with legacy
+  // FilterHtmlAttributesDirective
+  private static final Expression IS_IDOM_FUNCTION_TYPE =
+      GoogRequire.create("google3.javascript.template.soy.soyutils_directives")
+          .googModuleGet()
+          .dotAccess("$$isIdomFunctionType");
 
   private static final JsType IDOM_HTML =
       builder()
-          .addType("!goog.soy.data.SanitizedContent")
-          .addRequire(GoogRequire.create("goog.soy.data.SanitizedContent"))
-          .addType("function()")
+          .addType("!goog.soy.data.SanitizedHtml")
+          .addRequire(GoogRequire.createTypeRequire("goog.soy.data.SanitizedHtml"))
+          .addType("!google3.javascript.template.soy.element_lib_idom.IdomFunction")
+          .addRequire(
+              GoogRequire.createTypeRequire("google3.javascript.template.soy.element_lib_idom"))
+          .addType("function(!incrementaldomlib.IncrementalDomRenderer): undefined")
+          .addRequire(
+              GoogRequire.createWithAlias(
+                  "google3.javascript.template.soy.api_idom", "incrementaldomlib"))
           .setPredicate(
               new TypePredicate() {
                 @Override
                 public Optional<Expression> maybeCheck(Expression value, Generator codeGenerator) {
                   return Optional.of(
-                      GOOG_IS_FUNCTION
-                          .call(value)
+                      IS_IDOM_FUNCTION_TYPE
+                          .call(value, SANITIZED_CONTENT_KIND.dotAccess("HTML"))
                           .or(value.instanceOf(GOOG_SOY_DATA_SANITIZED_CONTENT), codeGenerator));
                 }
               })
@@ -225,15 +247,23 @@ public final class JsType {
     SANITIZED_TYPES_STRICT = Maps.immutableEnumMap(typesStrict);
   }
 
+  /** Returns a JS type with looser rules, allowing 1/0 for bools or nullable protos. */
   public static JsType forJsSrc(SoyType soyType) {
     return forSoyType(soyType, /* isIncrementalDom= */ false, /* isStrict= */ false);
   }
 
+  /** Returns a JS type with strict rules. */
+  public static JsType forJsSrcStrict(SoyType soyType) {
+    return forSoyType(soyType, /* isIncrementalDom= */ false, /* isStrict= */ true);
+  }
+
+  /** Returns a JS type for idom with looser rules, allowing 1/0 for bools or nullable protos. */
   public static JsType forIncrementalDom(SoyType soyType) {
     return forSoyType(soyType, /* isIncrementalDom= */ true, /* isStrict= */ false);
   }
 
-  public static JsType forIncrementalDomSetter(SoyType soyType) {
+  /** Returns a JS type for idom with strict rules. */
+  public static JsType forIncrementalDomState(SoyType soyType) {
     return forSoyType(soyType, /* isIncrementalDom= */ true, /* isStrict= */ true);
   }
 
@@ -451,11 +481,31 @@ public final class JsType {
               .build();
         }
       case VE:
-        // TODO(b/71641483): Implement this once we have ve runtime objects.
-        throw new UnsupportedOperationException();
+        return builder()
+            .addType("!soy.velog.$$VisualElement")
+            .addRequire(SOY_VELOG)
+            .setPredicate(
+                new TypePredicate() {
+                  @Override
+                  public Optional<Expression> maybeCheck(
+                      Expression value, Generator codeGenerator) {
+                    return Optional.of(value.instanceOf(JsRuntime.SOY_VISUAL_ELEMENT));
+                  }
+                })
+            .build();
       case VE_DATA:
-        // TODO(b/71641483): Implement this once we have ve runtime objects.
-        throw new UnsupportedOperationException();
+        return builder()
+            .addType("!soy.velog.$$VisualElementData")
+            .addRequire(SOY_VELOG)
+            .setPredicate(
+                new TypePredicate() {
+                  @Override
+                  public Optional<Expression> maybeCheck(
+                      Expression value, Generator codeGenerator) {
+                    return Optional.of(value.instanceOf(JsRuntime.SOY_VISUAL_ELEMENT_DATA));
+                  }
+                })
+            .build();
       case ERROR:
         // continue
     }
@@ -548,7 +598,8 @@ public final class JsType {
     if (!needsProtoCoercion) {
       return null;
     }
-    Expression coercion = value.dotAccess("$jspbMessageInstance").or(value, codeGenerator);
+    Expression coercion =
+        value.castAs("?").dotAccess("$jspbMessageInstance").or(value, codeGenerator);
     return coercionStrategies.contains(ValueCoercionStrategy.NULL)
         ? value.and(coercion, codeGenerator)
         : coercion;
@@ -561,6 +612,7 @@ public final class JsType {
     // consumed by an escaper function.
     // TODO(lukes): maybe we should define typedefs for these?
     Builder builder = builder();
+    builder.addType("!soydata.$$EMPTY_STRING_");
     builder.addType("!" + type);
     builder.addRequire(GoogRequire.create(type));
     if (!isStrict) {
@@ -598,8 +650,6 @@ public final class JsType {
         builder.addType("!goog.html.SafeUrl");
         builder.addType("!goog.Uri");
         break;
-      default:
-        throw new AssertionError("Unhandled content kind");
     }
 
     // TODO(lukes): consider eliminating the isCompatibleWith method and just inlining the

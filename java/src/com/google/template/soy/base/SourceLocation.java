@@ -23,6 +23,7 @@ import static com.google.common.base.Preconditions.checkState;
 import com.google.auto.value.AutoValue;
 import com.google.common.base.CharMatcher;
 import com.google.common.collect.ComparisonChain;
+import com.google.errorprone.annotations.Immutable;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import javax.annotation.ParametersAreNonnullByDefault;
@@ -33,6 +34,7 @@ import javax.annotation.ParametersAreNonnullByDefault;
  * @author brndn@google.com (Brendan Linn)
  */
 @ParametersAreNonnullByDefault
+@Immutable
 public final class SourceLocation implements Comparable<SourceLocation> {
 
   /** A file path or URI useful for error messages. */
@@ -219,6 +221,7 @@ public final class SourceLocation implements Comparable<SourceLocation> {
 
   /** A Point in a source file. */
   @AutoValue
+  @Immutable
   public abstract static class Point implements Comparable<Point> {
     public static final Point UNKNOWN_POINT = new AutoValue_SourceLocation_Point(-1, -1);
 
@@ -226,8 +229,8 @@ public final class SourceLocation implements Comparable<SourceLocation> {
       if (line == -1 && column == -1) {
         return UNKNOWN_POINT;
       }
-      checkArgument(line > 0);
-      checkArgument(column > 0);
+      checkArgument(line > 0, "line must be positive: %s", line);
+      checkArgument(column > 0, "column must be positive: %s", column);
       return new AutoValue_SourceLocation_Point(line, column);
     }
 

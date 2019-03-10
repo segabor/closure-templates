@@ -16,6 +16,8 @@
 
 package com.google.template.soy.types;
 
+import static com.google.common.base.Preconditions.checkNotNull;
+
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.protobuf.Descriptors.Descriptor;
@@ -26,6 +28,7 @@ import com.google.template.soy.internal.proto.Field;
 import com.google.template.soy.internal.proto.FieldVisitor;
 import com.google.template.soy.internal.proto.JavaQualifiedNames;
 import com.google.template.soy.internal.proto.ProtoUtils;
+import com.google.template.soy.soytree.SoyTypeP;
 import java.util.Set;
 import javax.annotation.Nullable;
 import javax.annotation.concurrent.GuardedBy;
@@ -170,6 +173,7 @@ public final class SoyProtoType extends SoyType {
     synchronized SoyType getType() {
       if (type == null) {
         type = FieldVisitor.visitField(getDescriptor(), visitor);
+        checkNotNull(type, "Couldn't find a type for: %s", getDescriptor());
         visitor = null;
       }
       return type;
@@ -272,14 +276,20 @@ public final class SoyProtoType extends SoyType {
       case TOFU:
       case JBC_SRC:
         return JavaQualifiedNames.getClassName(typeDescriptor);
-      default:
+      case PYTHON_SRC:
         throw new UnsupportedOperationException();
     }
+    throw new AssertionError(backend);
   }
 
   @Override
   public String toString() {
     return typeDescriptor.getFullName();
+  }
+
+  @Override
+  void doToProto(SoyTypeP.Builder builder) {
+    builder.setProto(typeDescriptor.getFullName());
   }
 
   /**

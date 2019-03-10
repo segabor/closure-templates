@@ -86,6 +86,7 @@ import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.VarDefn;
 import com.google.template.soy.exprtree.VarRefNode;
+import com.google.template.soy.exprtree.VeLiteralNode;
 import com.google.template.soy.logging.LoggingFunction;
 import com.google.template.soy.msgs.SoyMsgBundle;
 import com.google.template.soy.plugin.java.restricted.JavaValueFactory;
@@ -95,12 +96,12 @@ import com.google.template.soy.shared.SoyIdRenamingMap;
 import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.shared.restricted.SoyJavaFunction;
 import com.google.template.soy.soytree.defn.LoopVar;
-import com.google.template.soy.soytree.defn.TemplatePropVar;
+import com.google.template.soy.soytree.defn.TemplateStateVar;
 import com.google.template.soy.types.MapType;
 import com.google.template.soy.types.SoyProtoType;
 import com.google.template.soy.types.SoyType;
-import com.google.template.soy.types.SoyType.Kind;
 import com.google.template.soy.types.SoyTypes;
+import com.google.template.soy.types.UnionType;
 import java.io.IOException;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -347,9 +348,9 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
         throw RenderException.create(
             "Injected data not provided, yet referenced (" + varRef.toSourceString() + ").");
       }
-    } else if (varRef.getDefnDecl().kind() == VarDefn.Kind.PROP) {
-      TemplatePropVar prop = (TemplatePropVar) varRef.getDefnDecl();
-      return visit(prop.initialValue());
+    } else if (varRef.getDefnDecl().kind() == VarDefn.Kind.STATE) {
+      TemplateStateVar state = (TemplateStateVar) varRef.getDefnDecl();
+      return visit(state.defaultValue());
     } else {
       return env.getVar(varRef.getDefnDecl());
     }
@@ -386,7 +387,7 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
 
     // If the static type is a proto, access it using proto semantics
     // the base type is possibly nullable, so remove null before testing for being a proto
-    if (SoyTypes.tryRemoveNull(fieldAccess.getBaseExprChild().getType()).getKind() == Kind.PROTO) {
+    if (isProtoOrUnionOfProtos(fieldAccess.getBaseExprChild().getType())) {
       return ((SoyProtoValue) base).getProtoField(fieldAccess.getFieldName());
     }
     maybeMarkBadProtoAccess(fieldAccess, base);
@@ -408,6 +409,22 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
     }
 
     return (value != null) ? value : UndefinedData.INSTANCE;
+  }
+
+  private static boolean isProtoOrUnionOfProtos(SoyType type) {
+    if (type.getKind() == SoyType.Kind.PROTO) {
+      return true;
+    }
+    if (type.getKind() == SoyType.Kind.UNION) {
+      for (SoyType memberType : ((UnionType) type).getMembers()) {
+        if (memberType.getKind() != SoyType.Kind.PROTO
+            && memberType.getKind() != SoyType.Kind.NULL) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return false;
   }
 
   private SoyValue visitNullSafeItemAccessNode(ItemAccessNode itemAccess) {
@@ -644,8 +661,7 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
         case DEBUG_SOY_TEMPLATE_INFO:
           return BooleanData.forValue(debugSoyTemplateInfo);
         case VE_DATA:
-          // TODO(b/71641483): Implement this once we have ve runtime objects.
-          throw new UnsupportedOperationException();
+          return NullData.INSTANCE;
         case MSG_WITH_ID:
         case REMAINDER:
           // should have been removed earlier in the compiler
@@ -817,6 +833,11 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
   private SoyValue visitToFloatFunction(FunctionNode node) {
     IntegerData v = (IntegerData) visit(node.getChild(0));
     return FloatData.forValue((double) v.longValue());
+  }
+
+  @Override
+  protected SoyValue visitVeLiteralNode(VeLiteralNode node) {
+    return NullData.INSTANCE;
   }
 
   // -----------------------------------------------------------------------------------------------

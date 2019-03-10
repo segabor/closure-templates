@@ -36,8 +36,10 @@ import com.google.template.soy.soyparse.SoyFileParser;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
+import com.google.template.soy.soytree.TemplateBasicNode;
 import com.google.template.soy.soytree.TemplateElementNode;
-import com.google.template.soy.soytree.defn.TemplatePropVar;
+import com.google.template.soy.soytree.defn.TemplateParam;
+import com.google.template.soy.soytree.defn.TemplateStateVar;
 import com.google.template.soy.testing.ExampleExtendable;
 import com.google.template.soy.types.AnyType;
 import com.google.template.soy.types.BoolType;
@@ -51,6 +53,8 @@ import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.StringType;
 import com.google.template.soy.types.UnknownType;
 import com.google.template.soy.types.VeType;
+import com.google.template.soy.types.ast.TypeNode;
+import com.google.template.soy.types.ast.TypeNodeConverter;
 import java.util.List;
 import java.util.Set;
 import org.junit.Test;
@@ -95,14 +99,14 @@ public final class ResolveExpressionTypesPassTest {
   }
 
   @Test
-  public void testProp() {
+  public void testState() {
     SoyFileSetNode soyTree =
         SoyFileSetParserBuilder.forFileContents(
                 constructElementSource(
-                    "{@prop pa:= true}",
-                    "{@prop pb:= [1,2,3]}",
-                    "{@prop pc: bool|null = null}",
-                    "{@prop pd: list<int>|null = null}",
+                    "{@state pa:= true}",
+                    "{@state pb:= [1,2,3]}",
+                    "{@param pc: bool|null = null}",
+                    "{@param pd: list<int>|null = null}",
                     "<div>",
                     "{assertType('bool', $pa)}",
                     "{assertType('list<int>', $pb)}",
@@ -110,20 +114,45 @@ public final class ResolveExpressionTypesPassTest {
                     "{assertType('list<int>|null', $pd)}",
                     "</div>"))
             .addSoyFunction(ASSERT_TYPE_FUNCTION)
-            .enableExperimentalFeatures(ImmutableList.of("prop_vars"))
             .parse()
             .fileSet();
     assertTypes(soyTree);
     TemplateElementNode node = (TemplateElementNode) soyTree.getChild(0).getChild(0);
-    List<TemplatePropVar> props = node.getPropVars();
-    assertThat(props.get(0).initialValue().getType()).isEqualTo(BoolType.getInstance());
-    assertThat(props.get(1).initialValue().getType()).isEqualTo(ListType.of(IntType.getInstance()));
-    assertThat(props.get(2).initialValue().getType()).isEqualTo(NullType.getInstance());
-    assertThat(props.get(3).initialValue().getType()).isEqualTo(NullType.getInstance());
+
+    List<TemplateStateVar> stateVars = node.getStateVars();
+    assertThat(stateVars.get(0).defaultValue().getType()).isEqualTo(BoolType.getInstance());
+    assertThat(stateVars.get(1).defaultValue().getType())
+        .isEqualTo(ListType.of(IntType.getInstance()));
+
+    List<TemplateParam> params = node.getParams();
+    assertThat(params.get(0).defaultValue().getType()).isEqualTo(NullType.getInstance());
+    assertThat(params.get(1).defaultValue().getType()).isEqualTo(NullType.getInstance());
   }
 
   @Test
-  public void testPropTypeInference() {
+  public void testDefaultParam() {
+    SoyFileSetNode soyTree =
+        SoyFileSetParserBuilder.forFileContents(
+                constructTemplateSource(
+                    "{@param pa:= map('cats': true, 'dogs': false)}",
+                    "{@param pb: string|null = null}",
+                    "{assertType('map<string,bool>', $pa)}",
+                    "{assertType('null|string', $pb)}"))
+            .addSoyFunction(ASSERT_TYPE_FUNCTION)
+            .parse()
+            .fileSet();
+
+    assertTypes(soyTree);
+
+    TemplateBasicNode node = (TemplateBasicNode) soyTree.getChild(0).getChild(0);
+    List<TemplateParam> params = node.getParams();
+    assertThat(params.get(0).defaultValue().getType())
+        .isEqualTo(MapType.of(StringType.getInstance(), BoolType.getInstance()));
+    assertThat(params.get(1).defaultValue().getType()).isEqualTo(NullType.getInstance());
+  }
+
+  @Test
+  public void testStateTypeInference() {
     SoyTypeRegistry typeRegistry =
         new SoyTypeRegistry.Builder()
             .addDescriptors(ImmutableList.of(ExampleExtendable.getDescriptor()))
@@ -132,31 +161,31 @@ public final class ResolveExpressionTypesPassTest {
     SoyFileSetNode soyTree =
         SoyFileSetParserBuilder.forFileContents(
                 constructElementSource(
-                    "{@prop pa:= true}",
-                    "{@prop pb:= [1,2,3]}",
-                    "{@prop proto:= example.ExampleExtendable()}",
+                    "{@state pa:= true}",
+                    "{@state pb:= [1,2,3]}",
+                    "{@state proto:= example.ExampleExtendable()}",
                     "<div>",
                     "{assertType('bool', $pa)}",
                     "{assertType('list<int>', $pb)}",
                     "{assertType('example.ExampleExtendable', $proto)}",
                     "</div>"))
             .addSoyFunction(ASSERT_TYPE_FUNCTION)
-            .enableExperimentalFeatures(ImmutableList.of("prop_vars"))
             .typeRegistry(typeRegistry)
             .parse()
             .fileSet();
     assertTypes(soyTree);
     TemplateElementNode node = (TemplateElementNode) soyTree.getChild(0).getChild(0);
-    List<TemplatePropVar> props = node.getPropVars();
+    List<TemplateStateVar> stateVars = node.getStateVars();
 
-    assertThat(props.get(0).name()).isEqualTo("pa");
-    assertThat(props.get(0).type()).isEqualTo(BoolType.getInstance());
+    assertThat(stateVars.get(0).name()).isEqualTo("pa");
+    assertThat(stateVars.get(0).type()).isEqualTo(BoolType.getInstance());
 
-    assertThat(props.get(1).name()).isEqualTo("pb");
-    assertThat(props.get(1).type()).isEqualTo(ListType.of(IntType.getInstance()));
+    assertThat(stateVars.get(1).name()).isEqualTo("pb");
+    assertThat(stateVars.get(1).type()).isEqualTo(ListType.of(IntType.getInstance()));
 
-    assertThat(props.get(2).name()).isEqualTo("proto");
-    assertThat(props.get(2).type()).isEqualTo(typeRegistry.getType("example.ExampleExtendable"));
+    assertThat(stateVars.get(2).name()).isEqualTo("proto");
+    assertThat(stateVars.get(2).type())
+        .isEqualTo(typeRegistry.getType("example.ExampleExtendable"));
   }
 
   @Test
@@ -827,7 +856,6 @@ public final class ResolveExpressionTypesPassTest {
                     "{assertType('ve<null>', ve(VeNoData))}"))
             .addSoyFunction(ASSERT_TYPE_FUNCTION)
             .typeRegistry(typeRegistry)
-            .enableExperimentalFeatures(ImmutableList.of("dynamic_ve"))
             .setLoggingConfig(
                 ValidatedLoggingConfig.create(
                     LoggingConfig.newBuilder()
@@ -847,12 +875,11 @@ public final class ResolveExpressionTypesPassTest {
 
     assertThat(veNodes.get(0).getId()).isEqualTo(1);
     assertThat(veNodes.get(0).getName().identifier()).isEqualTo("VeData");
-    assertThat(veNodes.get(0).getType())
-        .isEqualTo(VeType.of(typeRegistry.getType("example.ExampleExtendable")));
+    assertThat(veNodes.get(0).getType()).isEqualTo(VeType.of("example.ExampleExtendable"));
 
     assertThat(veNodes.get(1).getId()).isEqualTo(2);
     assertThat(veNodes.get(1).getName().identifier()).isEqualTo("VeNoData");
-    assertThat(veNodes.get(1).getType()).isEqualTo(VeType.of(NullType.getInstance()));
+    assertThat(veNodes.get(1).getType()).isEqualTo(VeType.of("null"));
   }
 
   @Test
@@ -869,7 +896,6 @@ public final class ResolveExpressionTypesPassTest {
                     "{assertType('ve_data', ve_data(ve(VeNoData), null))}"))
             .addSoyFunction(ASSERT_TYPE_FUNCTION)
             .typeRegistry(typeRegistry)
-            .enableExperimentalFeatures(ImmutableList.of("dynamic_ve"))
             .setLoggingConfig(
                 ValidatedLoggingConfig.create(
                     LoggingConfig.newBuilder()
@@ -930,8 +956,9 @@ public final class ResolveExpressionTypesPassTest {
   }
 
   private SoyType parseSoyType(String type, ErrorReporter errorReporter) {
-    return SoyFileParser.parseType(
-        type, TYPE_REGISTRY, "com.google.foo.bar.FakeSoyFunction", errorReporter);
+    TypeNode parsed =
+        SoyFileParser.parseType(type, "com.google.foo.bar.FakeSoyFunction", errorReporter);
+    return new TypeNodeConverter(errorReporter, TYPE_REGISTRY).getOrCreateType(parsed);
   }
 
   /**

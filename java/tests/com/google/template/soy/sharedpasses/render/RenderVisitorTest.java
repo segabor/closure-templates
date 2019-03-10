@@ -20,8 +20,6 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.fail;
 
 import com.google.common.base.Joiner;
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -67,6 +65,7 @@ import java.io.IOException;
 import java.io.PrintStream;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Predicate;
 import javax.annotation.Nullable;
 import org.junit.Rule;
 import org.junit.Test;
@@ -293,7 +292,7 @@ public class RenderVisitorTest {
             new DelTemplateSelector.Builder<TemplateDelegateNode>().build(),
             data,
             TEST_IJ_DATA,
-            Predicates.<String>alwaysFalse(),
+            arg -> false,
             msgBundle,
             xidRenamingMap,
             cssRenamingMap,
@@ -888,8 +887,10 @@ public class RenderVisitorTest {
     String soyFileContent =
         "{namespace ns}\n"
             + "\n"
-            + "/** @param boo @param foo @param goo */\n"
             + "{template .callerTemplate}\n"
+            + "  {@param boo: ?}\n"
+            + "  {@param foo: ?}\n"
+            + "  {@param goo: ?}\n"
             + "  {call .calleeTemplate data=\"all\" /}\n"
             + "  {call .calleeTemplate data=\"$foo\" /}\n"
             + "  {call .calleeTemplate data=\"all\"}\n"
@@ -907,11 +908,9 @@ public class RenderVisitorTest {
             + "  {/call}\n"
             + "{/template}\n"
             + "\n"
-            + "/**\n"
-            + " * @param boo\n"
-            + " * @param goo\n"
-            + " */\n"
             + "{template .calleeTemplate}\n"
+            + "  {@param boo: ?}\n"
+            + "  {@param goo: ?}\n"
             + "  {$boo}\n"
             + "  {for $n in $goo} {$n}{/for}{\\n}\n"
             + "{/template}\n";
@@ -933,11 +932,7 @@ public class RenderVisitorTest {
 
     assertThat(
             renderTemplateInFile(
-                soyFileContent,
-                "ns.callerTemplate",
-                data,
-                TEST_IJ_DATA,
-                Predicates.<String>alwaysFalse()))
+                soyFileContent, "ns.callerTemplate", data, TEST_IJ_DATA, arg -> false))
         .isEqualTo(expectedOutput);
   }
 
@@ -989,8 +984,10 @@ public class RenderVisitorTest {
     String soyFileContent =
         "{namespace ns}\n"
             + "\n"
-            + "/** @param boo @param foo @param goo */\n"
             + "{template .callerTemplate}\n"
+            + "  {@param boo: ?}\n"
+            + "  {@param foo: ?}\n"
+            + "  {@param goo: ?}\n"
             + "  {call .calleeTemplate data=\"all\" /}\n"
             + "  {call .calleeTemplate data=\"$foo\" /}\n"
             + "  {call .calleeTemplate data=\"all\"}\n"
@@ -1008,11 +1005,9 @@ public class RenderVisitorTest {
             + "  {/call}\n"
             + "{/template}\n"
             + "\n"
-            + "/**\n"
-            + " * @param boo\n"
-            + " * @param goo\n"
-            + " */\n"
             + "{template .calleeTemplate}\n"
+            + "  {@param boo: ?}\n"
+            + "  {@param goo: ?}\n"
             + "  {$boo}{$ij.future}\n"
             + "  {for $n in $goo} {$n}{/for}{\\n}\n"
             + "{/template}\n";
@@ -1052,7 +1047,7 @@ public class RenderVisitorTest {
             getDeltemplateSelector(fileSet),
             data,
             testIj,
-            Predicates.<String>alwaysFalse(),
+            arg -> false,
             null,
             xidRenamingMap,
             cssRenamingMap,
@@ -1084,8 +1079,8 @@ public class RenderVisitorTest {
             + "  {/delcall}\n"
             + "{/template}\n"
             + "\n"
-            + "/** @param boo */\n"
             + "{deltemplate myApp.myDelegate}\n"
+            + "  {@param boo: ?}\n"
             + // default implementation (doesn't use $boo)
             "  000\n"
             + "{/deltemplate}\n";
@@ -1094,8 +1089,8 @@ public class RenderVisitorTest {
         "{delpackage SecretFeature}\n"
             + "{namespace ns2}\n"
             + "\n"
-            + "/** @param boo */\n"
             + "{deltemplate myApp.myDelegate}\n"
+            + "  {@param boo: ?}\n"
             + // implementation in SecretFeature
             "  111 {$boo}\n"
             + "{/deltemplate}\n";
@@ -1104,8 +1099,8 @@ public class RenderVisitorTest {
         "{delpackage AlternateSecretFeature}\n"
             + "{namespace ns3}\n"
             + "\n"
-            + "/** @param boo */\n"
             + "{deltemplate myApp.myDelegate}\n"
+            + "  {@param boo: ?}\n"
             + // implementation in AlternateSecretFeature
             "  222 {call .helper data=\"all\" /}\n"
             + "{/deltemplate}\n";
@@ -1114,8 +1109,8 @@ public class RenderVisitorTest {
         "{delpackage AlternateSecretFeature}\n"
             + "{namespace ns3}\n"
             + "\n"
-            + "/** @param boo */\n"
             + "{template .helper}\n"
+            + "  {@param boo: ?}\n"
             + "  {$boo} {$ij.ijStr}\n"
             + "{/template}\n";
 
@@ -1126,32 +1121,32 @@ public class RenderVisitorTest {
             .parse();
     final SoyRecord data = SoyValueConverterUtility.newDict();
 
-    Predicate<String> activeDelPackageNames = Predicates.alwaysFalse();
+    Predicate<String> activeDelPackageNames = arg -> false;
     assertThat(
             renderTemplateInFile(
                 parseResult, "ns1.callerTemplate", data, TEST_IJ_DATA, activeDelPackageNames))
         .isEqualTo("000");
 
-    activeDelPackageNames = Predicates.equalTo("SecretFeature");
+    activeDelPackageNames = "SecretFeature"::equals;
     assertThat(
             renderTemplateInFile(
                 parseResult, "ns1.callerTemplate", data, TEST_IJ_DATA, activeDelPackageNames))
         .isEqualTo("111 aaaaaah");
 
-    activeDelPackageNames = Predicates.equalTo("AlternateSecretFeature");
+    activeDelPackageNames = "AlternateSecretFeature"::equals;
     assertThat(
             renderTemplateInFile(
                 parseResult, "ns1.callerTemplate", data, TEST_IJ_DATA, activeDelPackageNames))
         .isEqualTo("222 aaaaaah injected");
 
-    activeDelPackageNames = Predicates.equalTo("NonexistentFeature");
+    activeDelPackageNames = "NonexistentFeature"::equals;
     assertThat(
             renderTemplateInFile(
                 parseResult, "ns1.callerTemplate", data, TEST_IJ_DATA, activeDelPackageNames))
         .isEqualTo("000");
 
     activeDelPackageNames =
-        Predicates.in(ImmutableSet.of("NonexistentFeature", "AlternateSecretFeature"));
+        ImmutableSet.of("NonexistentFeature", "AlternateSecretFeature")::contains;
     assertThat(
             renderTemplateInFile(
                 parseResult, "ns1.callerTemplate", data, TEST_IJ_DATA, activeDelPackageNames))
@@ -1163,7 +1158,7 @@ public class RenderVisitorTest {
           "ns1.callerTemplate",
           data,
           TEST_IJ_DATA,
-          Predicates.in(ImmutableSet.of("SecretFeature", "AlternateSecretFeature")));
+          ImmutableSet.of("SecretFeature", "AlternateSecretFeature")::contains);
       fail("expected RenderException");
     } catch (RenderException e) {
       assertThat(e)
@@ -1180,8 +1175,8 @@ public class RenderVisitorTest {
         ""
             + "{namespace ns1}\n"
             + "\n"
-            + "/** @param greekB */\n"
             + "{template .callerTemplate}\n"
+            + "  {@param greekB: ?}\n"
             + "  {delcall myApp.myDelegate variant=\"'alpha'\"}\n"
             + // variant is string
             "    {param boo: 'zzz' /}\n"
@@ -1200,25 +1195,25 @@ public class RenderVisitorTest {
             + "  {/delcall}\n"
             + "{/template}\n"
             + "\n"
-            + "/** @param boo */\n"
             + "{deltemplate myApp.myDelegate}\n"
+            + "  {@param boo: ?}\n"
             + // variant "" default
             "  000empty\n"
             + "{/deltemplate}\n"
             + "\n"
-            + "/** @param boo */\n"
             + "{deltemplate myApp.myDelegate variant=\"'alpha'\"}\n"
+            + "  {@param boo: ?}\n"
             + // variant "alpha" default
             "  000alpha\n"
             + "{/deltemplate}\n"
             + "\n"
-            + "/** @param boo */\n"
             + "{deltemplate myApp.myDelegate variant=\"'beta'\"}\n"
+            + "  {@param boo: ?}\n"
             + // variant "beta" default
             "  000beta\n"
             + "{/deltemplate}\n"
-            + "/** @param boo */\n"
             + "{deltemplate myApp.myDelegate variant=\"test.GLOBAL\"}\n"
+            + "  {@param boo: ?}\n"
             + // variant using global
             "  000global\n"
             + "{/deltemplate}\n";
@@ -1228,25 +1223,25 @@ public class RenderVisitorTest {
             + "{delpackage SecretFeature}\n"
             + "{namespace ns2}\n"
             + "\n"
-            + "/** @param boo */\n"
             + "{deltemplate myApp.myDelegate}\n"
+            + "  {@param boo: ?}\n"
             + // variant "" in SecretFeature
             "  111empty\n"
             + "{/deltemplate}\n"
             + "\n"
-            + "/** @param boo */\n"
             + "{deltemplate myApp.myDelegate variant=\"'alpha'\"}\n"
+            + "  {@param boo: ?}\n"
             + // "alpha" in SecretFeature
             "  111alpha\n"
             + "{/deltemplate}\n"
             + "\n"
-            + "/** @param boo */\n"
             + "{deltemplate myApp.myDelegate variant=\"'beta'\"}\n"
+            + "  {@param boo: ?}\n"
             + // "beta" in SecretFeature
             "  111beta\n"
             + "{/deltemplate}\n"
-            + "/** @param boo */\n"
             + "{deltemplate myApp.myDelegate variant=\"test.GLOBAL\"}\n"
+            + "  {@param boo: ?}\n"
             + // variant using global
             "  111global\n"
             + "{/deltemplate}\n";
@@ -1256,19 +1251,19 @@ public class RenderVisitorTest {
             + "{delpackage AlternateSecretFeature}\n"
             + "{namespace ns3}\n"
             + "\n"
-            + "/** @param boo */\n"
             + "{deltemplate myApp.myDelegate}\n"
+            + "  {@param boo: ?}\n"
             + // variant "" in AlternateSecretFeature
             "  222empty\n"
             + "{/deltemplate}\n"
             + "\n"
-            + "/** @param boo */\n"
             + "{deltemplate myApp.myDelegate variant=\"'alpha'\"}\n"
+            + "  {@param boo: ?}\n"
             + // variant "alpha" in Alternate
             "  222alpha\n"
             + "{/deltemplate}\n"
-            + "/** @param boo */\n"
             + "{deltemplate myApp.myDelegate variant=\"test.GLOBAL\"}\n"
+            + "  {@param boo: ?}\n"
             + // variant using global
             "  222global\n"
             + "{/deltemplate}\n"; // Note: No variant "beta" in AlternateSecretFeature.
@@ -1281,32 +1276,32 @@ public class RenderVisitorTest {
             .errorReporter(FAIL)
             .parse();
 
-    Predicate<String> activeDelPackageNames = Predicates.alwaysFalse();
+    Predicate<String> activeDelPackageNames = arg -> false;
     assertThat(
             renderTemplateInFile(
                 result, "ns1.callerTemplate", TEST_DATA, TEST_IJ_DATA, activeDelPackageNames))
         .isEqualTo("000alpha000beta000empty000global");
 
-    activeDelPackageNames = Predicates.equalTo("SecretFeature");
+    activeDelPackageNames = "SecretFeature"::equals;
     assertThat(
             renderTemplateInFile(
                 result, "ns1.callerTemplate", TEST_DATA, TEST_IJ_DATA, activeDelPackageNames))
         .isEqualTo("111alpha111beta111empty111global");
 
-    activeDelPackageNames = Predicates.equalTo("AlternateSecretFeature");
+    activeDelPackageNames = "AlternateSecretFeature"::equals;
     assertThat(
             renderTemplateInFile(
                 result, "ns1.callerTemplate", TEST_DATA, TEST_IJ_DATA, activeDelPackageNames))
         .isEqualTo("222alpha000beta222empty222global");
 
-    activeDelPackageNames = Predicates.equalTo("NonexistentFeature");
+    activeDelPackageNames = "NonexistentFeature"::equals;
     assertThat(
             renderTemplateInFile(
                 result, "ns1.callerTemplate", TEST_DATA, TEST_IJ_DATA, activeDelPackageNames))
         .isEqualTo("000alpha000beta000empty000global");
 
     activeDelPackageNames =
-        Predicates.in(ImmutableSet.of("NonexistentFeature", "AlternateSecretFeature"));
+        ImmutableSet.of("NonexistentFeature", "AlternateSecretFeature")::contains;
     assertThat(
             renderTemplateInFile(
                 result, "ns1.callerTemplate", TEST_DATA, TEST_IJ_DATA, activeDelPackageNames))
@@ -1317,7 +1312,7 @@ public class RenderVisitorTest {
           "ns1.callerTemplate",
           TEST_DATA,
           TEST_IJ_DATA,
-          Predicates.in(ImmutableSet.of("SecretFeature", "AlternateSecretFeature")));
+          ImmutableSet.of("SecretFeature", "AlternateSecretFeature")::contains);
       fail("expected RenderException");
     } catch (RenderException e) {
       assertThat(e)
@@ -1354,8 +1349,8 @@ public class RenderVisitorTest {
         "{delpackage SecretFeature}\n"
             + "{namespace ns2}\n"
             + "\n"
-            + "/** @param boo */\n"
             + "{deltemplate myApp.myDelegate}\n"
+            + "  {@param boo: ?}\n"
             + // implementation in SecretFeature
             "  111 {$boo}\n"
             + "{/deltemplate}\n";
@@ -1367,13 +1362,13 @@ public class RenderVisitorTest {
 
     parseResult = SoyFileSetParserBuilder.forFileContents(soyFileContent1a).parse();
 
-    Predicate<String> activeDelPackageNames = Predicates.alwaysFalse();
+    Predicate<String> activeDelPackageNames = arg -> false;
     assertThat(
             renderTemplateInFile(
                 parseResult, "ns1.callerTemplate", data, null, activeDelPackageNames))
         .isEmpty();
 
-    activeDelPackageNames = Predicates.equalTo("SecretFeature");
+    activeDelPackageNames = "SecretFeature"::equals;
     assertThat(
             renderTemplateInFile(
                 parseResult, "ns1.callerTemplate", data, null, activeDelPackageNames))
@@ -1384,32 +1379,32 @@ public class RenderVisitorTest {
     parseResult =
         SoyFileSetParserBuilder.forFileContents(soyFileContent1a, soyFileContent2).parse();
 
-    activeDelPackageNames = Predicates.alwaysFalse();
+    activeDelPackageNames = arg -> false;
     assertThat(
             renderTemplateInFile(
                 parseResult, "ns1.callerTemplate", data, null, activeDelPackageNames))
         .isEmpty();
 
-    activeDelPackageNames = Predicates.equalTo("SecretFeature");
+    activeDelPackageNames = "SecretFeature"::equals;
     assertThat(
             renderTemplateInFile(
                 parseResult, "ns1.callerTemplate", data, null, activeDelPackageNames))
         .isEqualTo("111 aaaaaah");
 
-    activeDelPackageNames = Predicates.equalTo("NonexistentFeature");
+    activeDelPackageNames = "NonexistentFeature"::equals;
     assertThat(
             renderTemplateInFile(
                 parseResult, "ns1.callerTemplate", data, null, activeDelPackageNames))
         .isEmpty();
 
-    activeDelPackageNames = Predicates.in(ImmutableSet.of("NonexistentFeature", "SecretFeature"));
+    activeDelPackageNames = ImmutableSet.of("NonexistentFeature", "SecretFeature")::contains;
     assertThat(
             renderTemplateInFile(
                 parseResult, "ns1.callerTemplate", data, null, activeDelPackageNames))
         .isEqualTo("111 aaaaaah");
 
     // ------ Test with only file 1b in bundle. ------
-    activeDelPackageNames = Predicates.alwaysFalse();
+    activeDelPackageNames = arg -> false;
     try {
       renderTemplateInFile(
           SoyFileSetParserBuilder.forFileContents(soyFileContent1b).parse(),
@@ -1436,7 +1431,7 @@ public class RenderVisitorTest {
       assertThat(e).hasMessageThat().contains("Found no active impl for delegate call");
     }
 
-    activeDelPackageNames = Predicates.equalTo("SecretFeature");
+    activeDelPackageNames = "SecretFeature"::equals;
     assertThat(
             renderTemplateInFile(
                 SoyFileSetParserBuilder.forFileContents(soyFileContent1b, soyFileContent2).parse(),
@@ -1507,10 +1502,8 @@ public class RenderVisitorTest {
             + "  {/call}\n"
             + "{/template}\n"
             + "\n"
-            + "/**\n"
-            + " * @param foo\n"
-            + " */\n"
             + "{template .calleeTemplate}\n"
+            + "  {@param foo: ?}\n"
             + "  callee{log}callee{/log}\n"
             + "  {sp}{$foo}{sp}{$foo}\n"
             + "{/template}\n";
@@ -1524,7 +1517,7 @@ public class RenderVisitorTest {
                 "ns.callerTemplate",
                 SoyValueConverterUtility.newDict(),
                 null,
-                Predicates.<String>alwaysFalse()))
+                arg -> false))
         .isEqualTo("callee param param");
     assertThat(buffer.toString()).isEqualTo("callee\nparam\n");
     // Restore stdout.
@@ -1589,7 +1582,7 @@ public class RenderVisitorTest {
                 "ns.template",
                 data,
                 TEST_IJ_DATA,
-                Predicates.<String>alwaysFalse(),
+                arg -> false,
                 outputSb))
         .isEqualTo("Before: 1");
     assertThat(outputAtFutureGetTime.get()).isEqualTo("Before: ");
@@ -1611,7 +1604,7 @@ public class RenderVisitorTest {
           "ns.template",
           SoyValueConverterUtility.newDict("foo", Futures.immediateFuture("hello world")),
           TEST_IJ_DATA,
-          Predicates.<String>alwaysFalse(),
+          arg -> false,
           outputSb);
       fail("expected RenderException");
     } catch (RenderException e) {
@@ -1669,7 +1662,7 @@ public class RenderVisitorTest {
                 "ns.caller",
                 data,
                 TEST_IJ_DATA,
-                Predicates.<String>alwaysFalse(),
+                arg -> false,
                 outputSb))
         .isEqualTo("<div>static-content future-content</div>");
     // we only get the <div>.  we used to get the 'static-content' as well but that was only
@@ -1685,7 +1678,6 @@ public class RenderVisitorTest {
   }
 
   @Test
-  @ExperimentalFeatures("prop_vars")
   public void testKeyNodeIsNoOp() throws Exception {
     assertRender("<div {key 'foo'}></div>", "<div></div>");
   }

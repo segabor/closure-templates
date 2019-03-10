@@ -33,7 +33,6 @@ import com.google.common.collect.Sets;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.template.soy.base.internal.BaseUtils;
 import com.google.template.soy.base.internal.IndentedLinesBuilder;
-import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.exprtree.FieldAccessNode;
 import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.exprtree.GlobalNode;
@@ -43,8 +42,6 @@ import com.google.template.soy.internal.proto.ProtoUtils;
 import com.google.template.soy.parseinfo.SoyFileInfo.CssTagsPrefixPresence;
 import com.google.template.soy.passes.IndirectParamsCalculator;
 import com.google.template.soy.passes.IndirectParamsCalculator.IndirectParamsInfo;
-import com.google.template.soy.passes.TransitiveIjParamsCalculator;
-import com.google.template.soy.passes.TransitiveIjParamsCalculator.IjParamsInfo;
 import com.google.template.soy.plugin.java.internal.PluginInstanceFinder;
 import com.google.template.soy.plugin.java.restricted.SoyJavaSourceFunction;
 import com.google.template.soy.shared.internal.BuiltinFunction;
@@ -69,6 +66,7 @@ import com.google.template.soy.types.SoyProtoEnumType;
 import com.google.template.soy.types.SoyProtoType;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyType.Kind;
+import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.UnionType;
 import com.google.template.soy.types.VeType;
 import java.util.Collection;
@@ -212,6 +210,8 @@ public final class GenerateParseInfoVisitor
   /** Registry of all templates in the Soy tree. */
   private final TemplateRegistry templateRegistry;
 
+  private final SoyTypeRegistry typeRegistry;
+
   /** Cache for results of calls to {@code Utils.convertToUpperUnderscore()}. */
   private final Map<String, String> convertedIdents = Maps.newHashMap();
 
@@ -221,18 +221,19 @@ public final class GenerateParseInfoVisitor
   /** Builder for the generated code. */
   private IndentedLinesBuilder ilb;
 
-  private final TransitiveIjParamsCalculator transitiveIjParamsCalculator;
-
   /**
    * @param javaPackage The Java package for the generated classes.
    * @param javaClassNameSource Source of the generated class names. Must be one of "filename",
    *     "namespace", or "generic".
    */
   public GenerateParseInfoVisitor(
-      String javaPackage, String javaClassNameSource, TemplateRegistry registry) {
+      String javaPackage,
+      String javaClassNameSource,
+      TemplateRegistry registry,
+      SoyTypeRegistry typeRegistry) {
     this.javaPackage = javaPackage;
     this.templateRegistry = registry;
-    this.transitiveIjParamsCalculator = new TransitiveIjParamsCalculator(templateRegistry);
+    this.typeRegistry = typeRegistry;
     switch (javaClassNameSource) {
       case "filename":
         this.javaClassNameSource = JavaClassNameSource.SOY_FILE_NAME;
@@ -269,10 +270,8 @@ public final class GenerateParseInfoVisitor
     // to resolve collisions, and then adding the common suffix "SoyInfo".
     Multimap<String, SoyFileNode> baseGeneratedClassNameToSoyFilesMap = HashMultimap.create();
     for (SoyFileNode soyFile : node.getChildren()) {
-      if (soyFile.getSoyFileKind() == SoyFileKind.SRC) {
-        baseGeneratedClassNameToSoyFilesMap.put(
-            javaClassNameSource.generateBaseClassName(soyFile), soyFile);
-      }
+      baseGeneratedClassNameToSoyFilesMap.put(
+          javaClassNameSource.generateBaseClassName(soyFile), soyFile);
     }
     soyFileToJavaClassNameMap = Maps.newHashMap();
     for (String baseClassName : baseGeneratedClassNameToSoyFilesMap.keySet()) {
@@ -298,10 +297,6 @@ public final class GenerateParseInfoVisitor
 
   @Override
   protected void visitSoyFileNode(SoyFileNode node) {
-    if (node.getSoyFileKind() != SoyFileKind.SRC) {
-      return; // don't generate code for deps
-    }
-
     String javaClassName = soyFileToJavaClassNameMap.get(node);
 
     // Collect the following:
@@ -592,9 +587,6 @@ public final class GenerateParseInfoVisitor
     IndirectParamsInfo indirectParamsInfo =
         new IndirectParamsCalculator(templateRegistry).calculateIndirectParams(nodeMetadata);
 
-    // Get info on injected params.
-    IjParamsInfo ijParamsInfo = transitiveIjParamsCalculator.calculateIjs(nodeMetadata);
-
     @SuppressWarnings("ConstantConditions") // for IntelliJ
     String upperUnderscoreName =
         convertToUpperUnderscore(node.getPartialTemplateName().substring(1));
@@ -688,7 +680,7 @@ public final class GenerateParseInfoVisitor
       for (Parameter param :
           Iterables.concat(
               nodeMetadata.getParameters(), indirectParamsInfo.indirectParams.values())) {
-        if (!param.isInjected() && seenParams.add(param.getName())) {
+        if (seenParams.add(param.getName())) {
           entrySnippetPairs.put(
               "\"" + param.getName() + "\"",
               param.isRequired() ? "ParamRequisiteness.REQUIRED" : "ParamRequisiteness.OPTIONAL");
@@ -700,9 +692,6 @@ public final class GenerateParseInfoVisitor
       ilb.appendLine("ImmutableMap.<String, ParamRequisiteness>of(),");
     }
 
-    appendIjParamSet(ilb, ijParamsInfo);
-
-    ilb.appendLineEnd(",");
     ilb.appendLine("\"", node.getAutoescapeMode().getAttributeValue(), "\");");
     ilb.decreaseIndent(2);
 
@@ -747,11 +736,7 @@ public final class GenerateParseInfoVisitor
    * @return The identifier in upper underscore format.
    */
   private String convertToUpperUnderscore(String ident) {
-    String result = convertedIdents.get(ident);
-    if (result == null) {
-      result = BaseUtils.convertToUpperUnderscore(ident);
-      convertedIdents.put(ident, result);
-    }
+    String result = convertedIdents.computeIfAbsent(ident, BaseUtils::convertToUpperUnderscore);
     return result;
   }
 
@@ -761,7 +746,7 @@ public final class GenerateParseInfoVisitor
    * @param type The type to search.
    * @param protoTypes Output set.
    */
-  private static void findProtoTypesRecurse(SoyType type, SortedSet<String> protoTypes) {
+  private void findProtoTypesRecurse(SoyType type, SortedSet<String> protoTypes) {
     switch (type.getKind()) {
       case PROTO:
         protoTypes.add(((SoyProtoType) type).getDescriptorExpression());
@@ -806,8 +791,9 @@ public final class GenerateParseInfoVisitor
           VeType veType = (VeType) type;
           if (veType.getDataType().isPresent()) {
             // Don't grab the proto type for ve<null>
-            if (veType.getDataType().get().getKind() == Kind.PROTO) {
-              protoTypes.add(((SoyProtoType) veType.getDataType().get()).getDescriptorExpression());
+            SoyType soyType = typeRegistry.getType(veType.getDataType().get());
+            if (soyType.getKind() == Kind.PROTO) {
+              protoTypes.add(((SoyProtoType) soyType).getDescriptorExpression());
             }
           }
           break;
@@ -884,19 +870,6 @@ public final class GenerateParseInfoVisitor
     }
   }
 
-  /**
-   * Private helper for visitTemplateNode() to append the set of injected params.
-   *
-   * @param ilb The builder for the code.
-   * @param ijParamsInfo Info on injected params for the template being processed.
-   */
-  private void appendIjParamSet(IndentedLinesBuilder ilb, IjParamsInfo ijParamsInfo) {
-    List<String> itemSnippets = Lists.newArrayList();
-    for (String paramKey : ijParamsInfo.ijParamSet) {
-      itemSnippets.add("\"" + paramKey + "\"");
-    }
-    appendImmutableSortedSet(ilb, "<String>", itemSnippets);
-  }
 
   // -----------------------------------------------------------------------------------------------
   // General helpers.
@@ -956,18 +929,6 @@ public final class GenerateParseInfoVisitor
   private static void appendImmutableList(
       IndentedLinesBuilder ilb, String typeParamSnippet, Collection<String> itemSnippets) {
     appendListOrSetHelper(ilb, "ImmutableList." + typeParamSnippet + "of", itemSnippets);
-  }
-
-  /**
-   * Private helper to append an ImmutableSortedSet to the code.
-   *
-   * @param ilb The builder for the code.
-   * @param typeParamSnippet The type parameter for the ImmutableSortedSet.
-   * @param itemSnippets Code snippets for the items to put into the ImmutableSortedSet.
-   */
-  private static void appendImmutableSortedSet(
-      IndentedLinesBuilder ilb, String typeParamSnippet, Collection<String> itemSnippets) {
-    appendListOrSetHelper(ilb, "ImmutableSortedSet." + typeParamSnippet + "of", itemSnippets);
   }
 
   /**

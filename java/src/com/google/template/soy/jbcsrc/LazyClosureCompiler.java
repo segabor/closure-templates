@@ -16,7 +16,6 @@
 
 package com.google.template.soy.jbcsrc;
 
-import static com.google.common.base.Predicates.notNull;
 import static com.google.template.soy.jbcsrc.StandardNames.IJ_FIELD;
 import static com.google.template.soy.jbcsrc.StandardNames.PARAMS_FIELD;
 import static com.google.template.soy.jbcsrc.StandardNames.RENDER_CONTEXT_FIELD;
@@ -71,12 +70,13 @@ import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyNode.RenderUnitNode;
 import com.google.template.soy.soytree.defn.LocalVar;
 import com.google.template.soy.soytree.defn.TemplateParam;
-import com.google.template.soy.soytree.defn.TemplatePropVar;
+import com.google.template.soy.soytree.defn.TemplateStateVar;
 import com.google.template.soy.types.SoyTypeRegistry;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
@@ -175,7 +175,7 @@ final class LazyClosureCompiler {
   private final TemplateVariableManager parentVariables;
   private final ErrorReporter reporter;
   private final SoyTypeRegistry typeRegistry;
-  private final List<TemplatePropVar> propVars;
+  private final List<TemplateStateVar> stateVars;
 
   LazyClosureCompiler(
       CompiledTemplateRegistry registry,
@@ -185,7 +185,7 @@ final class LazyClosureCompiler {
       ExpressionToSoyValueProviderCompiler expressionToSoyValueProviderCompiler,
       ErrorReporter reporter,
       SoyTypeRegistry typeRegistry,
-      List<TemplatePropVar> propVars) {
+      List<TemplateStateVar> stateVars) {
     this.registry = registry;
     this.innerClasses = innerClasses;
     this.parentVariableLookup = parentVariableLookup;
@@ -193,7 +193,7 @@ final class LazyClosureCompiler {
     this.expressionToSoyValueProviderCompiler = expressionToSoyValueProviderCompiler;
     this.reporter = reporter;
     this.typeRegistry = typeRegistry;
-    this.propVars = propVars;
+    this.stateVars = stateVars;
   }
 
   Expression compileLazyExpression(
@@ -388,7 +388,7 @@ final class LazyClosureCompiler {
               lookup,
               reporter,
               typeRegistry,
-              propVars);
+              stateVars);
       CompiledMethodBody compileChildren = soyNodeCompiler.compile(renderUnit, prefix, suffix);
       writer.setNumDetachStates(compileChildren.numberOfDetachStates());
       final Statement nodeBody = compileChildren.body();
@@ -566,10 +566,10 @@ final class LazyClosureCompiler {
     }
 
     @Override
-    public SoyExpression getProp(TemplatePropVar propVar) {
+    public SoyExpression getState(TemplateStateVar stateVar) {
       // We can always just access the parent directly instead of capturing because these are simple
       // expressions or static field references.
-      return parentParameterLookup.getProp(propVar);
+      return parentParameterLookup.getState(stateVar);
     }
 
     @Override
@@ -608,7 +608,8 @@ final class LazyClosureCompiler {
 
     Iterable<ParentCapture> getCapturedFields() {
       return Iterables.concat(
-          Iterables.filter(asList(paramsCapture, ijCapture, renderContextCapture), notNull()),
+          Iterables.filter(
+              asList(paramsCapture, ijCapture, renderContextCapture), Objects::nonNull),
           paramFields.values(),
           localFields.values(),
           syntheticFields.values());

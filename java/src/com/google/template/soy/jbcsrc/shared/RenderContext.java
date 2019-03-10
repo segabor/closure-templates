@@ -20,8 +20,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -40,6 +38,7 @@ import com.google.template.soy.shared.SoyIdRenamingMap;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.ibm.icu.util.ULocale;
 import java.util.Map;
+import java.util.function.Predicate;
 import javax.annotation.Nullable;
 
 /**
@@ -143,14 +142,10 @@ public final class RenderContext {
     }
     // TODO(lukes): this adapter is lame.  there should just be a way to get the print directive to
     // hand us an escaper or a function rather than writing this adapter.
-    return new Function<String, String>() {
-      @Override
-      public String apply(String input) {
-        return printDirective
+    return input ->
+        printDirective
             .applyForJava(StringData.forValue(input), ImmutableList.<SoyValue>of())
             .stringValue();
-      }
-    };
   }
 
   /**
@@ -219,7 +214,7 @@ public final class RenderContext {
   /** A builder for configuring the context. */
   public static final class Builder {
     private CompiledTemplates templates;
-    private Predicate<String> activeDelPackageSelector = Predicates.alwaysFalse();
+    private Predicate<String> activeDelPackageSelector = arg -> false;
     private SoyCssRenamingMap cssRenamingMap = SoyCssRenamingMap.EMPTY;
     private SoyIdRenamingMap xidRenamingMap = SoyCssRenamingMap.EMPTY;
     private ImmutableMap<String, SoyJavaPrintDirective> soyJavaDirectivesMap = ImmutableMap.of();

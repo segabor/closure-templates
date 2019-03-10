@@ -37,34 +37,29 @@ public final class VeLogNodeTest {
   public void testParsing_justName() {
     VeLogNode logNode = parseVeLog("{velog Bar}<div></div>{/velog}");
 
-    assertThat(logNode.toSourceString()).isEqualTo("{velog Bar}<div></div>{/velog}");
-    assertThat(logNode.getName().identifier()).isEqualTo("Bar");
-    assertThat(logNode.getConfigExpression()).isNull();
+    assertThat(logNode.toSourceString())
+        .isEqualTo("{velog ve_data(ve(Bar), null)}<div></div>{/velog}");
     assertThat(logNode.getLogonlyExpression()).isNull();
   }
 
   @Test
-  public void testClonePreservesId() {
+  public void testClone() {
     VeLogNode logNode = parseVeLog("{velog Bar}<div></div>{/velog}");
 
-    assertThat(logNode.toSourceString()).isEqualTo("{velog Bar}<div></div>{/velog}");
-    assertThat(logNode.getName().identifier()).isEqualTo("Bar");
-    assertThat(logNode.getLoggingId()).isEqualTo(1);
+    assertThat(logNode.toSourceString())
+        .isEqualTo("{velog ve_data(ve(Bar), null)}<div></div>{/velog}");
 
     VeLogNode copy = logNode.copy(new CopyState());
-    assertThat(copy.toSourceString()).isEqualTo("{velog Bar}<div></div>{/velog}");
-    assertThat(copy.getName().identifier()).isEqualTo("Bar");
-    assertThat(copy.getLoggingId()).isEqualTo(1);
+    assertThat(copy.toSourceString())
+        .isEqualTo("{velog ve_data(ve(Bar), null)}<div></div>{/velog}");
   }
 
   @Test
   public void testParsing_configExpression() {
-    VeLogNode logNode = parseVeLog("{velog Bar data=\"soy.test.Foo()\"}<div></div>{/velog}");
+    VeLogNode logNode = parseVeLog("{velog ve_data(Bar, soy.test.Foo())}<div></div>{/velog}");
 
     assertThat(logNode.toSourceString())
-        .isEqualTo("{velog Bar data=\"soy.test.Foo()\"}<div></div>{/velog}");
-    assertThat(logNode.getName().identifier()).isEqualTo("Bar");
-    assertThat(logNode.getConfigExpression().toSourceString()).isEqualTo("soy.test.Foo()");
+        .isEqualTo("{velog ve_data(ve(Bar), soy.test.Foo())}<div></div>{/velog}");
     assertThat(logNode.getLogonlyExpression()).isNull();
   }
 
@@ -73,21 +68,17 @@ public final class VeLogNodeTest {
     VeLogNode logNode = parseVeLog("{velog Bar logonly=\"false\"}<div></div>{/velog}");
 
     assertThat(logNode.toSourceString())
-        .isEqualTo("{velog Bar logonly=\"false\"}<div></div>{/velog}");
-    assertThat(logNode.getName().identifier()).isEqualTo("Bar");
-    assertThat(logNode.getConfigExpression()).isNull();
+        .isEqualTo("{velog ve_data(ve(Bar), null) logonly=\"false\"}<div></div>{/velog}");
     assertThat(logNode.getLogonlyExpression().toSourceString()).isEqualTo("false");
   }
 
   @Test
   public void testParsing_configAndLogonly() {
     VeLogNode logNode =
-        parseVeLog("{velog Bar data=\"soy.test.Foo()\" logonly=\"false\"}<div></div>{/velog}");
+        parseVeLog("{velog ve_data(Bar, soy.test.Foo()) logonly=\"false\"}<div></div>{/velog}");
 
     assertThat(logNode.toSourceString())
-        .isEqualTo("{velog Bar data=\"soy.test.Foo()\" logonly=\"false\"}<div></div>{/velog}");
-    assertThat(logNode.getName().identifier()).isEqualTo("Bar");
-    assertThat(logNode.getConfigExpression().toSourceString()).isEqualTo("soy.test.Foo()");
+        .isEqualTo("{velog ve_data(ve(Bar), soy.test.Foo()) logonly=\"false\"}<div></div>{/velog}");
     assertThat(logNode.getLogonlyExpression().toSourceString()).isEqualTo("false");
   }
 

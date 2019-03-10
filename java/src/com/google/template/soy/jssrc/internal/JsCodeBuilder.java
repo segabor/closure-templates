@@ -25,6 +25,7 @@ import com.google.template.soy.jssrc.dsl.CodeChunk;
 import com.google.template.soy.jssrc.dsl.CodeChunkUtils;
 import com.google.template.soy.jssrc.dsl.Expression;
 import com.google.template.soy.jssrc.dsl.GoogRequire;
+import com.google.template.soy.jssrc.dsl.JsDoc;
 import com.google.template.soy.jssrc.dsl.VariableDeclaration;
 import java.util.ArrayDeque;
 import java.util.Deque;
@@ -106,7 +107,7 @@ public class JsCodeBuilder {
   /**
    * The current output variable.
    *
-   * <p>TODO(user): this is always an {@link Expression#id}. Consider exposing a subclass of
+   * <p>TODO(b/32224284): this is always an {@link Expression#id}. Consider exposing a subclass of
    * CodeChunk so we can enforce this invariant at compile time.
    */
   @Nullable protected Expression currOutputVar;
@@ -261,6 +262,15 @@ public class JsCodeBuilder {
   }
 
   /**
+   * Serializes the given {@link JsDoc} into the code builder, respecting the code builder's current
+   * indentation level.
+   */
+  public JsCodeBuilder append(JsDoc jsDoc) {
+    jsDoc.collectRequires(requireCollector);
+    return appendLine(jsDoc.toString());
+  }
+
+  /**
    * Appends one or more strings to the generated code.
    * @param codeFragments The code string(s) to append.
    * @return This CodeBuilder (for stringing together operations).
@@ -291,12 +301,8 @@ public class JsCodeBuilder {
    */
   public void addGoogRequire(GoogRequire require) {
     GoogRequire oldRequire = googRequires.put(require.symbol(), require);
-    if (oldRequire != null && !oldRequire.equals(require)) {
-      throw new IllegalArgumentException(
-          "Found the same namespace added as a require in multiple incompatible ways: "
-              + oldRequire
-              + " vs. "
-              + require);
+    if (oldRequire != null) {
+      googRequires.put(require.symbol(), require.merge(oldRequire));
     }
   }
 

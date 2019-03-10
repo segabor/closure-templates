@@ -18,7 +18,6 @@ package com.google.template.soy.jbcsrc;
 
 import static com.google.common.base.Preconditions.checkState;
 
-import com.google.common.base.Function;
 import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
@@ -83,6 +82,9 @@ final class JbcSrcValueFactory extends JavaValueFactory {
 
   private static final ImmutableSet<Class<?>> FLOAT_TYPES =
       ImmutableSet.of(SoyValue.class, double.class, FloatData.class, NumberData.class);
+
+  private static final ImmutableSet<Class<?>> NUMBER_TYPES =
+      ImmutableSet.of(SoyValue.class, double.class, NumberData.class);
 
   // We allow 'double' for soy int types because double has more precision than soy guarantees
   // for its int type.
@@ -236,14 +238,7 @@ final class JbcSrcValueFactory extends JavaValueFactory {
   @Override
   public JbcSrcJavaValue listOf(List<JavaValue> args) {
     List<SoyExpression> soyExprs =
-        Lists.transform(
-            args,
-            new Function<JavaValue, SoyExpression>() {
-              @Override
-              public SoyExpression apply(JavaValue value) {
-                return (SoyExpression) ((JbcSrcJavaValue) value).expr();
-              }
-            });
+        Lists.transform(args, value -> (SoyExpression) ((JbcSrcJavaValue) value).expr());
     return JbcSrcJavaValue.of(SoyExpression.asBoxedList(soyExprs), reporter);
   }
 
@@ -351,10 +346,10 @@ final class JbcSrcValueFactory extends JavaValueFactory {
 
     // Otherwise, we're an unboxed type (non-SoyValue).
 
-    // int needs special-casing for overflow, and because we can't unboxAs(int.class)
+    // int needs special-casing for overflow, and because we can't unbox as int
     if (expectedParamType == int.class) {
-      // We box + invoke rather than unboxAs(long.class) + numericConversion so that we get
-      // overflow checking (built into integerValue()).
+      // We box + invoke rather than unboxAsLong() + numericConversion so that we get overflow
+      // checking (built into integerValue()).
       return actualParam.box().invoke(MethodRef.SOY_VALUE_INTEGER_VALUE);
     }
     // double needs special casing since we allow soy int -> double conversions (since double
@@ -363,8 +358,11 @@ final class JbcSrcValueFactory extends JavaValueFactory {
       return actualParam.coerceToDouble();
     }
     // For protos, we need to unbox as Message & then cast.
-    if (Message.class.isAssignableFrom(expectedParamType) && expectedParamType != Message.class) {
-      return actualParam.unboxAs(Message.class).checkedCast(expectedParamType);
+    if (Message.class.isAssignableFrom(expectedParamType)) {
+      if (expectedParamType.equals(Message.class)) {
+        return actualParam.unboxAsMessage();
+      }
+      return actualParam.unboxAsMessage().checkedCast(expectedParamType);
     }
     // For protocol enums, we need to call forNumber on the type w/ the param (as casted to an int).
     // This is because Soy internally stores enums as ints. We know this is safe because we
@@ -372,10 +370,20 @@ final class JbcSrcValueFactory extends JavaValueFactory {
     if (expectedParamType.isEnum()
         && ProtocolMessageEnum.class.isAssignableFrom(expectedParamType)) {
       return MethodRef.create(expectedParamType, "forNumber", int.class)
-          .invoke(BytecodeUtils.numericConversion(actualParam.unboxAs(long.class), Type.INT_TYPE));
+          .invoke(BytecodeUtils.numericConversion(actualParam.unboxAsLong(), Type.INT_TYPE));
     }
 
-    return actualParam.unboxAs(expectedParamType);
+    if (expectedParamType.equals(boolean.class)) {
+      return actualParam.unboxAsBoolean();
+    } else if (expectedParamType.equals(long.class)) {
+      return actualParam.unboxAsLong();
+    } else if (expectedParamType.equals(String.class)) {
+      return actualParam.unboxAsString();
+    } else if (expectedParamType.equals(List.class)) {
+      return actualParam.unboxAsList();
+    }
+
+    throw new AssertionError("Unable to convert parameter to " + expectedParamType);
   }
 
   /** Returns true if the clazz is allowed as a parameter type for the given soy type. */
@@ -425,6 +433,10 @@ final class JbcSrcValueFactory extends JavaValueFactory {
                 && matchesProtoDescriptor(
                     ProtocolMessageEnum.class, clazz, ((SoyProtoEnumType) type).getDescriptor()));
       case UNION:
+        // number is a special case, it should work for double and NumberData
+        if (type.equals(SoyTypes.NUMBER_TYPE)) {
+          return NUMBER_TYPES.contains(clazz);
+        }
         // If this is a union, make sure the type is valid for every member.
         // If the type isn't valid for any member, then there's no guarantee this will work
         // for an arbitrary template at runtime.
@@ -435,11 +447,11 @@ final class JbcSrcValueFactory extends JavaValueFactory {
         }
         return true;
       case VE:
-        // TODO(b/71641483): Implement this once we have ve runtime objects.
-        throw new UnsupportedOperationException();
       case VE_DATA:
-        // TODO(b/71641483): Implement this once we have ve runtime objects.
-        throw new UnsupportedOperationException();
+        reporter.veParam();
+        // Return true here because we've already reported an error and returning false would report
+        // an additional confusing type error.
+        return true;
       case ERROR:
         throw new IllegalStateException("Cannot have error type from function signature");
     }

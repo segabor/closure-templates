@@ -18,7 +18,6 @@ package com.google.template.soy.soytree;
 
 import com.google.common.collect.ImmutableList;
 import com.google.template.soy.base.SourceLocation;
-import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.soytree.SoyNode.SplitLevelTopNode;
 import javax.annotation.Nullable;
@@ -32,9 +31,6 @@ import javax.annotation.Nullable;
 public final class SoyFileNode extends AbstractParentSoyNode<TemplateNode>
     implements SplitLevelTopNode<TemplateNode> {
 
-  /** The kind of this Soy file */
-  private final SoyFileKind soyFileKind;
-
   /** The name of the containing delegate package, or null if none. */
   @Nullable private final String delPackageName;
 
@@ -42,6 +38,8 @@ public final class SoyFileNode extends AbstractParentSoyNode<TemplateNode>
   private final NamespaceDeclaration namespaceDeclaration;
 
   private final ImmutableList<AliasDeclaration> aliasDeclarations;
+
+  private final TemplateNode.SoyFileHeaderInfo headerInfo;
 
   /**
    * @param id The id for this node.
@@ -54,11 +52,10 @@ public final class SoyFileNode extends AbstractParentSoyNode<TemplateNode>
   public SoyFileNode(
       int id,
       String filePath,
-      SoyFileKind soyFileKind,
       NamespaceDeclaration namespaceDeclaration,
       TemplateNode.SoyFileHeaderInfo headerInfo) {
     super(id, new SourceLocation(filePath));
-    this.soyFileKind = soyFileKind;
+    this.headerInfo = headerInfo;
     this.delPackageName = headerInfo.delPackageName;
     this.namespaceDeclaration = namespaceDeclaration; // Immutable
     this.aliasDeclarations = headerInfo.aliasDeclarations; // immutable
@@ -71,20 +68,15 @@ public final class SoyFileNode extends AbstractParentSoyNode<TemplateNode>
    */
   private SoyFileNode(SoyFileNode orig, CopyState copyState) {
     super(orig, copyState);
-    this.soyFileKind = orig.soyFileKind;
     this.delPackageName = orig.delPackageName;
     this.namespaceDeclaration = orig.namespaceDeclaration; // Immutable
     this.aliasDeclarations = orig.aliasDeclarations; // immutable
+    this.headerInfo = orig.headerInfo; // immutable
   }
 
   @Override
   public Kind getKind() {
     return Kind.SOY_FILE_NODE;
-  }
-
-  /** Returns the kind of this Soy file. */
-  public SoyFileKind getSoyFileKind() {
-    return soyFileKind;
   }
 
   /** Returns the name of the containing delegate package, or null if none. */
@@ -128,6 +120,11 @@ public final class SoyFileNode extends AbstractParentSoyNode<TemplateNode>
   @Nullable
   public String getFileName() {
     return getSourceLocation().getFileName();
+  }
+
+  /** Resolves a qualified name against the aliases for this file. */
+  public String resolveAlias(String fullName) {
+    return headerInfo.resolveAlias(fullName);
   }
 
   /** @deprecated SoyFileNodes don't have source locations. */

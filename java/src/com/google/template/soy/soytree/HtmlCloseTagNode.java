@@ -26,8 +26,9 @@ import com.google.template.soy.basetree.CopyState;
  */
 public final class HtmlCloseTagNode extends HtmlTagNode {
 
-  public HtmlCloseTagNode(int id, TagName tagName, SourceLocation sourceLocation) {
-    super(id, tagName, sourceLocation);
+  public HtmlCloseTagNode(
+      int id, StandaloneNode node, SourceLocation sourceLocation, TagExistence tagExistence) {
+    super(id, node, sourceLocation, tagExistence);
   }
 
   private HtmlCloseTagNode(HtmlCloseTagNode orig, CopyState copyState) {

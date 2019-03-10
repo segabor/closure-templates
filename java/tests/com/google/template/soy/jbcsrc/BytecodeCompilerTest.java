@@ -28,8 +28,6 @@ import static com.google.template.soy.jbcsrc.TemplateTester.getDefaultContextWit
 import static org.junit.Assert.fail;
 
 import com.google.common.base.Joiner;
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -77,6 +75,7 @@ import java.lang.reflect.Field;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Predicate;
 import javax.annotation.Nullable;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -147,7 +146,6 @@ public class BytecodeCompilerTest {
     SoyFileSetParser parser =
         SoyFileSetParserBuilder.forFileContents(
                 soyFileContent1, soyFileContent2, soyFileContent3, soyFileContent4)
-            .enableExperimentalFeatures(ImmutableList.of("prop_vars"))
             .build();
     ParseResult parseResult = parser.parse();
     CompiledTemplates templates =
@@ -161,20 +159,20 @@ public class BytecodeCompilerTest {
                 parser.typeRegistry())
             .get();
     CompiledTemplate.Factory factory = templates.getTemplateFactory("ns1.callerTemplate");
-    Predicate<String> activePackages = Predicates.alwaysFalse();
+    Predicate<String> activePackages = arg -> false;
 
     assertThat(renderWithContext(factory, getDefaultContext(templates, activePackages)))
         .isEqualTo("default");
 
-    activePackages = Predicates.equalTo("SecretFeature");
+    activePackages = "SecretFeature"::equals;
     assertThat(renderWithContext(factory, getDefaultContext(templates, activePackages)))
         .isEqualTo("SecretFeature aaaaaah");
 
-    activePackages = Predicates.equalTo("AlternateSecretFeature");
+    activePackages = "AlternateSecretFeature"::equals;
     assertThat(renderWithContext(factory, getDefaultContext(templates, activePackages)))
         .isEqualTo("AlternateSecretFeature aaaaaah");
 
-    activePackages = Predicates.equalTo("NonexistentFeature");
+    activePackages = "NonexistentFeature"::equals;
     assertThat(renderWithContext(factory, getDefaultContext(templates, activePackages)))
         .isEqualTo("default");
   }
@@ -466,14 +464,15 @@ public class BytecodeCompilerTest {
   }
 
   @Test
-  public void testPropNodeNumber() {
-    assertThatElementBody("{@prop foo: number= 1}", "<a>{$foo}</a>").rendersAs("<a>1</a>");
-    assertThatElementBody("{@prop foo:= 1}", "<p>{$foo}</p>").rendersAs("<p>1</p>");
+  public void testStateNodeNumber() {
+    assertThatElementBody("{@state foo: number= 1}", "<a>{$foo}</a>").rendersAs("<a>1</a>");
+    assertThatElementBody("{@state foo:= 1}", "<p>{$foo}</p>").rendersAs("<p>1</p>");
   }
 
   @Test
   public void testPropNodeBoolean() {
-    assertThatElementBody("{@prop foo:= 1}", "<p>{if $foo}1{else}0{/if}</p>").rendersAs("<p>1</p>");
+    assertThatElementBody("{@state foo:= 1}", "<p>{if $foo}1{else}0{/if}</p>")
+        .rendersAs("<p>1</p>");
   }
 
   @Test
@@ -708,10 +707,8 @@ public class BytecodeCompilerTest {
   public void testParam_headerDocParam() {
     assertThatFile(
             "{namespace ns}",
-            "/** ",
-            " * @param foo A foo",
-            "*/ ",
             "{template .foo}",
+            "  {@param foo: ?}  /** A foo */",
             "  {$foo + 1}",
             "{/template}",
             "")

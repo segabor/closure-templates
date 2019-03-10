@@ -26,7 +26,7 @@ import com.google.template.soy.soytree.SoyNode.LocalVarNode;
 import com.google.template.soy.soytree.defn.InjectedParam;
 import com.google.template.soy.soytree.defn.LocalVar;
 import com.google.template.soy.soytree.defn.TemplateParam;
-import com.google.template.soy.soytree.defn.TemplatePropVar;
+import com.google.template.soy.soytree.defn.TemplateStateVar;
 
 /**
  * An abstract base class that adds extra visitor methods for unpacking varrefs and functions based
@@ -66,14 +66,13 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
         return visitParam(node, (TemplateParam) defn);
       case IJ_PARAM:
         return visitIjParam(node, (InjectedParam) defn);
-        // Prop is inlined since it is always a constant
-      case PROP:
-        return visitPropNode(node, (TemplatePropVar) defn);
+        // State is inlined since it is always a constant
+      case STATE:
+        return visitStateNode(node, (TemplateStateVar) defn);
       case UNDECLARED:
         throw new RuntimeException("undeclared params are not supported by jbcsrc");
-      default:
-        throw new AssertionError();
     }
+    throw new AssertionError(defn.kind());
   }
 
   @Override
@@ -102,8 +101,7 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
         case DEBUG_SOY_TEMPLATE_INFO:
           return visitDebugSoyTemplateInfoFunction(node);
         case VE_DATA:
-          // TODO(b/71641483): Implement this once we have ve runtime objects.
-          throw new UnsupportedOperationException();
+          return visitVeDataFunction(node);
         case MSG_WITH_ID:
         case REMAINDER:
           // should have been removed earlier in the compiler
@@ -128,7 +126,7 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
     return visitExprNode(varRef);
   }
 
-  T visitPropNode(VarRefNode node, TemplatePropVar prop) {
+  T visitStateNode(VarRefNode node, TemplateStateVar state) {
     return visitExprNode(node);
   }
 
@@ -169,6 +167,10 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
   }
 
   T visitDebugSoyTemplateInfoFunction(FunctionNode node) {
+    return visitExprNode(node);
+  }
+
+  T visitVeDataFunction(FunctionNode node) {
     return visitExprNode(node);
   }
 

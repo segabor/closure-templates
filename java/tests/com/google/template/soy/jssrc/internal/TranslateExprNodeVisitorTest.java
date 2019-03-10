@@ -26,6 +26,9 @@ import static com.google.template.soy.jssrc.internal.JsSrcSubject.assertThatSoyF
 
 import com.google.common.collect.ImmutableMap;
 import com.google.template.soy.jssrc.dsl.Expression;
+import com.google.template.soy.logging.LoggableElement;
+import com.google.template.soy.logging.LoggingConfig;
+import com.google.template.soy.logging.ValidatedLoggingConfig;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -88,11 +91,15 @@ public final class TranslateExprNodeVisitorTest {
     assertThatSoyExpr("$goo.boo")
         .withInitialLocalVarTranslations(LOCAL_VAR_TRANSLATIONS)
         .generatesCode("gooData8.boo;");
-    assertThatSoyExpr("$boo[0][1].foo[2]").generatesCode("opt_data.boo[0][1].foo[2];");
-    assertThatSoyExpr("$boo[0][1]").generatesCode("opt_data.boo[0][1];");
-    assertThatSoyExpr("$boo[$foo][$goo+1]")
+    assertThatSoyExpr("$boo[0][1].foo[2]")
+        .generatesCode(
+            "opt_data.boo[/** @type {?} */ (0)][/** @type {?} */ (1)].foo[/** @type {?} */ (2)];");
+    assertThatSoyExpr("$boo[0][1]")
+        .generatesCode("opt_data.boo[/** @type {?} */ (0)][/** @type {?} */ (1)];");
+    assertThatSoyExpr("$boo[/** @type {?} */ ($foo)][/** @type {?} */ ($goo+1)]")
         .withInitialLocalVarTranslations(LOCAL_VAR_TRANSLATIONS)
-        .generatesCode("opt_data.boo[opt_data.foo][gooData8 + 1];");
+        .generatesCode(
+            "opt_data.boo[/** @type {?} */ (opt_data.foo)][/** @type {?} */ (gooData8 + 1)];");
     assertThatSoyExpr("$class").generatesCode("opt_data.class;");
     assertThatSoyExpr("$boo.yield").generatesCode("opt_data.boo.yield;");
   }
@@ -202,7 +209,7 @@ public final class TranslateExprNodeVisitorTest {
   public void testCheckNotNull() {
     assertThatSoyExpr("checkNotNull($goo) ? 1 : 0")
         .withInitialLocalVarTranslations(LOCAL_VAR_TRANSLATIONS)
-        .generatesCode("soy.$$checkNotNull(gooData8) ? 1 : 0;")
+        .generatesCode("/** @type {?} */ (soy.$$checkNotNull(gooData8)) ? 1 : 0;")
         .withPrecedence(CONDITIONAL);
   }
 
@@ -225,27 +232,49 @@ public final class TranslateExprNodeVisitorTest {
     String soyFile =
         ""
             + "{namespace ns}\n"
-            + "/** @param goo */\n"
             + "{template .foo}\n"
+            + "  {@param goo: ?}\n"
             + "  {v1Expression('$goo.length()')}\n"
             + "{/template}";
     String expectedJs =
         ""
             + "/**\n"
-            + " * @param {Object<string, *>=} opt_data\n"
-            + " * @param {Object<string, *>=} opt_ijData\n"
-            + " * @param {Object<string, *>=} opt_ijData_deprecated\n"
+            + " * @param {ns.foo.Params} opt_data\n"
+            + " * @param {soy.IjData|Object<string, *>=} opt_ijData\n"
+            + " * @param {soy.IjData|Object<string, *>=} opt_ijData_deprecated\n"
             + " * @return {!goog.soy.data.SanitizedHtml}\n"
             + " * @suppress {checkTypes}\n"
             + " */\n"
             + "ns.foo = function(opt_data, opt_ijData, opt_ijData_deprecated) {\n"
-            + "  opt_ijData = opt_ijData_deprecated || opt_ijData;\n"
-            + "  return soydata.VERY_UNSAFE.ordainSanitizedHtml((opt_data.goo.length()));\n"
+            + "  opt_ijData = /** @type {!soy.IjData} */ (opt_ijData_deprecated || opt_ijData);\n"
+            + "  /** @type {?} */\n"
+            + "  var goo = opt_data.goo;\n"
+            + "  return soydata.VERY_UNSAFE.ordainSanitizedHtml((goo.length()));\n"
             + "};\n"
+            + "/**\n"
+            + " * @typedef {{\n"
+            + " *  goo: ?,\n"
+            + " * }}\n"
+            + " */\n"
+            + "ns.foo.Params;\n"
             + "if (goog.DEBUG) {\n"
             + "  ns.foo.soyTemplateName = 'ns.foo';\n"
             + "}\n";
 
     assertThatSoyFile(soyFile).generatesTemplateThat().isEqualTo(expectedJs);
+  }
+
+  @Test
+  public void testVeLiteral() {
+    assertThatSoyExpr("ve(MyVe)")
+        .withLoggingConfig(
+            ValidatedLoggingConfig.create(
+                LoggingConfig.newBuilder()
+                    .addElement(LoggableElement.newBuilder().setId(8675309).setName("MyVe"))
+                    .build()))
+        .generatesCode(
+            "goog.DEBUG "
+                + "? new soy.velog.$$VisualElement(8675309, 'MyVe') "
+                + ": new soy.velog.$$VisualElement(8675309);");
   }
 }

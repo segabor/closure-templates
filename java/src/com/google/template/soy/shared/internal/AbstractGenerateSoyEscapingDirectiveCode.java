@@ -19,8 +19,6 @@ package com.google.template.soy.shared.internal;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.CaseFormat;
 import com.google.common.base.Charsets;
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Maps;
 import com.google.common.io.Files;
@@ -29,6 +27,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import javax.annotation.ParametersAreNonnullByDefault;
 import org.apache.tools.ant.Task;
@@ -102,13 +101,7 @@ public abstract class AbstractGenerateSoyEscapingDirectiveCode extends Task {
    * Matches functions available in the environment in which output will be run including things
    * like {@link EscapingConventions.CrossLanguageStringXform#getLangFunctionNames}.
    */
-  protected Predicate<String> availableIdentifiers =
-      new Predicate<String>() {
-        @Override
-        public boolean apply(String functionName) {
-          return functionName.indexOf('.') < 0; // Only match builtins.
-        }
-      };
+  protected Predicate<String> availableIdentifiers = functionName -> functionName.indexOf('.') < 0;
 
   /**
    * A matcher for functions available in the environment in which output will be run including
@@ -147,14 +140,7 @@ public abstract class AbstractGenerateSoyEscapingDirectiveCode extends Task {
       throw new IllegalStateException("Please specify a pattern attribute for <libdefined>");
     }
     availableIdentifiers =
-        Predicates.or(
-            availableIdentifiers,
-            new Predicate<String>() {
-              @Override
-              public boolean apply(String identifierName) {
-                return namePattern.matcher(identifierName).matches();
-              }
-            });
+        availableIdentifiers.or(identifierName -> namePattern.matcher(identifierName).matches());
   }
 
   /**
@@ -295,7 +281,7 @@ public abstract class AbstractGenerateSoyEscapingDirectiveCode extends Task {
 
       // If there is an existing function, use it.
       for (String existingFunction : escaper.getLangFunctionNames(getLanguage())) {
-        if (availableIdentifiers.apply(existingFunction)) {
+        if (availableIdentifiers.test(existingFunction)) {
           useExistingLibraryFunction(outputCode, escapeDirectiveIdent, existingFunction);
           continue escaperLoop;
         }

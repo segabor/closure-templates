@@ -20,15 +20,15 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
-import com.google.common.base.Predicate;
-import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableListMultimap;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableTable;
 import com.google.common.collect.Table;
 import com.google.common.collect.Tables;
+import com.google.errorprone.annotations.Immutable;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.function.Predicate;
 import javax.annotation.Nullable;
 
 /**
@@ -44,6 +44,7 @@ import javax.annotation.Nullable;
  *
  * @param <T> The type of the values in the selector
  */
+@Immutable(containerOf = "T")
 public final class DelTemplateSelector<T> {
   private final ImmutableTable<String, String, Group<T>> nameAndVariantToGroup;
   private final ImmutableListMultimap<String, T> delTemplateNameToValues;
@@ -111,13 +112,7 @@ public final class DelTemplateSelector<T> {
   public static final class Builder<T> {
     private final Table<String, String, Group.Builder<T>> nameAndVariantToGroup =
         Tables.newCustomTable(
-            new LinkedHashMap<String, Map<String, Group.Builder<T>>>(),
-            new Supplier<Map<String, Group.Builder<T>>>() {
-              @Override
-              public Map<String, Group.Builder<T>> get() {
-                return new LinkedHashMap<>();
-              }
-            });
+            new LinkedHashMap<String, Map<String, Group.Builder<T>>>(), LinkedHashMap::new);
 
     /** Adds a template in the default delpackage. */
     public T addDefault(String delTemplateName, String variant, T value) {
@@ -145,6 +140,7 @@ public final class DelTemplateSelector<T> {
   }
 
   /** Represents all the templates for a given deltemplate name and variant value. */
+  @Immutable(containerOf = "T")
   private static final class Group<T> {
     final String formattedName;
     @Nullable final T defaultValue;
@@ -163,7 +159,7 @@ public final class DelTemplateSelector<T> {
     T select(Predicate<String> activeDelPackageSelector) {
       Map.Entry<String, T> selected = null;
       for (Map.Entry<String, T> entry : delpackageToValue.entrySet()) {
-        if (activeDelPackageSelector.apply(entry.getKey())) {
+        if (activeDelPackageSelector.test(entry.getKey())) {
           if (selected != null) {
             // how important is this?  maybe instead of checking at deltemplate selection time we
             // should validate active packages at the beginning of rendering (this is what the js

@@ -157,14 +157,17 @@ public final class JspbTest {
   public void testProtoInit_enumField() {
     assertThatSoyExpr("example.ExampleExtendable(someEnum: example.SomeEnum.SECOND)")
         .withTypeRegistry(REGISTRY)
-        .generatesCode("var $tmp = new proto.example.ExampleExtendable();", "$tmp.setSomeEnum(2);");
+        .generatesCode(
+            "var $tmp = new proto.example.ExampleExtendable();",
+            "$tmp.setSomeEnum(/** @type {?proto.example.SomeEnum} */ (2));");
 
     assertThatSoyExpr(
             expr("example.ExampleExtendable(someEnum: $e)")
                 .withParam("{@param e: example.SomeEnum}"))
         .withTypeRegistry(REGISTRY)
         .generatesCode(
-            "var $tmp = new proto.example.ExampleExtendable();", "$tmp.setSomeEnum(opt_data.e);");
+            "var $tmp = new proto.example.ExampleExtendable();",
+            "$tmp.setSomeEnum(/** @type {?proto.example.SomeEnum} */ (opt_data.e));");
   }
 
   @Test
@@ -260,20 +263,21 @@ public final class JspbTest {
             + "\n"
             + "goog.require('proto.example.ExampleExtendable');\n"
             + "goog.require('proto.example.SomeExtension');\n"
+            + "goog.requireType('soy');\n"
             + "goog.require('soy.asserts');\n"
             + "goog.require('soydata.VERY_UNSAFE');\n"
             + "\n"
             + "\n"
             + "/**\n"
             + " * @param {boo.foo.goo.Params} opt_data\n"
-            + " * @param {Object<string, *>=} opt_ijData\n"
-            + " * @param {Object<string, *>=} opt_ijData_deprecated\n"
+            + " * @param {soy.IjData|Object<string, *>=} opt_ijData\n"
+            + " * @param {soy.IjData|Object<string, *>=} opt_ijData_deprecated\n"
             + " * @return {!goog.soy.data.SanitizedHtml}\n"
             + " * @suppress {checkTypes}\n"
             + " */\n"
             + "boo.foo.goo = function(opt_data, opt_ijData, opt_ijData_deprecated) {\n"
-            + "  opt_ijData = opt_ijData_deprecated || opt_ijData;\n"
-            + "  var $tmp = opt_data.moo.$jspbMessageInstance || opt_data.moo;\n"
+            + "  opt_ijData = /** @type {!soy.IjData} */ (opt_ijData_deprecated || opt_ijData);\n"
+            + "  var $tmp = /** @type {?} */ (opt_data.moo).$jspbMessageInstance || opt_data.moo;\n"
             + "  /** @type {proto.example.ExampleExtendable} */\n"
             + "  var moo = soy.asserts.assertType("
             + "$tmp instanceof proto.example.ExampleExtendable, "

@@ -28,7 +28,6 @@ import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.constantNu
 
 import com.google.common.base.Function;
 import com.google.common.collect.ImmutableList;
-import com.google.protobuf.Message;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.jbcsrc.restricted.BytecodeUtils;
 import com.google.template.soy.jbcsrc.restricted.ConstructorRef;
@@ -363,10 +362,7 @@ final class MsgCompiler {
         value = parameterLookup.getRenderContext().applyPrintDirective(directive, value);
       }
       render =
-          appendableExpression
-              .appendString(value.unboxAs(String.class))
-              .toStatement()
-              .labelStart(start);
+          appendableExpression.appendString(value.unboxAsString()).toStatement().labelStart(start);
     }
     return Statement.concat(
         initMsgRenderer,
@@ -399,9 +395,7 @@ final class MsgCompiler {
         putSelectPartIntoMap(originalMsg, placeholderNameToPutStatement, (SoyMsgSelectPart) child);
       } else if (child instanceof SoyMsgPlaceholderPart) {
         putPlaceholderIntoMap(
-            originalMsg,
-            placeholderNameToPutStatement,
-            (SoyMsgPlaceholderPart) child);
+            originalMsg, placeholderNameToPutStatement, (SoyMsgPlaceholderPart) child);
       } else {
         throw new AssertionError("unexpected child: " + child);
       }
@@ -480,16 +474,11 @@ final class MsgCompiler {
                   // 1. we don't have to worry about logonly
                   // 2. we need to only generate 'half' of it
                   Label restartPoint = new Label();
+                  Expression veData = exprCompiler.compile(veLogNode.getVeDataExpression());
                   return appendable
                       .enterLoggableElement(
-                          MethodRef.LOG_STATEMENT_CREATE.invoke(
-                              BytecodeUtils.constant(veLogNode.getLoggingId()),
-                              veLogNode.getConfigExpression() == null
-                                  ? BytecodeUtils.constantNull(BytecodeUtils.MESSAGE_TYPE)
-                                  : exprCompiler
-                                      .compile(veLogNode.getConfigExpression(), restartPoint)
-                                      .unboxAs(Message.class),
-                              BytecodeUtils.constant(false)))
+                          MethodRef.CREATE_LOG_STATEMENT.invoke(
+                              veData, /*logonly*/ BytecodeUtils.constant(false)))
                       .toStatement()
                       .labelStart(restartPoint);
                 }
@@ -515,10 +504,8 @@ final class MsgCompiler {
             // We need to call a different method in this case to add the ordering constraint
             // between the start and end tag.
             putEntyInMap =
-                new Function<Expression, Statement>() {
-                  @Override
-                  public Statement apply(Expression mapExpression) {
-                    return mapExpression
+                mapExpression ->
+                    mapExpression
                         // need to cast since it is stored in a SoyValueProvider field
                         .checkedCast(ConstructorRef.MSG_RENDERER.instanceClass().type())
                         .invokeVoid(
@@ -530,8 +517,6 @@ final class MsgCompiler {
                                 /* prefix= */ enterLoggableElement,
                                 /* suffix= */ ExtraCodeCompiler.NO_OP),
                             constant(closeTagPlaceholderName));
-                  }
-                };
           }
         } else if (childIndex == veLogNode.numChildren() - 1) {
           putEntyInMap =
@@ -584,20 +569,17 @@ final class MsgCompiler {
 
   private Function<Expression, Statement> putToMapFunction(
       final String mapKey, final Expression valueExpression, @Nullable final Label labelStart) {
-    return new Function<Expression, Statement>() {
-      @Override
-      public Statement apply(Expression mapExpression) {
-        Statement statement =
-            mapExpression
-                // need to cast since it is stored in a SoyValueProvider field
-                .checkedCast(ConstructorRef.MSG_RENDERER.instanceClass().type())
-                .invokeVoid(
-                    MethodRef.MSG_RENDERER_SET_PLACEHOLDER, constant(mapKey), valueExpression);
-        if (labelStart != null) {
-          statement = statement.labelStart(labelStart);
-        }
-        return statement;
+    return mapExpression -> {
+      Statement statement =
+          mapExpression
+              // need to cast since it is stored in a SoyValueProvider field
+              .checkedCast(ConstructorRef.MSG_RENDERER.instanceClass().type())
+              .invokeVoid(
+                  MethodRef.MSG_RENDERER_SET_PLACEHOLDER, constant(mapKey), valueExpression);
+      if (labelStart != null) {
+        statement = statement.labelStart(labelStart);
       }
+      return statement;
     };
   }
 }

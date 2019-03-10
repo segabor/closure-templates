@@ -17,6 +17,7 @@ package com.google.template.soy.types;
 
 import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
+import com.google.template.soy.soytree.SoyTypeP;
 import java.util.Objects;
 
 /** Soy's ve type, for tracking VE names and their associated data type. */
@@ -24,21 +25,21 @@ public final class VeType extends SoyType {
 
   public static final VeType NO_DATA = new VeType(Optional.absent());
 
-  private final Optional<SoyType> dataType;
+  private final Optional<String> dataType;
 
-  private VeType(Optional<SoyType> dataType) {
+  private VeType(Optional<String> dataType) {
     this.dataType = dataType;
   }
 
-  public static VeType of(SoyType dataType) {
+  public static VeType of(String dataType) {
     Preconditions.checkNotNull(dataType);
-    if (dataType.getKind() == Kind.NULL) {
+    if (NullType.getInstance().toString().equals(dataType)) {
       return NO_DATA;
     }
     return new VeType(Optional.of(dataType));
   }
 
-  public Optional<SoyType> getDataType() {
+  public Optional<String> getDataType() {
     return dataType;
   }
 
@@ -54,7 +55,14 @@ public final class VeType extends SoyType {
 
   @Override
   public String toString() {
-    return "ve<" + (dataType.isPresent() ? dataType.get().toString() : "null") + ">";
+    return "ve<"
+        + (dataType.isPresent() ? dataType.get() : NullType.getInstance().toString())
+        + ">";
+  }
+
+  @Override
+  void doToProto(SoyTypeP.Builder builder) {
+    builder.setVe(dataType.or("null"));
   }
 
   @Override

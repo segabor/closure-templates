@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package com.google.template.soy.passes;
+package com.google.template.soy.soyparse;
 
 import static com.google.common.base.Ascii.toLowerCase;
 import static com.google.common.base.Preconditions.checkArgument;
@@ -22,7 +22,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.Multimaps.asMap;
 
-import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Ascii;
 import com.google.common.base.CharMatcher;
 import com.google.common.base.Function;
@@ -35,6 +34,7 @@ import com.google.common.collect.Sets;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.base.internal.SanitizedContentKind;
+import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.ErrorReporter.Checkpoint;
 import com.google.template.soy.error.SoyErrorKind;
@@ -54,6 +54,8 @@ import com.google.template.soy.soytree.HtmlAttributeValueNode.Quotes;
 import com.google.template.soy.soytree.HtmlCloseTagNode;
 import com.google.template.soy.soytree.HtmlCommentNode;
 import com.google.template.soy.soytree.HtmlOpenTagNode;
+import com.google.template.soy.soytree.HtmlTagNode;
+import com.google.template.soy.soytree.HtmlTagNode.TagExistence;
 import com.google.template.soy.soytree.IfCondNode;
 import com.google.template.soy.soytree.IfNode;
 import com.google.template.soy.soytree.KeyNode;
@@ -122,10 +124,9 @@ import javax.annotation.Nullable;
  * <p>This class tries to be faithful to the <a
  * href="https://www.w3.org/TR/html5/syntax.html#syntax">Html syntax standard</a>. Though we do not
  * attempt to implement the contextual element model, and matching tags is handled by a different
- * pass, the {@link StrictHtmlValidationPass}.
+ * pass, the {@link com.google.template.soy.passes.StrictHtmlValidationPass}.
  */
-@VisibleForTesting
-public final class HtmlRewritePass extends CompilerFilePass {
+final class HtmlRewriter {
 
   /**
    * If set to true, causes every state transition to be logged to stderr. Useful when debugging.
@@ -386,15 +387,10 @@ public final class HtmlRewritePass extends CompilerFilePass {
     }
   }
 
-  private final ErrorReporter errorReporter;
+  private HtmlRewriter() {}
 
-  /** @param errorReporter The error reporter */
-  public HtmlRewritePass(ErrorReporter errorReporter) {
-    this.errorReporter = errorReporter;
-  }
-
-  @Override
-  public void run(SoyFileNode file, IdGenerator nodeIdGen) {
+  /* Rewrites the file to contain html tags*/
+  public static void rewrite(SoyFileNode file, IdGenerator nodeIdGen, ErrorReporter errorReporter) {
     new Visitor(nodeIdGen, file.getFilePath(), errorReporter).exec(file);
   }
 
@@ -593,8 +589,6 @@ public final class HtmlRewritePass extends CompilerFilePass {
           case SINGLE_QUOTED_XML_ATTRIBUTE_VALUE:
             handleXmlAttributeQuoted(false);
             break;
-          default:
-            throw new UnsupportedOperationException("cant yet handle: " + startState);
         }
         if (context.getState() == startState && startIndex == currentRawTextIndex) {
           // sanity! make sure we are making progress.  Calling handle* should ensure that we
@@ -627,10 +621,21 @@ public final class HtmlRewritePass extends CompilerFilePass {
       if (currentRawTextNode.missingWhitespaceAt(currentRawText.length())) {
         handleJoinedWhitespace(currentRawTextNode.getSourceLocation().getEndPoint());
       }
+      // empty raw text nodes won't get visited in the loop above, just delete them here.
+      // the parser produces empty raw text nodes to track where whitespace is trimmed.  We take
+      // advantage of this in the handleJoinedWhitespace method to tell where unquoted attributes
+      // end.
+      if (currentRawTextNode.isEmpty()) {
+        edits.remove(currentRawTextNode);
+      }
     }
 
     /** Called to handle whitespace that was completely removed from a raw text node. */
     void handleJoinedWhitespace(SourceLocation.Point point) {
+      // Whitespace isn't meaningful within a tag, but it does show where users separated things
+      // so treat the 'joined' whitespace like real whitespace.
+      // TODO(lukes): it would be nice to be able to treat joined whitespace as 'real whitespace'
+      // then the normal loops in the handle* methods would just #dealwithit.
       switch (context.getState()) {
         case UNQUOTED_ATTRIBUTE_VALUE:
           context.createUnquotedAttributeValue(point);
@@ -828,11 +833,11 @@ public final class HtmlRewritePass extends CompilerFilePass {
       RawTextNode node = consumeHtmlIdentifier(EXPECTED_TAG_NAME);
       if (node == null) {
         // consumeHtmlIdentifier will have already reported an error, try to keep going
-        context.setTagName(
-            new TagName(new RawTextNode(nodeIdGen.genId(), "$parse-error$", currentLocation())));
+        context.setTagNameNode(
+            new RawTextNode(nodeIdGen.genId(), "$parse-error$", currentLocation()));
       } else {
         validateIdentifier(node, TAG_NAME, BAD_TAG_NAME);
-        context.setTagName(new TagName(node));
+        context.setTagNameNode(node);
       }
     }
 
@@ -1289,23 +1294,20 @@ public final class HtmlRewritePass extends CompilerFilePass {
           node,
           collectMsgBranches(node),
           "msg",
-          new Function<BlockNode, String>() {
-            @Override
-            public String apply(BlockNode input) {
-              switch (input.getKind()) {
-                case MSG_FALLBACK_GROUP_NODE:
-                  return "fallbackmsg";
-                case MSG_NODE:
-                  return "msg";
-                case MSG_PLURAL_CASE_NODE:
-                case MSG_SELECT_CASE_NODE:
-                  return "case block";
-                case MSG_PLURAL_DEFAULT_NODE:
-                case MSG_SELECT_DEFAULT_NODE:
-                  return "default block";
-                default:
-                  throw new AssertionError("unexepected node: " + input);
-              }
+          input -> {
+            switch (input.getKind()) {
+              case MSG_FALLBACK_GROUP_NODE:
+                return "fallbackmsg";
+              case MSG_NODE:
+                return "msg";
+              case MSG_PLURAL_CASE_NODE:
+              case MSG_SELECT_CASE_NODE:
+                return "case block";
+              case MSG_PLURAL_DEFAULT_NODE:
+              case MSG_SELECT_DEFAULT_NODE:
+                return "default block";
+              default:
+                throw new AssertionError("unexepected node: " + input);
             }
           },
           true, // exactly one branch will execute once
@@ -1320,14 +1322,11 @@ public final class HtmlRewritePass extends CompilerFilePass {
           node,
           node.getChildren(),
           node.getCommandName() + " loop",
-          new Function<BlockNode, String>() {
-            @Override
-            public String apply(@Nullable BlockNode input) {
-              if (input instanceof ForNonemptyNode) {
-                return "loop body";
-              }
-              return "ifempty block";
+          input -> {
+            if (input instanceof ForNonemptyNode) {
+              return "loop body";
             }
+            return "ifempty block";
           },
           /* willExactlyOneBranchExecuteOnce= */ false,
           node.hasIfEmptyBlock() /* one branch will execute if there is an ifempty block. */);
@@ -1340,17 +1339,14 @@ public final class HtmlRewritePass extends CompilerFilePass {
           node,
           node.getChildren(),
           "if",
-          new Function<BlockNode, String>() {
-            @Override
-            public String apply(@Nullable BlockNode input) {
-              if (input instanceof IfCondNode) {
-                if (node.getChild(0) == input) {
-                  return "if block";
-                }
-                return "elseif block";
+          input -> {
+            if (input instanceof IfCondNode) {
+              if (node.getChild(0) == input) {
+                return "if block";
               }
-              return "else block";
+              return "elseif block";
             }
+            return "else block";
           },
           // one and only one child will execute if we have an else
           hasElse,
@@ -1364,14 +1360,11 @@ public final class HtmlRewritePass extends CompilerFilePass {
           node,
           node.getChildren(),
           "switch",
-          new Function<BlockNode, String>() {
-            @Override
-            public String apply(@Nullable BlockNode input) {
-              if (input instanceof SwitchCaseNode) {
-                return "case block";
-              }
-              return "default block";
+          input -> {
+            if (input instanceof SwitchCaseNode) {
+              return "case block";
             }
+            return "default block";
           },
           // one and only one child will execute if we have a default
           hasDefault,
@@ -1435,8 +1428,6 @@ public final class HtmlRewritePass extends CompilerFilePass {
         case SINGLE_QUOTED_XML_ATTRIBUTE_VALUE:
           // do nothing
           break;
-        default:
-          throw new AssertionError();
       }
     }
 
@@ -1460,7 +1451,9 @@ public final class HtmlRewritePass extends CompilerFilePass {
 
         case HTML_TAG_NAME:
           if (node.getKind() == Kind.PRINT_NODE) {
-            context.setTagName(new TagName((PrintNode) node));
+            // We have to copy so we can re-parent in the tag safely.  In theory we could get away
+            // with just a shallow copy, which would be more efficient.
+            context.setTagNameNode(node.copy(new CopyState()));
             edits.remove(node);
           } else {
             errorReporter.report(node.getSourceLocation(), INVALID_TAG_NAME);
@@ -1493,9 +1486,6 @@ public final class HtmlRewritePass extends CompilerFilePass {
         case SINGLE_QUOTED_XML_ATTRIBUTE_VALUE:
           // do nothing
           break;
-
-        default:
-          throw new AssertionError("unexpected state: " + context.getState());
       }
     }
 
@@ -1526,8 +1516,6 @@ public final class HtmlRewritePass extends CompilerFilePass {
             // blockKind == null we will avoid parsing this block. (since State will == NONE).
             // we could also just assume html... but that might be confusing in some cases?
             break;
-          default:
-            throw new AssertionError();
         }
       }
       State startState = State.fromKind(blockKind);
@@ -1631,9 +1619,6 @@ public final class HtmlRewritePass extends CompilerFilePass {
         case SINGLE_QUOTED_XML_ATTRIBUTE_VALUE:
           // do nothing
           break;
-
-        default:
-          throw new AssertionError("unexpected control flow starting state: " + startingState);
       }
     }
 
@@ -1777,7 +1762,6 @@ public final class HtmlRewritePass extends CompilerFilePass {
         case BEFORE_ATTRIBUTE_VALUE:
         case HTML_TAG_NAME:
           // impossible?
-        default:
           throw new AssertionError(
               "found non-empty context for unexpected state: " + blockCtx.getState());
       }
@@ -1982,7 +1966,7 @@ public final class HtmlRewritePass extends CompilerFilePass {
 
     SourceLocation.Point tagStartPoint;
     RawTextNode tagStartNode;
-    TagName tagName;
+    StandaloneNode tagNameNode;
     State tagStartState;
 
     // TODO(lukes): consider lazily allocating these lists.
@@ -2113,8 +2097,8 @@ public final class HtmlRewritePass extends CompilerFilePass {
       if (tagStartPoint != null) {
         error = format(error, "Expected tagStartPoint to be null, got: %s", tagStartPoint);
       }
-      if (tagName != null) {
-        error = format(error, "Expected tagName to be null, got: %s", tagName);
+      if (tagNameNode != null) {
+        error = format(error, "Expected tagName to be null, got: %s", tagNameNode.toSourceString());
       }
       if (tagStartNode != null) {
         error = format(error, "Expected tagStartNode to be null, got: %s", tagStartNode);
@@ -2128,9 +2112,6 @@ public final class HtmlRewritePass extends CompilerFilePass {
                 error,
                 "Expected quotedAttributeValueStart to be null, got: %s",
                 quotedAttributeValueStart);
-      }
-      if (tagName != null) {
-        error = format(error, "Expected tagName to be null, got: %s", tagName);
       }
       if (commentStartPoint != null) {
         error = format(error, "Expected commentStartPoint to be null, got: %s", commentStartPoint);
@@ -2163,7 +2144,7 @@ public final class HtmlRewritePass extends CompilerFilePass {
     void reset() {
       tagStartPoint = null;
       tagStartNode = null;
-      tagName = null;
+      tagNameNode = null;
       tagStartState = null;
       directTagChildren.clear();
       directCommentChildren.clear();
@@ -2225,11 +2206,12 @@ public final class HtmlRewritePass extends CompilerFilePass {
       return tagStartPoint.asLocation(filePath);
     }
 
-    /** Sets the tag name of the tag currently being built. */
-    void setTagName(TagName tagName) {
-      this.tagName = checkNotNull(tagName);
-      edits.remove(tagName.getNode());
-      setState(State.AFTER_TAG_NAME_OR_ATTRIBUTE, tagName.getTagLocation().getEndPoint());
+    /** Sets the node that holds the tag name of the tag currently being built. */
+    void setTagNameNode(StandaloneNode rawTextOrPrintNode) {
+      this.tagNameNode = checkNotNull(rawTextOrPrintNode);
+      edits.remove(rawTextOrPrintNode);
+      setState(
+          State.AFTER_TAG_NAME_OR_ATTRIBUTE, rawTextOrPrintNode.getSourceLocation().getEndPoint());
     }
 
     void startAttribute(StandaloneNode attrName) {
@@ -2343,7 +2325,7 @@ public final class HtmlRewritePass extends CompilerFilePass {
      */
     State createTag(RawTextNode tagEndNode, boolean selfClosing, SourceLocation.Point endPoint) {
       maybeFinishPendingAttribute(endPoint);
-      ParentSoyNode<StandaloneNode> replacement;
+      HtmlTagNode replacement;
       SourceLocation sourceLocation = new SourceLocation(filePath, tagStartPoint, endPoint);
       if (isCloseTag) {
         // we allow for attributes in close tags in the parser since there is a usecase for msg
@@ -2354,12 +2336,20 @@ public final class HtmlRewritePass extends CompilerFilePass {
           errorReporter.report(
               endPoint.asLocation(filePath).offsetStartCol(-1), SELF_CLOSING_CLOSE_TAG);
         }
-        replacement = new HtmlCloseTagNode(nodeIdGen.genId(), tagName, sourceLocation);
+        replacement =
+            new HtmlCloseTagNode(
+                nodeIdGen.genId(), tagNameNode, sourceLocation, TagExistence.IN_TEMPLATE);
       } else {
-        replacement = new HtmlOpenTagNode(nodeIdGen.genId(), tagName, sourceLocation, selfClosing);
+        replacement =
+            new HtmlOpenTagNode(
+                nodeIdGen.genId(),
+                tagNameNode,
+                sourceLocation,
+                selfClosing,
+                TagExistence.IN_TEMPLATE);
       }
       // Depending on the tag name, we may need to enter a special state after the tag.
-      State nextState = getNextState(tagName);
+      State nextState = getNextState(replacement.getTagName());
       // if we see a naked </script report an error
       if (isCloseTag && nextState.isRcDataState() && tagStartState != nextState) {
         errorReporter.report(tagStartLocation(), UNEXPECTED_CLOSE_TAG);
@@ -2369,13 +2359,11 @@ public final class HtmlRewritePass extends CompilerFilePass {
         nextState = State.PCDATA;
       }
       edits.remove(tagEndNode);
-      edits.addChild(replacement, tagName.getNode());
       edits.addChildren(replacement, directTagChildren);
-      // cast is safe because Html(Open|Close)TagNode implement StandaloneNode
-      edits.replace(tagStartNode, (StandaloneNode) replacement);
+      edits.replace(tagStartNode, replacement);
       directTagChildren.clear();
       tagStartPoint = null;
-      tagName = null;
+      tagNameNode = null;
       tagStartState = null;
       tagStartNode = null;
       checkEmpty("Expected state to be empty after completing a tag");

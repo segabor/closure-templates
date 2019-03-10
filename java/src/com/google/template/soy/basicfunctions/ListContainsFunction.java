@@ -26,13 +26,13 @@ import com.google.template.soy.plugin.javascript.restricted.JavaScriptPluginCont
 import com.google.template.soy.plugin.javascript.restricted.JavaScriptValue;
 import com.google.template.soy.plugin.javascript.restricted.JavaScriptValueFactory;
 import com.google.template.soy.plugin.javascript.restricted.SoyJavaScriptSourceFunction;
-import com.google.template.soy.pysrc.restricted.PyExpr;
-import com.google.template.soy.pysrc.restricted.PyListExpr;
-import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
+import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
+import com.google.template.soy.plugin.python.restricted.PythonValue;
+import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
+import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
-import com.google.template.soy.shared.restricted.TypedSoyFunction;
 import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
@@ -55,8 +55,8 @@ import java.util.List;
             parameterTypes = {"list<any>", "any"},
             returnType = "bool"))
 @SoyPureFunction
-public class ListContainsFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPySrcFunction, SoySwiftSrcFunction {
+public class ListContainsFunction
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
 
   @Override
   public JavaScriptValue applyForJavaScriptSource(
@@ -65,14 +65,9 @@ public class ListContainsFunction extends TypedSoyFunction
   }
 
   @Override
-  public PyExpr computeForPySrc(List<PyExpr> args) {
-    return new PyListExpr(
-        "any(runtime.type_safe_eq(el, "
-            + args.get(1).getText()
-            + ") for el in "
-            + args.get(0).getText()
-            + ")",
-        Integer.MAX_VALUE);
+  public PythonValue applyForPythonSource(
+      PythonValueFactory factory, List<PythonValue> args, PythonPluginContext context) {
+    return factory.global("runtime.list_contains").call(args.get(0), args.get(1));
   }
 
   // lazy singleton pattern, allows other backends to avoid the work.

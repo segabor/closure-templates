@@ -117,6 +117,10 @@ public abstract class SoyRuntimeType {
         return new BoxedSoyType(soyType, BytecodeUtils.SOY_MAP_TYPE);
       case RECORD:
         return new BoxedSoyType(soyType, BytecodeUtils.SOY_RECORD_TYPE);
+      case VE:
+        return new BoxedSoyType(soyType, BytecodeUtils.SOY_VISUAL_ELEMENT_TYPE);
+      case VE_DATA:
+        return new BoxedSoyType(soyType, BytecodeUtils.SOY_VISUAL_ELEMENT_DATA_TYPE);
       case UNION:
         {
           // unions generally don't have a runtime type except in 2 special cases

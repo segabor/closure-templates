@@ -19,30 +19,72 @@ package com.google.template.soy.passes.htmlmatcher;
 import static com.google.common.base.Preconditions.checkState;
 
 import com.google.common.base.Optional;
-import com.google.template.soy.soytree.IfCondNode;
+import com.google.template.soy.base.internal.IdGenerator;
+import com.google.template.soy.error.ErrorReporter;
+import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.soytree.SoyNode;
 import javax.annotation.Nullable;
 
-public final class HtmlMatcherIfConditionNode extends HtmlMatcherGraphNode {
+public final class HtmlMatcherConditionNode extends HtmlMatcherGraphNode {
 
-  private final IfCondNode conditionNode;
+  private final SoyNode soyNode;
 
   private EdgeKind activeEdge = EdgeKind.TRUE_EDGE;
+
+  private final ExprNode expression;
+
+  private final HtmlMatcherGraph graph;
 
   @Nullable private HtmlMatcherGraphNode trueBranchNode = null;
 
   @Nullable private HtmlMatcherGraphNode falseBranchNode = null;
 
-  public HtmlMatcherIfConditionNode(SoyNode conditionNode) {
-    checkState(
-        conditionNode instanceof IfCondNode,
-        "HtmlMatcherCondition nodes must be constructed with an IfCondNode.");
-    this.conditionNode = (IfCondNode) conditionNode;
+  private Optional<Boolean> isInternallyBalancedForForeignContent = Optional.absent();
+  private Optional<Boolean> isInternallyBalanced = Optional.absent();
+
+  public HtmlMatcherConditionNode(SoyNode soyNode, ExprNode expression, HtmlMatcherGraph graph) {
+    this.soyNode = soyNode;
+    this.expression = expression;
+    this.graph = graph;
+  }
+
+  public HtmlMatcherConditionNode(SoyNode soyNode, ExprNode expression) {
+    this.soyNode = soyNode;
+    this.expression = expression;
+    this.graph = null;
+  }
+
+  public ExprNode getExpression() {
+    return this.expression;
+  }
+
+  public boolean isInternallyBalanced(boolean inForeignContent, IdGenerator idGenerator) {
+    ErrorReporter errorReporter = ErrorReporter.createForTest();
+    HtmlTagMatchingPass pass =
+        new HtmlTagMatchingPass(
+            errorReporter,
+            idGenerator,
+            /** inCondition */
+            true,
+            inForeignContent,
+            "condition");
+    if (inForeignContent) {
+      if (!isInternallyBalancedForForeignContent.isPresent()) {
+        pass.run(graph);
+        isInternallyBalancedForForeignContent = Optional.of(errorReporter.getErrors().isEmpty());
+      }
+      return isInternallyBalancedForForeignContent.get();
+    }
+    if (!isInternallyBalanced.isPresent()) {
+      pass.run(graph);
+      isInternallyBalanced = Optional.of(errorReporter.getErrors().isEmpty());
+    }
+    return isInternallyBalanced.get();
   }
 
   @Override
   public Optional<SoyNode> getSoyNode() {
-    return Optional.of(conditionNode);
+    return Optional.of(soyNode);
   }
 
   @Override

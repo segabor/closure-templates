@@ -19,15 +19,17 @@ package com.google.template.soy.jbcsrc.shared;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.base.Optional;
-import com.google.common.base.Predicate;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
+import com.google.errorprone.annotations.Immutable;
+import com.google.errorprone.annotations.concurrent.LazyInit;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
 import com.google.template.soy.jbcsrc.shared.TemplateMetadata.DelTemplateMetadata;
 import com.google.template.soy.shared.internal.DelTemplateSelector;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Predicate;
 import javax.annotation.Nullable;
 
 /** The result of template compilation. */
@@ -179,6 +181,7 @@ public final class CompiledTemplates {
   }
 
   /** This is mostly a copy of the {@link TemplateMetadata} annotation. */
+  @Immutable
   private static final class TemplateData {
     final Class<? extends CompiledTemplate> templateClass;
     // will be null for private templates since we don't compile factories for them.
@@ -195,7 +198,7 @@ public final class CompiledTemplates {
 
     // Lazily initialized by getTransitiveIjParamsForTemplate.  We initialize lazily because in
     // general this is only needed for relatively few templates.
-    ImmutableSortedSet<String> transitiveIjParams;
+    @LazyInit ImmutableSortedSet<String> transitiveIjParams;
 
     TemplateData(Class<? extends CompiledTemplate> template) {
       this.templateClass = template;

@@ -15,7 +15,6 @@
  */
 package com.google.template.soy.passes;
 
-import com.google.common.base.Optional;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
@@ -23,7 +22,6 @@ import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.logging.LoggingFunction;
-import com.google.template.soy.logging.ValidatedLoggingConfig.ValidatedLoggableElement;
 import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.soytree.MsgNode;
 import com.google.template.soy.soytree.PrintNode;
@@ -37,9 +35,10 @@ import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.VeLogNode;
 import com.google.template.soy.types.BoolType;
-import com.google.template.soy.types.SoyProtoType;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyType.Kind;
+import com.google.template.soy.types.SoyTypeRegistry;
+import com.google.template.soy.types.SoyTypes;
 import com.google.template.soy.types.VeType;
 
 /**
@@ -52,19 +51,14 @@ import com.google.template.soy.types.VeType;
  *   <li>ResolveTypesPass since we rely on type resolution data
  *   <li>ResolveFunctions pass since we need to validate the use of {@link LoggingFunction}
  *       invocations
+ *   <li>VeLogRewritePass since that rewrites more VE syntactic sugar
  * </ul>
  */
 final class VeLogValidationPass extends CompilerFilePass {
-  private static final SoyErrorKind UNEXPECTED_CONFIG =
-      SoyErrorKind.of(
-          "Unexpected ''data'' attribute for logging element ''{0}'', there is no configured "
-              + "''proto_extension_type'' in the logging configuration for this element. "
-              + "Did you forget to configure it?");
   private static final SoyErrorKind UNEXPECTED_DATA =
       SoyErrorKind.of(
-          "Unexpected data argument. The data (''{0}'') must match with the VE passed as the "
-              + "first argument (''{1}''). The VE is type ''{2}'' which means there cannot be any "
-              + "data.");
+          "Unexpected data argument. The VE is type ''{0}'' which means there cannot be any data. "
+              + "The data is typed ''{1}'' and must match with the VE.");
   private static final SoyErrorKind WRONG_TYPE =
       SoyErrorKind.of("Expected an expression of type ''{0}'', instead got ''{1}''.");
   private static final SoyErrorKind LOGONLY_DISALLOWED_IN_MSG =
@@ -87,27 +81,40 @@ final class VeLogValidationPass extends CompilerFilePass {
           "The logging function ''{0}'' can only be evaluated in a print command with no print "
               + "directives.");
 
-  private final ErrorReporter reporter;
-  private final VeLogValidator veLogValidator;
+  private static final SoyErrorKind UNKNOWN_PROTO =
+      SoyErrorKind.of("Unknown proto type ''{0}'' configured for use with this VE.");
+  private static final SoyErrorKind BAD_DATA_TYPE =
+      SoyErrorKind.of(
+          "Illegal VE metadata type ''{0}'' for this VE. The metadata must be a proto.");
+  private static final SoyErrorKind INVALID_VE =
+      SoyErrorKind.of(
+          "The velog command requires a VE identifier, an expression of the ''ve'' type or an "
+              + "expression of the ''ve_data'' type. Found an expression of type ''{0}''.");
+  private static final SoyErrorKind VE_UNION_WITH_DATA =
+      SoyErrorKind.of(
+          "It is illegal to set the data parameter if the ve type is a union (''{0}'').");
 
-  VeLogValidationPass(ErrorReporter reporter, VeLogValidator veLogValidator) {
+  private final ErrorReporter reporter;
+  private final SoyTypeRegistry typeRegistry;
+
+  VeLogValidationPass(ErrorReporter reporter, SoyTypeRegistry typeRegistry) {
     this.reporter = reporter;
-    this.veLogValidator = veLogValidator;
+    this.typeRegistry = typeRegistry;
   }
 
   @Override
   public void run(SoyFileNode file, IdGenerator nodeIdGen) {
     for (TemplateNode template : file.getChildren()) {
-      for (VeLogNode node : SoyTreeUtils.getAllNodesOfType(template, VeLogNode.class)) {
-        if (template.isStrictHtml()) {
-          validateNodeAgainstConfig(node);
-        } else {
-          reporter.report(node.getName().location(), REQUIRE_STRICTHTML);
-        }
-      }
       for (FunctionNode node :
           SoyTreeUtils.getAllFunctionInvocations(template, BuiltinFunction.VE_DATA)) {
         validateVeDataFunctionNode(node);
+      }
+      for (VeLogNode node : SoyTreeUtils.getAllNodesOfType(template, VeLogNode.class)) {
+        if (template.isStrictHtml()) {
+          validateVeLogNode(node);
+        } else {
+          reporter.report(node.getVeDataExpression().getSourceLocation(), REQUIRE_STRICTHTML);
+        }
       }
       // We need to validate logging functions.  The rules are
       // 1. logging functions can only be the direct children of PrintNodes
@@ -172,70 +179,72 @@ final class VeLogValidationPass extends CompilerFilePass {
     }
   }
 
-  /** Type checks both expressions and assigns the {@link VeLogNode#getLoggingId()} field. */
-  private void validateNodeAgainstConfig(VeLogNode node) {
-    Optional<ValidatedLoggableElement> config =
-        veLogValidator.getLoggingElement(node.getName().identifier(), node.getName().location());
-
-    if (config.isPresent()) {
-      node.setLoggingId(config.get().getId());
-      if (node.getConfigExpression() != null) {
-        SoyType type = node.getConfigExpression().getType();
-        Optional<String> protoName = config.get().getProtoName();
-        if (!protoName.isPresent()) {
-          reporter.report(
-              node.getConfigExpression().getSourceLocation(),
-              UNEXPECTED_CONFIG,
-              node.getName().identifier());
-        } else if (type.getKind() != Kind.ERROR
-            && (type.getKind() != Kind.PROTO
-                || !((SoyProtoType) type).getDescriptor().getFullName().equals(protoName.get()))) {
-          reporter.report(
-              node.getConfigExpression().getSourceLocation(), WRONG_TYPE, protoName.get(), type);
-        }
+  /** Type checks the VE and logonly expressions. */
+  private void validateVeLogNode(VeLogNode node) {
+    if (node.getVeDataExpression().getRoot().getType().getKind() != Kind.VE_DATA) {
+      reporter.report(
+          node.getVeDataExpression().getSourceLocation(),
+          INVALID_VE,
+          node.getVeDataExpression().getRoot().getType());
+    }
+    if (node.getLogonlyExpression() != null) {
+      // check to see if it is in a msg node.  logonly is disallowed in msg nodes because we don't
+      // have an implementation strategy.
+      if (isInMsgNode(node)) {
+        reporter.report(node.getLogonlyExpression().getSourceLocation(), LOGONLY_DISALLOWED_IN_MSG);
       }
-
-      if (node.getLogonlyExpression() != null) {
-        // check to see if it is in a msg node.  logonly is disallowed in msg nodes because we don't
-        // have an implementation strategy.
-        if (isInMsgNode(node)) {
-          reporter.report(
-              node.getLogonlyExpression().getSourceLocation(), LOGONLY_DISALLOWED_IN_MSG);
-        }
-        SoyType type = node.getLogonlyExpression().getType();
-        if (type.getKind() != Kind.BOOL) {
-          reporter.report(
-              node.getLogonlyExpression().getSourceLocation(),
-              WRONG_TYPE,
-              BoolType.getInstance(),
-              type);
-        }
+      SoyType type = node.getLogonlyExpression().getType();
+      if (type.getKind() != Kind.BOOL) {
+        reporter.report(
+            node.getLogonlyExpression().getSourceLocation(),
+            WRONG_TYPE,
+            BoolType.getInstance(),
+            type);
       }
     }
   }
 
   private void validateVeDataFunctionNode(FunctionNode node) {
+    if (node.numChildren() < 1 || node.numChildren() > 2) {
+      return; // an error has already been reported
+    }
     ExprNode veExpr = node.getChild(0);
     ExprNode dataExpr = node.getChild(1);
 
-    if (veExpr.getType().getKind() != Kind.ERROR) {
-      if (veExpr.getType().getKind() != Kind.VE) {
-        reporter.report(veExpr.getSourceLocation(), WRONG_TYPE, "ve", veExpr.getType());
-      } else if (dataExpr.getType().getKind() != Kind.NULL) {
+    if (veExpr.getType().getKind() == Kind.ERROR) {
+      return;
+    }
+
+    if (veExpr.getType().getKind() == Kind.VE) {
+      if (dataExpr.getType().getKind() != Kind.NULL) {
         VeType veType = (VeType) veExpr.getType();
         SoyType dataType = dataExpr.getType();
         if (!veType.getDataType().isPresent()) {
           reporter.report(
               dataExpr.getSourceLocation(),
               UNEXPECTED_DATA,
-              dataExpr.toSourceString(),
-              veExpr.toSourceString(),
-              veType);
-        } else if (!dataType.equals(veType.getDataType().get())) {
-          reporter.report(
-              dataExpr.getSourceLocation(), WRONG_TYPE, veType.getDataType().get(), dataType);
+              veType,
+              dataType);
+        } else {
+          SoyType veDataType = typeRegistry.getType(veType.getDataType().get());
+          if (veDataType == null) {
+            reporter.report(veExpr.getSourceLocation(), UNKNOWN_PROTO, veType.getDataType().get());
+          } else if (veDataType.getKind() != Kind.PROTO) {
+            reporter.report(veExpr.getSourceLocation(), BAD_DATA_TYPE, veDataType);
+          } else if (!dataType.equals(veDataType)) {
+            reporter.report(
+                dataExpr.getSourceLocation(), WRONG_TYPE, veType.getDataType().get(), dataType);
+          }
         }
       }
+    } else if (SoyTypes.isKindOrUnionOfKind(veExpr.getType(), Kind.VE)) {
+      // This is a union of VE types with different data types, so it's okay to wrap in ve_data as
+      // long as ve_data's data parameter is null.
+      if (dataExpr.getType().getKind() != Kind.NULL) {
+        reporter.report(dataExpr.getSourceLocation(), VE_UNION_WITH_DATA, veExpr.getType());
+      }
+    } else {
+      reporter.report(veExpr.getSourceLocation(), WRONG_TYPE, "ve", veExpr.getType());
     }
   }
 

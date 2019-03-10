@@ -22,7 +22,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
-import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.base.internal.SoyFileSupplier;
 import com.google.template.soy.conformance.ValidatedConformanceConfig;
 import com.google.template.soy.error.ErrorReporter;
@@ -30,6 +29,7 @@ import com.google.template.soy.logging.ValidatedLoggingConfig;
 import com.google.template.soy.passes.CompilerFilePass;
 import com.google.template.soy.passes.PassManager;
 import com.google.template.soy.passes.PassManager.PassContinuationRule;
+import com.google.template.soy.passes.PluginResolver;
 import com.google.template.soy.plugin.restricted.SoySourceFunction;
 import com.google.template.soy.shared.SharedTestUtils;
 import com.google.template.soy.shared.SoyAstCache;
@@ -39,7 +39,6 @@ import com.google.template.soy.shared.internal.SoyScopedData;
 import com.google.template.soy.shared.internal.SoySimpleScope;
 import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
-import com.google.template.soy.soyparse.PluginResolver;
 import com.google.template.soy.types.SoyTypeRegistry;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -131,7 +130,7 @@ public final class SoyFileSetParserBuilder {
     this.scopedData = new SoySimpleScope();
     this.soyFunctionMap = InternalPlugins.internalLegacyFunctionMap();
     this.soyPrintDirectiveMap = InternalPlugins.internalDirectiveMap(scopedData);
-    this.sourceFunctionMap = InternalPlugins.internalFunctionMap(scopedData);
+    this.sourceFunctionMap = InternalPlugins.internalFunctionMap();
   }
 
   /** Enable experiments. Returns this object, for chaining. */
@@ -248,8 +247,7 @@ public final class SoyFileSetParserBuilder {
       String soyFileContent = soyFileContents[i];
       // Names are now required to be unique in a SoyFileSet. Use one-based indexing.
       String filePath = (i == 0) ? "no-path" : ("no-path-" + (i + 1));
-      soyFileSuppliers.add(
-          SoyFileSupplier.Factory.create(soyFileContent, SoyFileKind.SRC, filePath));
+      soyFileSuppliers.add(SoyFileSupplier.Factory.create(soyFileContent, filePath));
     }
     return soyFileSuppliers;
   }
@@ -291,6 +289,13 @@ public final class SoyFileSetParserBuilder {
         .desugarHtmlNodes(desugarHtmlNodes)
         .setGeneralOptions(options)
         .setConformanceConfig(conformanceConfig)
+        .setPluginResolver(
+            new PluginResolver(
+                PluginResolver.Mode.REQUIRE_DEFINITIONS,
+                ImmutableMap.copyOf(soyPrintDirectiveMap),
+                ImmutableMap.copyOf(soyFunctionMap),
+                sourceFunctionMap,
+                errorReporter))
         .setAutoescaperEnabled(runAutoescaper)
         .addHtmlAttributesForDebugging(addHtmlAttributesForDebugging)
         .setLoggingConfig(loggingConfig);
@@ -303,17 +308,10 @@ public final class SoyFileSetParserBuilder {
     return SoyFileSetParser.newBuilder()
         .setCache(astCache)
         .setSoyFileSuppliers(soyFileSuppliers)
+        .setCompilationUnits(ImmutableList.of())
         .setTypeRegistry(typeRegistry)
-        .setPluginResolver(
-            new PluginResolver(
-                PluginResolver.Mode.REQUIRE_DEFINITIONS,
-                ImmutableMap.copyOf(soyPrintDirectiveMap),
-                ImmutableMap.copyOf(soyFunctionMap),
-                sourceFunctionMap,
-                errorReporter))
         .setPassManager(passManager.build())
         .setErrorReporter(errorReporter)
-        .setGeneralOptions(options)
         .build();
   }
 }

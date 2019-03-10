@@ -17,9 +17,11 @@
 package com.google.template.soy.soytree.defn;
 
 import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.basetree.CopyState;
+import com.google.template.soy.exprtree.ExprNode;
+import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.types.SoyType;
 import javax.annotation.Nullable;
-import javax.annotation.concurrent.Immutable;
 
 /**
  * An explicitly declared template parameter.
@@ -27,18 +29,7 @@ import javax.annotation.concurrent.Immutable;
  * <p>Important: Do not use outside of Soy code (treat as superpackage-private).
  *
  */
-@Immutable
 public abstract class TemplateParam extends AbstractVarDefn implements TemplateHeaderVarDefn {
-  /** Enum for the location of the declaration. */
-  public static enum DeclLoc {
-    // Declaration in template SoyDoc, e.g.
-    //     @param foo Blah blah blah.
-    SOY_DOC,
-    // Declaration in template header, e.g.
-    //     {@param foo: list<int>}  /** Blah blah blah. */
-    HEADER,
-  }
-
   private final String desc;
 
   /** Whether the param is required. */
@@ -47,24 +38,30 @@ public abstract class TemplateParam extends AbstractVarDefn implements TemplateH
   /** Whether the param is an injected param. */
   private final boolean isInjected;
 
+  @Nullable private final ExprRootNode defaultValue;
+
   public TemplateParam(
       String name,
-      SoyType type,
+      @Nullable SoyType type,
       boolean isRequired,
       boolean isInjected,
       @Nullable String desc,
-      @Nullable SourceLocation nameLocation) {
+      @Nullable SourceLocation nameLocation,
+      @Nullable ExprNode defaultValue) {
     super(name, nameLocation, type);
     this.isRequired = isRequired;
     this.isInjected = isInjected;
     this.desc = desc;
+    this.defaultValue = defaultValue == null ? null : new ExprRootNode(defaultValue);
   }
 
-  TemplateParam(TemplateParam param) {
+  protected TemplateParam(TemplateParam param) {
     super(param);
     this.isRequired = param.isRequired;
     this.isInjected = param.isInjected;
     this.desc = param.desc;
+    this.defaultValue =
+        param.defaultValue == null ? null : param.defaultValue.copy(new CopyState());
   }
 
   @Override
@@ -89,12 +86,16 @@ public abstract class TemplateParam extends AbstractVarDefn implements TemplateH
   }
 
   @Override
+  @Nullable
+  public final ExprRootNode defaultValue() {
+    return defaultValue;
+  }
+
+  @Override
   public String toString() {
     return getClass().getSimpleName() + "{name = " + name() + ", desc = " + desc + "}";
   }
 
-  /** Returns the location of the parameter declaration. */
-  public abstract DeclLoc declLoc();
-
-  public abstract TemplateParam copyEssential();
+  @Override
+  public abstract TemplateParam copy();
 }

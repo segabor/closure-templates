@@ -24,8 +24,10 @@ import com.google.template.soy.plugin.javascript.restricted.JavaScriptPluginCont
 import com.google.template.soy.plugin.javascript.restricted.JavaScriptValue;
 import com.google.template.soy.plugin.javascript.restricted.JavaScriptValueFactory;
 import com.google.template.soy.plugin.javascript.restricted.SoyJavaScriptSourceFunction;
-import com.google.template.soy.pysrc.restricted.PyExpr;
-import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
+import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
+import com.google.template.soy.plugin.python.restricted.PythonValue;
+import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
+import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
@@ -54,9 +56,8 @@ import java.util.List;
             parameterTypes = {"string"},
             // TODO(b/70946095): should be nullable
             returnType = "float"))
-public final class ParseFloatFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPySrcFunction, SoySwiftSrcFunction {
-
+public final class ParseFloatFunction
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
   @Override
   public JavaScriptValue applyForJavaScriptSource(
       JavaScriptValueFactory factory, List<JavaScriptValue> args, JavaScriptPluginContext context) {
@@ -66,9 +67,9 @@ public final class ParseFloatFunction extends TypedSoyFunction
   }
 
   @Override
-  public PyExpr computeForPySrc(List<PyExpr> args) {
-    return new PyExpr(
-        String.format("runtime.parse_float(%s)", args.get(0).getText()), Integer.MAX_VALUE);
+  public PythonValue applyForPythonSource(
+      PythonValueFactory factory, List<PythonValue> args, PythonPluginContext context) {
+    return factory.global("runtime.parse_float").call(args.get(0));
   }
 
   // lazy singleton pattern, allows other backends to avoid the work.

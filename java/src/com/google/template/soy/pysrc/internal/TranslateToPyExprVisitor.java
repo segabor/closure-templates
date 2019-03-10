@@ -16,9 +16,7 @@
 
 package com.google.template.soy.pysrc.internal;
 
-import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
-import com.google.common.collect.Iterables;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.exprtree.AbstractReturningExprNodeVisitor;
@@ -49,19 +47,22 @@ import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.VarDefn;
 import com.google.template.soy.exprtree.VarRefNode;
+import com.google.template.soy.exprtree.VeLiteralNode;
 import com.google.template.soy.logging.LoggingFunction;
+import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
 import com.google.template.soy.pysrc.restricted.PyExpr;
 import com.google.template.soy.pysrc.restricted.PyExprUtils;
 import com.google.template.soy.pysrc.restricted.PyFunctionExprBuilder;
 import com.google.template.soy.pysrc.restricted.PyStringExpr;
 import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
 import com.google.template.soy.shared.internal.BuiltinFunction;
-import com.google.template.soy.soytree.defn.TemplatePropVar;
+import com.google.template.soy.soytree.defn.TemplateStateVar;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyType.Kind;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Visitor for translating a Soy expression (in the form of an {@link ExprNode}) into an equivalent
@@ -109,12 +110,19 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
   private static final PyExpr ERROR =
       new PyExpr("raise Exception('Soy compilation failed')", Integer.MAX_VALUE);
 
+  private static final PyExpr NONE = new PyExpr("None", Integer.MAX_VALUE);
+
   private final LocalVariableStack localVarExprs;
 
   private final ErrorReporter errorReporter;
+  private final PythonValueFactoryImpl pluginValueFactory;
 
-  TranslateToPyExprVisitor(LocalVariableStack localVarExprs, ErrorReporter errorReporter) {
+  TranslateToPyExprVisitor(
+      LocalVariableStack localVarExprs,
+      PythonValueFactoryImpl pluginValueFactory,
+      ErrorReporter errorReporter) {
     this.errorReporter = errorReporter;
+    this.pluginValueFactory = pluginValueFactory;
     this.localVarExprs = localVarExprs;
   }
 
@@ -144,7 +152,7 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
   @Override
   protected PyExpr visitNullNode(NullNode node) {
     // Nulls are represented as 'None' in Python.
-    return new PyExpr("None", Integer.MAX_VALUE);
+    return NONE;
   }
 
   @Override
@@ -159,14 +167,7 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
   @Override
   protected PyExpr visitListLiteralNode(ListLiteralNode node) {
     return PyExprUtils.convertIterableToPyListExpr(
-        Iterables.transform(
-            node.getChildren(),
-            new Function<ExprNode, PyExpr>() {
-              @Override
-              public PyExpr apply(ExprNode node) {
-                return visit(node);
-              }
-            }));
+        node.getChildren().stream().map(n -> visit(n)).collect(Collectors.toList()));
   }
 
   @Override
@@ -205,9 +206,9 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
 
   @Override
   protected PyExpr visitVarRefNode(VarRefNode node) {
-    if (node.getDefnDecl().kind() == VarDefn.Kind.PROP) {
-      TemplatePropVar prop = (TemplatePropVar) node.getDefnDecl();
-      return visit(prop.initialValue());
+    if (node.getDefnDecl().kind() == VarDefn.Kind.STATE) {
+      TemplateStateVar state = (TemplateStateVar) node.getDefnDecl();
+      return visit(state.defaultValue());
     }
     return visitNullSafeNode(node);
   }
@@ -234,11 +235,11 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
       case VAR_REF_NODE:
         {
           VarRefNode varRef = (VarRefNode) node;
-          if (varRef.getDefnDecl().kind() == VarDefn.Kind.PROP) {
-            TemplatePropVar prop = (TemplatePropVar) varRef.getDefnDecl();
-            // This means we will generate code for the prop initializer multiple times.  This
+          if (varRef.getDefnDecl().kind() == VarDefn.Kind.STATE) {
+            TemplateStateVar state = (TemplateStateVar) varRef.getDefnDecl();
+            // This means we will generate code for the state initializer multiple times.  This
             // could be improved but this is not yet important for pysrc
-            return visitNullSafeNodeRecurse(prop.initialValue(), nullSafetyPrefix);
+            return visitNullSafeNodeRecurse(state.defaultValue(), nullSafetyPrefix);
           } else if (varRef.isInjected()) {
             // Case 1: Injected data reference.
             return genCodeForLiteralKeyAccess("ijData", varRef.getName());
@@ -418,6 +419,12 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
     Object soyFunction = node.getSoyFunction();
     if (soyFunction instanceof BuiltinFunction) {
       return visitNonPluginFunction(node, (BuiltinFunction) soyFunction);
+    } else if (soyFunction instanceof SoyPythonSourceFunction) {
+      return pluginValueFactory.applyFunction(
+          node.getSourceLocation(),
+          node.getFunctionName(),
+          (SoyPythonSourceFunction) soyFunction,
+          visitChildren(node));
     } else if (soyFunction instanceof SoyPySrcFunction) {
       List<PyExpr> args = visitChildren(node);
       return ((SoyPySrcFunction) soyFunction).computeForPySrc(args);
@@ -458,8 +465,7 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
         throw new UnsupportedOperationException(
             "the v1Expression function can't be used in templates compiled to Python");
       case VE_DATA:
-        // TODO(b/71641483): Implement this once we have ve runtime objects.
-        throw new UnsupportedOperationException();
+        return NONE;
       case MSG_WITH_ID:
       case REMAINDER:
         // should have been removed earlier in the compiler
@@ -604,5 +610,10 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
   protected PyExpr visitProtoInitNode(ProtoInitNode node) {
     errorReporter.report(node.getSourceLocation(), PROTO_INIT_NOT_SUPPORTED);
     return ERROR;
+  }
+
+  @Override
+  protected PyExpr visitVeLiteralNode(VeLiteralNode node) {
+    return NONE;
   }
 }

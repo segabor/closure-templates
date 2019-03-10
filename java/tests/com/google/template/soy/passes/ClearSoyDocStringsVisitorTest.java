@@ -42,10 +42,10 @@ public final class ClearSoyDocStringsVisitorTest {
             + "\n"
             + "/**\n"
             + " * blah blah blah\n"
-            + " *\n"
-            + " * @param goo blah blah\n"
             + " */\n"
             + "{template .foo}\n"
+            + "  /** blah blah */\n"
+            + "  {@param goo: ?}\n"
             + "  {$goo}\n"
             + "{/template}\n";
 
@@ -65,6 +65,6 @@ public final class ClearSoyDocStringsVisitorTest {
 
     assertThat(template.getSoyDoc()).isNull();
     assertThat(template.getSoyDocDesc()).isNull();
-    assertThat(template.getParams().get(0).desc()).isNull();
+    assertThat(template.getParams().get(0).desc()).isEqualTo("blah blah");
   }
 }

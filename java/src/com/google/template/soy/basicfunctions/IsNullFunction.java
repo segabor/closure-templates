@@ -24,13 +24,13 @@ import com.google.template.soy.plugin.javascript.restricted.JavaScriptPluginCont
 import com.google.template.soy.plugin.javascript.restricted.JavaScriptValue;
 import com.google.template.soy.plugin.javascript.restricted.JavaScriptValueFactory;
 import com.google.template.soy.plugin.javascript.restricted.SoyJavaScriptSourceFunction;
-import com.google.template.soy.pysrc.restricted.PyExpr;
-import com.google.template.soy.pysrc.restricted.PyExprUtils;
-import com.google.template.soy.pysrc.restricted.SoyPySrcFunction;
+import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
+import com.google.template.soy.plugin.python.restricted.PythonValue;
+import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
+import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
-import com.google.template.soy.shared.restricted.TypedSoyFunction;
 import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.google.template.soy.swiftsrc.restricted.SwiftExprUtils;
@@ -44,8 +44,8 @@ import java.util.List;
             returnType = "bool",
             parameterTypes = {"any"}))
 @SoyPureFunction
-final class IsNullFunction extends TypedSoyFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPySrcFunction, SoySwiftSrcFunction {
+final class IsNullFunction
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
 
   @Override
   public JavaScriptValue applyForJavaScriptSource(
@@ -54,8 +54,9 @@ final class IsNullFunction extends TypedSoyFunction
   }
 
   @Override
-  public PyExpr computeForPySrc(List<PyExpr> args) {
-    return PyExprUtils.genPyNullCheck(args.get(0));
+  public PythonValue applyForPythonSource(
+      PythonValueFactory factory, List<PythonValue> args, PythonPluginContext context) {
+    return args.get(0).isNull();
   }
 
   @Override
