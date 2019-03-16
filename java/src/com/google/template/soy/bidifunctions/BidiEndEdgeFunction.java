@@ -16,6 +16,8 @@
 
 package com.google.template.soy.bidifunctions;
 
+import java.lang.reflect.Method;
+import java.util.List;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
 import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
 import com.google.template.soy.plugin.java.restricted.JavaValue;
@@ -29,12 +31,12 @@ import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
 import com.google.template.soy.plugin.python.restricted.PythonValue;
 import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
 import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
+import com.google.template.soy.plugin.swift.restricted.SwiftValue;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
-import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
-import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
-import java.lang.reflect.Method;
-import java.util.List;
 
 /**
  * Soy function that gets the name of the end edge ('left' or 'right') for the current global bidi
@@ -43,7 +45,7 @@ import java.util.List;
  */
 @SoyFunctionSignature(name = "bidiEndEdge", value = @Signature(returnType = "string"))
 final class BidiEndEdgeFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {
 
   // lazy singleton pattern, allows other backends to avoid the work.
   private static final class Methods {
@@ -71,15 +73,9 @@ final class BidiEndEdgeFunction
   }
 
   @Override
-  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+  public SwiftValue applyForSwiftSource(SwiftValueFactory factory, List<SwiftValue> args,
+      SwiftPluginContext context) {
     // TODO
-    BidiGlobalDir bidiGlobalDir = bidiGlobalDirProvider.get();
-    if (bidiGlobalDir.isStaticValue()) {
-      return new SwiftExpr(
-          (bidiGlobalDir.getStaticValue() < 0) ? "'left'" : "'right'", Integer.MAX_VALUE);
-    }
-    return new SwiftExpr(
-        "(" + bidiGlobalDir.getCodeSnippet() + ") < 0 ? 'left' : 'right'",
-        Operator.CONDITIONAL.getPrecedence());
+    return factory.global("bidi.bidi_end_edge").call(context.getBidiDir());
   }
 }

@@ -16,6 +16,8 @@
 
 package com.google.template.soy.basicfunctions;
 
+import java.lang.reflect.Method;
+import java.util.List;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
 import com.google.template.soy.plugin.java.restricted.JavaValue;
@@ -29,13 +31,14 @@ import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
 import com.google.template.soy.plugin.python.restricted.PythonValue;
 import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
 import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
+import com.google.template.soy.plugin.swift.restricted.SwiftValue;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
-import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
-import java.lang.reflect.Method;
-import java.util.List;
 
 /**
  * Soy function that rounds a number to a specified number of digits before or after the decimal
@@ -59,7 +62,7 @@ import java.util.List;
     })
 @SoyPureFunction
 public final class RoundFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {
 
   @Override
   public JavaScriptValue applyForJavaScriptSource(
@@ -103,14 +106,8 @@ public final class RoundFunction
    * round() func requires importing Darwin/Glibc
    */
   @Override
-  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
-    SwiftExpr value = args.get(0);
-    SwiftExpr numDigitsAfterPt = (args.size() == 2) ? args.get(1) : null;
-
-    int numDigitsAfterPtAsInt = convertNumDigits(numDigitsAfterPt);
-
-    // FIXME implement the whole feature
-
-    return new SwiftExpr("round(" + value.getText() + ")", Integer.MAX_VALUE);
+  public SwiftValue applyForSwiftSource(
+      SwiftValueFactory factory, List<SwiftValue> args, SwiftPluginContext context) {
+    return factory.global("round").call(args.get(0));
   }
 }

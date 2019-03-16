@@ -34,10 +34,10 @@ import com.google.template.soy.exprtree.OperatorNodes.NotEqualOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.NotOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.NullCoalescingOpNode;
 import com.google.template.soy.logging.LoggingFunction;
+import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
 import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.VarRefNode;
-import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.google.template.soy.swiftsrc.restricted.SwiftExprUtils;
 import com.google.template.soy.swiftsrc.restricted.SwiftFunctionExprBuilder;
@@ -355,17 +355,19 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
    * <p>The source of available functions is a look-up map provided by Guice in {@link
    * SharedModule#provideSoyFunctionsMap}.
    *
+   * FIXME fix code to utilize {@link SoySwiftSourceFunction}
+   * 
    * @see BuiltinFunction
-   * @see SoySwiftSrcFunction
+   * @see SoySwiftSourceFunction
    */
   @Override
   protected SwiftExpr visitFunctionNode(FunctionNode node) {
     Object soyFunction = node.getSoyFunction();
     if (soyFunction instanceof BuiltinFunction) {
       return visitNonPluginFunction(node, (BuiltinFunction) soyFunction);
-    } else if (soyFunction instanceof SoySwiftSrcFunction) {
+    /* } else if (soyFunction instanceof SoySwiftSrcFunction) {
       List<SwiftExpr> args = visitChildren(node);
-      return ((SoySwiftSrcFunction) soyFunction).computeForSwiftSrc(args);
+      return ((SoySwiftSrcFunction) soyFunction).computeForSwiftSrc(args); */
     } else if (soyFunction instanceof LoggingFunction) {
       // trivial logging function support
       return new SwiftStringExpr("\"" + ((LoggingFunction) soyFunction).getPlaceholder() + "\"");

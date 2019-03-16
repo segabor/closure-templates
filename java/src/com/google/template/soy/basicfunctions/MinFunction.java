@@ -16,6 +16,8 @@
 
 package com.google.template.soy.basicfunctions;
 
+import java.lang.reflect.Method;
+import java.util.List;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
 import com.google.template.soy.plugin.java.restricted.JavaValue;
@@ -29,13 +31,13 @@ import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
 import com.google.template.soy.plugin.python.restricted.PythonValue;
 import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
 import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
+import com.google.template.soy.plugin.swift.restricted.SwiftValue;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
-import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
-import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
-import java.lang.reflect.Method;
-import java.util.List;
 
 /**
  * Soy function that takes the min of two numbers.
@@ -50,7 +52,7 @@ import java.util.List;
             parameterTypes = {"?", "?"}))
 @SoyPureFunction
 public final class MinFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {
 
   @Override
   public JavaScriptValue applyForJavaScriptSource(
@@ -81,11 +83,8 @@ public final class MinFunction
    * Note: this function might require importing Darwin/Glibc
    */
   @Override
-  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
-    SwiftExpr arg0 = args.get(0);
-    SwiftExpr arg1 = args.get(1);
-
-    return new SwiftExpr(
-        "min(" + arg0.getText() + ", " + arg1.getText() + ")", Integer.MAX_VALUE);
+  public SwiftValue applyForSwiftSource(
+      SwiftValueFactory factory, List<SwiftValue> args, SwiftPluginContext context) {
+    return factory.global("min").call(args.get(0), args.get(1));
   }
 }

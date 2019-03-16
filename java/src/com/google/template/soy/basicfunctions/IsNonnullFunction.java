@@ -28,12 +28,13 @@ import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
 import com.google.template.soy.plugin.python.restricted.PythonValue;
 import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
 import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
+import com.google.template.soy.plugin.swift.restricted.SwiftValue;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
-import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
-import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
-import com.google.template.soy.swiftsrc.restricted.SwiftExprUtils;
 import java.util.List;
 
 /**
@@ -48,7 +49,7 @@ import java.util.List;
             parameterTypes = {"any"}))
 @SoyPureFunction
 class IsNonnullFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {
 
   @Override
   public JavaScriptValue applyForJavaScriptSource(
@@ -69,7 +70,8 @@ class IsNonnullFunction
   }
 
   @Override
-  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
-    return SwiftExprUtils.genSwiftNotNullCheck(args.get(0));
+  public SwiftValue applyForSwiftSource(SwiftValueFactory factory, List<SwiftValue> args,
+      SwiftPluginContext context) {
+    return args.get(0).isNonNull();
   }
 }

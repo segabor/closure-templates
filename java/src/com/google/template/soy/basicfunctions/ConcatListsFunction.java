@@ -16,6 +16,10 @@
 
 package com.google.template.soy.basicfunctions;
 
+import java.lang.reflect.Method;
+import java.util.List;
+import com.google.common.base.Joiner;
+import com.google.common.collect.ImmutableList;
 import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
 import com.google.template.soy.plugin.java.restricted.JavaValue;
 import com.google.template.soy.plugin.java.restricted.JavaValueFactory;
@@ -28,14 +32,15 @@ import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
 import com.google.template.soy.plugin.python.restricted.PythonValue;
 import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
 import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
+import com.google.template.soy.plugin.swift.restricted.SwiftValue;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
-import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.google.template.soy.swiftsrc.restricted.SwiftListExpr;
-import java.lang.reflect.Method;
-import java.util.List;
 
 /**
  * Soy function that concatenates two or more lists together.
@@ -91,7 +96,7 @@ import java.util.List;
     })
 @SoyPureFunction
 public final class ConcatListsFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {
 
   @Override
   public JavaScriptValue applyForJavaScriptSource(
@@ -124,11 +129,11 @@ public final class ConcatListsFunction
   }
 
   @Override
-  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
-    ImmutableList.Builder<String> expTexts = ImmutableList.builder();
-    for (SwiftExpr expr : args) {
-      expTexts.add(expr.getText());
-    }
-    return new SwiftListExpr("(" + Joiner.on('+').join(expTexts.build()) + ")", Integer.MAX_VALUE);
+  public SwiftValue applyForSwiftSource(
+      SwiftValueFactory factory, List<SwiftValue> args, SwiftPluginContext context) {
+
+    throw new RuntimeException("Not implemented yet ...");
+    // TODO complete implementation
+    // return arg1 " + " arg2 " + " arg3 ...
   }
 }

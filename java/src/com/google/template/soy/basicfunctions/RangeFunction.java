@@ -27,10 +27,12 @@ import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
 import com.google.template.soy.plugin.python.restricted.PythonValue;
 import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
 import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
+import com.google.template.soy.plugin.swift.restricted.SwiftValue;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
-import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
-import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -60,7 +62,7 @@ import java.util.List;
           returnType = "list<int>")
     })
 public final class RangeFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {
 
   private static final class Methods {
     static final Method RANGE =
@@ -112,18 +114,10 @@ public final class RangeFunction
         "goog.array", "goog.array.range", args.toArray(new JavaScriptValue[0]));
   }
 
-  /**
-   * FIXME Swift does not support ranges with custom steps
-   */
   @Override
-  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
-    switch (args.size()) {
-      case 1:
-        return new SwiftExpr(String.format("0..<%s", args.get(0).getText()), Integer.MAX_VALUE);
-      case 2:
-        return new SwiftExpr(String.format("%s..<%s", args.get(0).getText(), args.get(1).getText()), Integer.MAX_VALUE);
-      default:
-        throw new AssertionError();
-    }
+  public SwiftValue applyForSwiftSource(SwiftValueFactory factory, List<SwiftValue> args,
+      SwiftPluginContext context) {
+    // TODO clone Java approach
+    throw new RuntimeException("Unimplemented feature");
   }
 }

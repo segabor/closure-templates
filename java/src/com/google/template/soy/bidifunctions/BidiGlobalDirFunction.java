@@ -16,6 +16,8 @@
 
 package com.google.template.soy.bidifunctions;
 
+import java.lang.reflect.Method;
+import java.util.List;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
 import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
 import com.google.template.soy.plugin.java.restricted.JavaValue;
@@ -29,13 +31,12 @@ import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
 import com.google.template.soy.plugin.python.restricted.PythonValue;
 import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
 import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
+import com.google.template.soy.plugin.swift.restricted.SwiftValue;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
-import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
-import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
-import com.google.template.soy.swiftsrc.restricted.SwiftExprUtils;
-import java.lang.reflect.Method;
-import java.util.List;
 
 /**
  * Soy function that returns the current global bidi directionality (1 for LTR or -1 for RTL).
@@ -43,7 +44,7 @@ import java.util.List;
  */
 @SoyFunctionSignature(name = "bidiGlobalDir", value = @Signature(returnType = "int"))
 final class BidiGlobalDirFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {
 
   // lazy singleton pattern, allows other backends to avoid the work.
   private static final class Methods {
@@ -71,10 +72,9 @@ final class BidiGlobalDirFunction
   }
   
   @Override
-  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+  public SwiftValue applyForSwiftSource(SwiftValueFactory factory, List<SwiftValue> args,
+      SwiftPluginContext context) {
     // TODO
-    return new SwiftExpr(
-        bidiGlobalDirProvider.get().getCodeSnippet(),
-        SwiftExprUtils.swiftPrecedenceForOperator(Operator.CONDITIONAL));
+    return context.getBidiDir();
   }
 }

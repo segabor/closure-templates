@@ -16,6 +16,8 @@
 
 package com.google.template.soy.basicfunctions;
 
+import java.lang.reflect.Method;
+import java.util.List;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
 import com.google.template.soy.plugin.java.restricted.JavaValue;
@@ -29,14 +31,13 @@ import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
 import com.google.template.soy.plugin.python.restricted.PythonValue;
 import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
 import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
+import com.google.template.soy.plugin.swift.restricted.SwiftValue;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
-import com.google.template.soy.shared.restricted.TypedSoyFunction;
-import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
-import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
-import java.lang.reflect.Method;
-import java.util.List;
 
 /**
  * Soy function that takes the floor of a number.
@@ -50,7 +51,7 @@ import java.util.List;
             parameterTypes = {"number"},
             returnType = "int"))
 public final class FloorFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {
 
   @Override
   public JavaScriptValue applyForJavaScriptSource(
@@ -76,12 +77,9 @@ public final class FloorFunction
     return factory.callStaticMethod(Methods.FLOOR_FN, args.get(0));
   }
 
-  /**
-   * Note: requires importing Darwin (macOS) or Glibc (Linux) modules
-   */
   @Override
-  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
-    SwiftExpr arg = args.get(0);
-    return new SwiftExpr("floor(" + arg.getText() + ")", Integer.MAX_VALUE);
+  public SwiftValue applyForSwiftSource(
+      SwiftValueFactory factory, List<SwiftValue> args, SwiftPluginContext context) {
+    return factory.global("floor").call(args.get(0));
   }
 }

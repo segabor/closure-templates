@@ -1,0 +1,24 @@
+package com.google.template.soy.plugin.swift.restricted;
+
+import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
+
+/** A factory for instructing soy how to implement a {@link SoyPythonSourceFunction}. */
+public abstract class SwiftValueFactory {
+  /** Creates an integer constant. */
+  public abstract SwiftValue constant(long num);
+
+  /** Creates a floating point constant. */
+  public abstract SwiftValue constant(double num);
+
+  /** Creates a String constant. */
+  public abstract SwiftValue constant(String str);
+
+  /** Creates a boolean constant. */
+  public abstract SwiftValue constant(boolean bool);
+
+  /** Creates a null constant. */
+  public abstract SwiftValue constantNull();
+
+  /** Creates a reference to a global symbol, e.g. {@code Math}. */
+  public abstract SwiftValue global(String globalSymbol);
+}

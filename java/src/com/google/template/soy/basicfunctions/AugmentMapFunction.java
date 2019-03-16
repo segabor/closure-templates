@@ -29,12 +29,14 @@ import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
 import com.google.template.soy.plugin.python.restricted.PythonValue;
 import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
 import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
+import com.google.template.soy.plugin.swift.restricted.SwiftValue;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyDeprecated;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
-import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
-import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -56,7 +58,7 @@ import java.util.List;
     "This function will be deleted along with legacy_object_maps."
         + " If you need AugmentMap-like functionality, please implement it as a custom Soy plugin.")
 public final class AugmentMapFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {
 
   @Override
   public JavaScriptValue applyForJavaScriptSource(
@@ -84,13 +86,12 @@ public final class AugmentMapFunction
         .global("dict")
         .call(args.get(0).getProp("items").call().plus(args.get(1).getProp("items").call()));
   }
-  
-  @Override
-  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
-    SwiftExpr dict1 = args.get(0);
-    SwiftExpr dict2 = args.get(1);
 
-    // Solution borrowed from: https://stackoverflow.com/questions/24051904/how-do-you-add-a-dictionary-of-items-into-another-dictionary
-    return new SwiftExpr(dict1.getText() + ".merging(" + dict2.getText() + ", uniquingKeysWith: { (first, _) in first })", Integer.MAX_VALUE);
+  @Override
+  public SwiftValue applyForSwiftSource(SwiftValueFactory factory, List<SwiftValue> args,
+      SwiftPluginContext context) {
+    // TODO Solution borrowed from: https://stackoverflow.com/questions/24051904/how-do-you-add-a-dictionary-of-items-into-another-dictionary
+    // return new SwiftExpr(dict1.getText() + ".merging(" + dict2.getText() + ", uniquingKeysWith: { (first, _) in first })", Integer.MAX_VALUE);
+    throw new RuntimeException("Unimplemented feature");
   }
 }

@@ -16,7 +16,9 @@
 
 package com.google.template.soy.bidifunctions;
 
-import com.google.common.base.Supplier;
+import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.List;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
 import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
@@ -31,13 +33,13 @@ import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
 import com.google.template.soy.plugin.python.restricted.PythonValue;
 import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
 import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
+import com.google.template.soy.plugin.swift.restricted.SwiftValue;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
-import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
-import java.lang.reflect.Method;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Soy function that maybe inserts an HTML attribute for bidi directionality ('dir=ltr' or
@@ -58,7 +60,7 @@ import java.util.List;
           parameterTypes = {"?", "?"})
     })
 final class BidiDirAttrFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {
 
   // lazy singleton pattern, allows other backends to avoid the work.
   private static final class Methods {
@@ -101,19 +103,15 @@ final class BidiDirAttrFunction
   }
 
   @Override
-  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
+  public SwiftValue applyForSwiftSource(SwiftValueFactory factory, List<SwiftValue> args,
+      SwiftPluginContext context) {
     // TODO
-    SwiftExpr value = args.get(0);
-    SwiftExpr isHtml = (args.size() == 2) ? args.get(1) : null;
-
-    String callText =
-        "soy.bidiDirAttr("
-            + bidiGlobalDirProvider.get().getCodeSnippet()
-            + ", "
-            + value.getText()
-            + (isHtml != null ? ", " + isHtml.getText() : "")
-            + ")";
-
-    return new SwiftExpr(callText, Integer.MAX_VALUE);
+    return factory
+        .global("bidi.dir_attr")
+        .call(
+            context.getBidiDir(),
+            args.get(0),
+            args.size() == 2 ? args.get(1) : factory.constant(false));
   }
+  
 }

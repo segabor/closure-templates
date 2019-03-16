@@ -29,11 +29,13 @@ import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
 import com.google.template.soy.plugin.python.restricted.PythonValue;
 import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
 import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
+import com.google.template.soy.plugin.swift.restricted.SwiftValue;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
-import com.google.template.soy.swiftsrc.restricted.SoySwiftSrcFunction;
-import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import java.lang.reflect.Method;
 import java.util.List;
 
@@ -62,7 +64,7 @@ import java.util.List;
     })
 @SoyPureFunction
 final class StrSubFunction
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSrcFunction {
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {
 
   @Override
   public JavaScriptValue applyForJavaScriptSource(
@@ -101,16 +103,9 @@ final class StrSubFunction
   }
 
   @Override
-  public SwiftExpr computeForSwiftSrc(List<SwiftExpr> args) {
-    String base = args.get(0).toSwiftString().getText();
-    SwiftExpr start = args.get(1);
-    SwiftExpr end = args.size() == 3 ? args.get(2) : null;
-
-    String subStringExprTemplate =
-        "%s[%s.index(%s.startIndex, offsetBy: %d) ..< %s.index(%s.startIndex, offsetBy: %d)]";
-
-    return new SwiftExpr(
-        String.format(subStringExprTemplate, base, base, base, start, base, base, end),
-        Integer.MAX_VALUE);
+  public SwiftValue applyForSwiftSource(SwiftValueFactory factory, List<SwiftValue> args,
+      SwiftPluginContext context) {
+    // TODO should be %s[%s.index(%s.startIndex, offsetBy: %d) ..< %s.index(%s.startIndex, offsetBy: %d)]
+    throw new RuntimeException("Unimplemented feature");
   }
 }
