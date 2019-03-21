@@ -57,7 +57,7 @@ public class SwiftSrcMain {
     BidiGlobalDir bidiGlobalDir = null;
     // SoyBidiUtils.decodeBidiGlobalDirFromPyOptions(pySrcOptions.getBidiIsRtlFn());
     try (SoyScopedData.InScope inScope = apiCallScope.enter(/* msgBundle= */ null, bidiGlobalDir)) {
-      return createVisitor(swiftSrcOptions, currentManifest).gen(soyTree, errorReporter);
+      return createVisitor(swiftSrcOptions, bidiGlobalDir, errorReporter, currentManifest).gen(soyTree, errorReporter);
     }
   }
 
@@ -149,24 +149,36 @@ public class SwiftSrcMain {
 
   @VisibleForTesting
   static GenSwiftCodeVisitor createVisitor(
-      SoySwiftSrcOptions swiftSrcOptions, ImmutableMap<String, String> currentManifest) {
+      SoySwiftSrcOptions swiftSrcOptions,
+      BidiGlobalDir bidiGlobalDir,
+      ErrorReporter errorReporter,
+      ImmutableMap<String, String> currentManifest) {
     final IsComputableAsSwiftExprVisitor isComputableAsSwiftExprsVisitor =
         new IsComputableAsSwiftExprVisitor();
     // TODO
+    // There is a circular dependency between the GenPyExprsVisitorFactory and GenPyCallExprVisitor
+    // here we resolve it with a mutable field in a custom provider
+    final SwiftValueFactoryImpl pluginValueFactory =
+        new SwiftValueFactoryImpl(errorReporter, bidiGlobalDir);
     class SwiftCallExprVisitorSupplier implements Supplier<GenSwiftCallExprVisitor> {
       GenSwiftExprsVisitorFactory factory;
 
       @Override
       public GenSwiftCallExprVisitor get() {
-        return new GenSwiftCallExprVisitor(isComputableAsSwiftExprsVisitor, checkNotNull(factory));
+        return new GenSwiftCallExprVisitor(isComputableAsSwiftExprsVisitor, pluginValueFactory, checkNotNull(factory));
       }
     }
     SwiftCallExprVisitorSupplier provider = new SwiftCallExprVisitorSupplier();
     GenSwiftExprsVisitorFactory genSwiftExprsFactory =
-        new GenSwiftExprsVisitorFactory(isComputableAsSwiftExprsVisitor, provider);
+        new GenSwiftExprsVisitorFactory(isComputableAsSwiftExprsVisitor, provider, pluginValueFactory);
     provider.factory = genSwiftExprsFactory;
 
     return new GenSwiftCodeVisitor(
-        swiftSrcOptions, currentManifest, isComputableAsSwiftExprsVisitor, genSwiftExprsFactory, provider.get());
+        swiftSrcOptions,
+        currentManifest,
+        isComputableAsSwiftExprsVisitor,
+        genSwiftExprsFactory,
+        provider.get(),
+        pluginValueFactory);
   }
 }

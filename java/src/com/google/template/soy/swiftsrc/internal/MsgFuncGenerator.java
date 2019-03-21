@@ -62,10 +62,12 @@ public final class MsgFuncGenerator {
       GenSwiftExprsVisitorFactory genSwiftExprsVisitorFactory,
       MsgNode msgNode,
       LocalVariableStack localVarExprs,
-      ErrorReporter errorReporter) {
+      ErrorReporter errorReporter,
+      SwiftValueFactoryImpl pluginValueFactory) {
     this.msgNode = msgNode;
     this.genSwiftExprsVisitor = genSwiftExprsVisitorFactory.create(localVarExprs, errorReporter);
-    this.translateToSwiftExprVisitor = new TranslateToSwiftExprVisitor(localVarExprs, errorReporter);
+    this.translateToSwiftExprVisitor = new TranslateToSwiftExprVisitor(localVarExprs, pluginValueFactory, errorReporter);
+    
     String translator = SwiftExprUtils.TRANSLATOR_NAME;
 
     if (this.msgNode.isPlrselMsg()) {

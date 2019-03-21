@@ -63,6 +63,8 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
   @VisibleForTesting protected GenSwiftExprsVisitor genSwiftExprsVisitor;
 
   private final GenSwiftCallExprVisitor genSwiftCallExprVisitor;
+  
+  private final SwiftValueFactoryImpl pluginValueFactory;
 
   /** @see LocalVariableStack */
   @VisibleForTesting protected LocalVariableStack localVarExprs;
@@ -72,11 +74,13 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       ImmutableMap<String, String> currentManifest,
       IsComputableAsSwiftExprVisitor isComputableAsSwiftExprVisitor,
       GenSwiftExprsVisitorFactory genSwiftExprsVisitorFactory,
-      GenSwiftCallExprVisitor genSwiftCallExprVisitor) {
+      GenSwiftCallExprVisitor genSwiftCallExprVisitor,
+      SwiftValueFactoryImpl pluginValueFactory) {
     this.swiftSrcOptions = swiftSrcOptions;
     this.isComputableAsSwiftExprVisitor = isComputableAsSwiftExprVisitor;
     this.genSwiftExprsVisitorFactory = genSwiftExprsVisitorFactory;
     this.genSwiftCallExprVisitor = genSwiftCallExprVisitor;
+    this.pluginValueFactory = pluginValueFactory;
 
     this.namespaceManifest =
         new ImmutableMap.Builder<String, String>()
@@ -184,9 +188,9 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     @Override
     protected void visitSoyFileNode(SoyFileNode node) {
 
-      if (node.getSoyFileKind() != SoyFileKind.SRC) {
+      /* if (node.getSoyFileKind() != SoyFileKind.SRC) {
         return; // don't generate code for deps
-      }
+      } */
 
       swiftCodeBuilder = new SwiftCodeBuilder();
 
@@ -333,7 +337,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       }
 
       // Not computable as Python expressions, so generate full code.
-      TranslateToSwiftExprVisitor translator = new TranslateToSwiftExprVisitor(localVarExprs, errorReporter, ConditionalEvaluationMode.CONDITIONAL);
+      TranslateToSwiftExprVisitor translator = new TranslateToSwiftExprVisitor(localVarExprs, errorReporter, pluginValueFactory, ConditionalEvaluationMode.CONDITIONAL);
       for (SoyNode child : node.getChildren()) {
         if (child instanceof IfCondNode) {
           IfCondNode icn = (IfCondNode) child;
@@ -401,7 +405,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     @Override
     protected void visitSwitchNode(SwitchNode node) {
       // Run the switch value creation first to ensure side effects always occur.
-      TranslateToSwiftExprVisitor translator = new TranslateToSwiftExprVisitor(localVarExprs, errorReporter);
+      TranslateToSwiftExprVisitor translator = new TranslateToSwiftExprVisitor(localVarExprs, pluginValueFactory, errorReporter);
       String switchValueVarName = "switchValue";
       SwiftExpr switchValuePyExpr = translator.exec(node.getExpr());
       swiftCodeBuilder.appendLine(switchValueVarName, " = ", switchValuePyExpr.getText());
@@ -490,7 +494,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
       // Define list variable
       TranslateToSwiftExprVisitor translator =
-          new TranslateToSwiftExprVisitor(localVarExprs, errorReporter);
+          new TranslateToSwiftExprVisitor(localVarExprs, pluginValueFactory, errorReporter);
       
       SwiftExpr dataRefPyExpr = translator.exec(node.getExpr());
       // swiftCodeBuilder.appendLine(listVarName, " = ", dataRefPyExpr.getText());
@@ -615,7 +619,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       String generatedVarName = node.getUniqueVarName();
 
       // Generate code to define the local var.
-      TranslateToSwiftExprVisitor translator = new TranslateToSwiftExprVisitor(localVarExprs, errorReporter);
+      TranslateToSwiftExprVisitor translator = new TranslateToSwiftExprVisitor(localVarExprs, pluginValueFactory, errorReporter);
       SwiftExpr valuePyExpr = translator.exec(node.getExpr());
       swiftCodeBuilder.appendLine("let ", generatedVarName, ": SoyValue = ", valuePyExpr.getText());
 
@@ -713,7 +717,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     @Override
     protected void visitVeLogNode(VeLogNode node) {
       if (node.getLogonlyExpression() != null) {
-        TranslateToSwiftExprVisitor translator = new TranslateToSwiftExprVisitor(localVarExprs, errorReporter);
+        TranslateToSwiftExprVisitor translator = new TranslateToSwiftExprVisitor(localVarExprs, pluginValueFactory, errorReporter);
         SwiftExpr isLogonly = translator.exec(node.getLogonlyExpression());
         swiftCodeBuilder.appendLine("if ", isLogonly.getText(), ":");
         swiftCodeBuilder.increaseIndent();

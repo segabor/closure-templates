@@ -92,7 +92,9 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
       new SwiftExpr("raise Exception('Soy compilation failed')", Integer.MAX_VALUE);
 
   private final LocalVariableStack localVarExprs;
+
   private final ErrorReporter errorReporter;
+  private final SwiftValueFactoryImpl pluginValueFactory;
 
   /**
    * TBD
@@ -102,13 +104,21 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
    */
   private ConditionalEvaluationMode conditionalEvaluationMode = ConditionalEvaluationMode.NORMAL;
   
-  TranslateToSwiftExprVisitor(LocalVariableStack localVarExprs, ErrorReporter errorReporter) {
-    this(localVarExprs, errorReporter, ConditionalEvaluationMode.NORMAL);
+  TranslateToSwiftExprVisitor(
+      LocalVariableStack localVarExprs,
+      SwiftValueFactoryImpl pluginValueFactory,
+      ErrorReporter errorReporter) {
+    this(localVarExprs, errorReporter, pluginValueFactory, ConditionalEvaluationMode.NORMAL);
   }
 
-  TranslateToSwiftExprVisitor(LocalVariableStack localVarExprs, ErrorReporter errorReporter, ConditionalEvaluationMode conditionalEvaluationMode) {
-    this.errorReporter = errorReporter;
+  TranslateToSwiftExprVisitor(
+      LocalVariableStack localVarExprs,
+      ErrorReporter errorReporter,
+      SwiftValueFactoryImpl pluginValueFactory,
+      ConditionalEvaluationMode conditionalEvaluationMode) {
     this.localVarExprs = localVarExprs;
+    this.errorReporter = errorReporter;
+    this.pluginValueFactory = pluginValueFactory;
     this.conditionalEvaluationMode = conditionalEvaluationMode;
   }
 
@@ -365,9 +375,12 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
     Object soyFunction = node.getSoyFunction();
     if (soyFunction instanceof BuiltinFunction) {
       return visitNonPluginFunction(node, (BuiltinFunction) soyFunction);
-    /* } else if (soyFunction instanceof SoySwiftSrcFunction) {
-      List<SwiftExpr> args = visitChildren(node);
-      return ((SoySwiftSrcFunction) soyFunction).computeForSwiftSrc(args); */
+    } else if (soyFunction instanceof SoySwiftSourceFunction) {
+      return pluginValueFactory.applyFunction(
+          node.getSourceLocation(),
+          node.getFunctionName(),
+          (SoySwiftSourceFunction) soyFunction,
+          visitChildren(node));
     } else if (soyFunction instanceof LoggingFunction) {
       // trivial logging function support
       return new SwiftStringExpr("\"" + ((LoggingFunction) soyFunction).getPlaceholder() + "\"");

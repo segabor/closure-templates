@@ -94,6 +94,9 @@ public class SoyExprForSwiftSubject extends Subject<SoyExprForSwiftSubject, Stri
 
     final IsComputableAsSwiftExprVisitor isComputableAsSwiftExprs =
         new IsComputableAsSwiftExprVisitor();
+    final SwiftValueFactoryImpl pluginValueFactory =
+        new SwiftValueFactoryImpl(ErrorReporter.exploding(), BidiGlobalDir.LTR);
+
     // There is a circular dependency between the GenPyExprsVisitorFactory and GenPyCallExprVisitor
     // here we resolve it with a mutable field in a custom provider
     class SwiftCallExprVisitorSupplier implements Supplier<GenSwiftCallExprVisitor> {
@@ -101,12 +104,12 @@ public class SoyExprForSwiftSubject extends Subject<SoyExprForSwiftSubject, Stri
 
       @Override
       public GenSwiftCallExprVisitor get() {
-        return new GenSwiftCallExprVisitor(isComputableAsSwiftExprs, checkNotNull(factory));
+        return new GenSwiftCallExprVisitor(isComputableAsSwiftExprs, pluginValueFactory, checkNotNull(factory));
       }
     }
     SwiftCallExprVisitorSupplier provider = new SwiftCallExprVisitorSupplier();
     GenSwiftExprsVisitorFactory genSwiftExprsFactory =
-        new GenSwiftExprsVisitorFactory(isComputableAsSwiftExprs, provider);
+        new GenSwiftExprsVisitorFactory(isComputableAsSwiftExprs, provider, pluginValueFactory);
     provider.factory = genSwiftExprsFactory;
     GenSwiftExprsVisitor genSwiftExprsVisitor =
         genSwiftExprsFactory.create(localVarExprs, ErrorReporter.exploding());
@@ -157,7 +160,10 @@ public class SoyExprForSwiftSubject extends Subject<SoyExprForSwiftSubject, Stri
     ExprNode exprNode = node.getExpr();
 
     SwiftExpr actualSwiftExpr =
-        new TranslateToSwiftExprVisitor(localVarExprs, ErrorReporter.exploding()).exec(exprNode);
+        new TranslateToSwiftExprVisitor(
+            localVarExprs,
+            new SwiftValueFactoryImpl(ErrorReporter.exploding(), BidiGlobalDir.LTR),
+            ErrorReporter.exploding()).exec(exprNode);
     assertThat(actualSwiftExpr.getText()).isEqualTo(expectedSwiftExpr.getText());
     assertThat(actualSwiftExpr.getPrecedence()).isEqualTo(expectedSwiftExpr.getPrecedence());
 

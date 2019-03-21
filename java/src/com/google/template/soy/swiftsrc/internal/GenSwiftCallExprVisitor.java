@@ -2,9 +2,7 @@ package com.google.template.soy.swiftsrc.internal;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
-
 import javax.annotation.Nullable;
-
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.template.soy.base.internal.SanitizedContentKind;
@@ -34,7 +32,9 @@ import com.google.template.soy.swiftsrc.restricted.SwiftStringExpr;
 public class GenSwiftCallExprVisitor extends AbstractReturningSoyNodeVisitor<SwiftExpr> {
 
   private final IsComputableAsSwiftExprVisitor isComputableAsSwiftExprsVisitor;
-	
+  
+  private final SwiftValueFactoryImpl pluginValueFactory;
+
   private final GenSwiftExprsVisitorFactory genSwiftExprsVisitorFactory;
 
   private LocalVariableStack localVarStack;
@@ -43,8 +43,10 @@ public class GenSwiftCallExprVisitor extends AbstractReturningSoyNodeVisitor<Swi
 
   GenSwiftCallExprVisitor(
       IsComputableAsSwiftExprVisitor isComputableAsSwiftExprs,
+      SwiftValueFactoryImpl pluginValueFactory,
       GenSwiftExprsVisitorFactory genSwiftExprsVisitorFactory) {
     this.isComputableAsSwiftExprsVisitor = isComputableAsSwiftExprs;
+    this.pluginValueFactory = pluginValueFactory;
     this.genSwiftExprsVisitorFactory = genSwiftExprsVisitorFactory;
   }
 
@@ -133,7 +135,7 @@ public class GenSwiftCallExprVisitor extends AbstractReturningSoyNodeVisitor<Swi
     } else {
       // Case 2: Delegate call with variant expression.
       TranslateToSwiftExprVisitor translator =
-          new TranslateToSwiftExprVisitor(localVarStack, errorReporter);
+          new TranslateToSwiftExprVisitor(localVarStack, pluginValueFactory, errorReporter);
       variantSwiftExpr = translator.exec(variantSoyExpr);
     }
     String calleeExprText =
@@ -157,7 +159,7 @@ public class GenSwiftCallExprVisitor extends AbstractReturningSoyNodeVisitor<Swi
    */
   public String genObjToPass(CallNode callNode) {
 	  TranslateToSwiftExprVisitor translator =
-        new TranslateToSwiftExprVisitor(localVarStack, errorReporter);
+        new TranslateToSwiftExprVisitor(localVarStack, pluginValueFactory, errorReporter);
 
     // Generate the expression for the original data to pass.
     String dataToPass;

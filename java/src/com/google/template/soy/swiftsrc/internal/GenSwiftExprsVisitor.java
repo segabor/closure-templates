@@ -36,19 +36,23 @@ import com.google.template.soy.swiftsrc.restricted.SwiftStringExpr;
 public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>> {
   private static final SoyErrorKind UNKNOWN_SOY_SWIFT_SRC_PRINT_DIRECTIVE =
       SoyErrorKind.of("Unknown SoySwiftSrcPrintDirective ''{0}''.");
-
+  
   /** Injectable factory for creating an instance of this class. */
   public static final class GenSwiftExprsVisitorFactory {
     private final IsComputableAsSwiftExprVisitor isComputableAsSwiftExprVisitor;
     // depend on a Supplier since there is a circular dependency between genSwiftExprsVisitorFactory
-    // and GenPyCallExprVisitor
+    // and GenSwiftCallExprVisitor
     private final Supplier<GenSwiftCallExprVisitor> genSwiftCallExprVisitor;
 
+    private final SwiftValueFactoryImpl pluginValueFactory;
+    
     GenSwiftExprsVisitorFactory(
-    		IsComputableAsSwiftExprVisitor isComputableAsSwiftExprVisitor,
-    		Supplier<GenSwiftCallExprVisitor> genSwiftCallExprVisitor) {
-    	  this.isComputableAsSwiftExprVisitor = isComputableAsSwiftExprVisitor;
+        IsComputableAsSwiftExprVisitor isComputableAsSwiftExprVisitor,
+        Supplier<GenSwiftCallExprVisitor> genSwiftCallExprVisitor,
+        SwiftValueFactoryImpl pluginValueFactory) {
+      this.isComputableAsSwiftExprVisitor = isComputableAsSwiftExprVisitor;
       this.genSwiftCallExprVisitor = genSwiftCallExprVisitor;
+      this.pluginValueFactory = pluginValueFactory;
     }
 
     public GenSwiftExprsVisitor create(
@@ -58,7 +62,8 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
           this,
           genSwiftCallExprVisitor.get(),
           localVarExprs,
-          errorReporter);
+          errorReporter,
+          pluginValueFactory);
     }
   }
 
@@ -75,17 +80,21 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
 
   private final ErrorReporter errorReporter;
 
+  private final SwiftValueFactoryImpl pluginValueFactory;
+
   GenSwiftExprsVisitor(
       IsComputableAsSwiftExprVisitor isComputableAsSwiftExprVisitor,
       GenSwiftExprsVisitorFactory genSwiftExprsVisitorFactory,
       GenSwiftCallExprVisitor genSwiftCallExprVisitor,
       LocalVariableStack localVarExprs,
-      ErrorReporter errorReporter) {
+      ErrorReporter errorReporter,
+      SwiftValueFactoryImpl pluginValueFactory) {
 	this.isComputableAsSwiftExprVisitor = isComputableAsSwiftExprVisitor;
     this.genSwiftExprsVisitorFactory = genSwiftExprsVisitorFactory;
     this.genSwiftCallExprVisitor = genSwiftCallExprVisitor;
     this.localVarExprs = localVarExprs;
     this.errorReporter = errorReporter;
+    this.pluginValueFactory = pluginValueFactory;
   }
 
   @Override
@@ -153,7 +162,7 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
   @Override
   protected void visitPrintNode(PrintNode node) {
 	  TranslateToSwiftExprVisitor translator =
-        new TranslateToSwiftExprVisitor(localVarExprs, errorReporter);
+        new TranslateToSwiftExprVisitor(localVarExprs, pluginValueFactory, errorReporter);
 
     SwiftExpr swiftExpr = translator.exec(node.getExpr());
 
@@ -231,7 +240,7 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
   }
 
   private SwiftStringExpr generateMsgFunc(MsgNode msg) {
-    return new MsgFuncGenerator(genSwiftExprsVisitorFactory, msg, localVarExprs, errorReporter)
+    return new MsgFuncGenerator(genSwiftExprsVisitorFactory, msg, localVarExprs, errorReporter, pluginValueFactory)
         .getSwiftExpr();
   }
 
@@ -245,7 +254,7 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
     GenSwiftExprsVisitor genSwiftExprsVisitor =
         genSwiftExprsVisitorFactory.create(localVarExprs, errorReporter);
     TranslateToSwiftExprVisitor translator =
-        new TranslateToSwiftExprVisitor(localVarExprs, errorReporter, ConditionalEvaluationMode.CONDITIONAL);
+        new TranslateToSwiftExprVisitor(localVarExprs, errorReporter, pluginValueFactory, ConditionalEvaluationMode.CONDITIONAL);
 
     StringBuilder swiftExprTextSb = new StringBuilder();
 

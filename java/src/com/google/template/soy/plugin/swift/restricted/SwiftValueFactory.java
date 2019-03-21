@@ -1,8 +1,6 @@
 package com.google.template.soy.plugin.swift.restricted;
 
-import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
-
-/** A factory for instructing soy how to implement a {@link SoyPythonSourceFunction}. */
+/** A factory for instructing soy how to implement a {@link SoySWiftSourceFunction}. */
 public abstract class SwiftValueFactory {
   /** Creates an integer constant. */
   public abstract SwiftValue constant(long num);
