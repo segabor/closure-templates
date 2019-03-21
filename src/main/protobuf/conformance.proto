@@ -17,6 +17,7 @@
 syntax = "proto3";
 
 package soy;
+
 option java_package = "com.google.template.soy.conformance";
 option java_multiple_files = true;
 
@@ -45,6 +46,9 @@ message Requirement {
   message BannedRawText {
     // The banned text. This only bans literal text, not commands or expressions
     repeated string text = 1;
+    // However, if the text occurs inside the given html attributes, then it
+    // will be allowed.
+    repeated string except_in_html_attribute = 2;
   }
 
   message BannedHtmlTag {
@@ -53,10 +57,6 @@ message Requirement {
   }
 
   message RequireStrictAutoescaping {
-    // no customizable behavior
-  }
-
-  message RequireStronglyTypedIjParams {
     // no customizable behavior
   }
 
@@ -71,7 +71,7 @@ message Requirement {
     string java_class = 1;
   }
 
-  reserved 1, 6;
+  reserved 1, 6, 13;
   oneof requirement_type {
     BannedCssSelector banned_css_selector = 2;
     BannedFunction banned_function = 3;
@@ -80,7 +80,6 @@ message Requirement {
     Custom custom = 7;
     BannedHtmlTag banned_html_tag = 11;
     RequireStrictAutoescaping require_strict_autoescaping = 12;
-    RequireStronglyTypedIjParams require_strongly_typed_ij_params = 13;
     BanXidForCssObfuscation ban_xid_for_css_obfuscation = 14;
   }
 
@@ -99,4 +98,4 @@ message Requirement {
   repeated string only_apply_to = 15;
 
   reserved 10;
-};
+}

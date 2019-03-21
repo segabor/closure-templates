@@ -530,12 +530,14 @@ public final class ContextualAutoescaperTest {
         join(
             "{namespace ns}\n\n",
             "{template .foo kind=\"js\"}\n",
-            "`<div a=\"q\">${lb} {$ij.foo |escapeJsValue} {rb}</div>`\n",
+            "  {@param foo: ?}\n",
+            "`<div a=\"q\">${lb} {$foo |escapeJsValue} {rb}</div>`\n",
             "{/template}"),
         join(
             "{namespace ns}\n\n",
             "{template .foo kind=\"js\"}\n",
-            "`<div a=\"q\">${lb} {$ij.foo} {rb}</div>`\n",
+            "  {@param foo: ?}\n",
+            "`<div a=\"q\">${lb} {$foo} {rb}</div>`\n",
             "{/template}"));
 
     assertRewriteFails(
@@ -543,7 +545,8 @@ public final class ContextualAutoescaperTest {
         join(
             "{namespace ns}\n\n",
             "{template .foo kind=\"js\"}\n",
-            "`<div a=\"q\">{$ij.foo}</div>`\n",
+            "  {@param foo: ?}\n",
+            "`<div a=\"q\">{$foo}</div>`\n",
             "{/template}"));
 
     // can't merge across different template depths
@@ -553,7 +556,8 @@ public final class ContextualAutoescaperTest {
         join(
             "{namespace ns}\n\n",
             "{template .foo kind=\"js\"}\n",
-            "{if $ij.b}`<div a=\"q\">{else}</div>{/if}`\n",
+            "  {@param foo: ?}\n",
+            "{if $foo}`<div a=\"q\">{else}</div>{/if}`\n",
             "{/template}"));
   }
 
@@ -2511,6 +2515,7 @@ public final class ContextualAutoescaperTest {
   private void assertContextualRewriting(String expectedOutput, String... inputs) {
     String source = rewrite(inputs).toSourceString();
     // remove the nonce, it is just distracting
+    source = source.replace(NONCE_DECLARATION, "");
     source = source.replace(NONCE, "");
     assertThat(normalizeContextualNames(source.trim())).isEqualTo(expectedOutput);
   }
@@ -2557,8 +2562,11 @@ public final class ContextualAutoescaperTest {
     }
   }
 
+  private static final String NONCE_DECLARATION =
+      "  {@inject? csp_nonce: any}  /** Created by ContentSecurityPolicyNonceInjectionPass. */\n";
+
   private static final String NONCE =
-      "{if $ij.csp_nonce} nonce=\"{$ij.csp_nonce |escapeHtmlAttribute}\"{/if}";
+      "{if $csp_nonce} nonce=\"{$csp_nonce |escapeHtmlAttribute}\"{/if}";
 
   private void assertContextualRewritingNoop(String expectedOutput) {
     assertContextualRewriting(expectedOutput, expectedOutput);

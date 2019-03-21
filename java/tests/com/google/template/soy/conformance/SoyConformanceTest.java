@@ -190,7 +190,6 @@ public class SoyConformanceTest {
             "a/b/c/foo/bar/baz.soy"));
   }
 
-
   @Test
   public void testBannedRawText() {
     assertViolation(
@@ -213,6 +212,31 @@ public class SoyConformanceTest {
             + "  error_message: 'foo'"
             + "}",
         "{namespace ns}\n" + "{template .foo}\n" + "bar\n" + "{/template}");
+  }
+
+  @Test
+  public void testBannedRawTextDoesNotIncludeComments() {
+    assertNoViolation(
+        "requirement: {\n"
+            + "  banned_raw_text: {\n"
+            + "    text: 'foo'\n"
+            + "  }\n"
+            + "  error_message: 'foo'"
+            + "}",
+        "{namespace ns}\n" + "{template .foo}\n" + "<!-- foo -->\n" + "{/template}");
+  }
+
+  @Test
+  public void testBannedRawTextIgnoresHtmlAttributes() {
+    assertNoViolation(
+        "requirement: {\n"
+            + "  banned_raw_text: {\n"
+            + "    text: 'foo'\n"
+            + "    except_in_html_attribute: 'link'\n"
+            + "  }\n"
+            + "  error_message: 'foo'"
+            + "}",
+        "{namespace ns}\n" + "{template .foo}\n" + "<a link=\"foo\"></a>\n" + "{/template}");
   }
 
   @Test
@@ -469,31 +493,6 @@ public class SoyConformanceTest {
             + " "
             + "}",
         "{namespace ns }\n" + "{template .foo autoescape=\"deprecated-contextual\"}{/template}\n");
-  }
-
-  @Test
-  public void testRequireStrictlyTypedIjs() {
-    assertNoViolation(
-        "requirement: {\n"
-            + "  require_strongly_typed_ij_params: {}\n"
-            + "  error_message: 'foo'"
-            + " "
-            + "}",
-        "{namespace ns}\n" + "{template .foo}{/template}\n");
-    assertViolation(
-        "requirement: {\n"
-            + "  require_strongly_typed_ij_params: {}\n"
-            + "  error_message: 'foo'"
-            + " "
-            + "}",
-        "{namespace ns}{template .foo}{$ij.foo}{/template}\n");
-    assertNoViolation(
-        "requirement: {\n"
-            + "  require_strongly_typed_ij_params: {}\n"
-            + "  error_message: 'foo'"
-            + " "
-            + "}",
-        "{namespace ns}{template .foo}{@inject foo : ?}{$foo}{/template}\n");
   }
 
   @Test

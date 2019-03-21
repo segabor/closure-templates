@@ -4,28 +4,21 @@ This file is meant to track technical debt issues in the Soy codebase. This
 isn't meant to track bugs or feature requests, but rather long term design
 issues.
 
-## Improve the plugin apis {#better_plugins}
+## Eliminate print directives
 
-Implementing a soy plugin is pretty easy (implement `SoyFunction`) but the
-registration mechanism is strange (pass a guice module class name to the
-compiler) and works against our goals of removing/reducing the guice dependency
-from the compiler. Finally, it is required that you implement support for all
-backends in one `SoyFunction` subtype. This seems unnecessary.
+we should eliminate print directives in favor of soy functions. Internally in
+the compiler we could continue to use them as part of the autoescaper
+strategies, but as a public api they would be deprecated.
 
-Proposals:
+To enable this we could provide a simple way to write a `SoySourceFunction` that
+could be used via the print directive syntax. Then users could reimplement their
+print directives and incrementally migrate code.
 
-*   Use the standard ServiceLocator apis to register plugins. Then services can
-    just add `@AutoService(SoyJsSrcFunction.class)` to their plugin functions.
-    This is the same mechanism that Java annotation processors use.
-*   Allow functions to declare dependencies on `ij` variables. Currently plugins
-    that run in `Tofu` can rely on being in the same guice injector as the
-    application in order to get access application data. This is sort of
-    convenient (it often causes weird scoping issues). Instead we could just
-    allow plugins to access this kind of data via `$ij` params.
-*   Allow backend specific implementations to be implemented in different
-    classes
-*   Expand the set of built in plugins. There are a lot of reasonable default
-    plugins that many teams reimplement (`sqrt`, `listContains`)
+## Eliminate tofu
+
+## Eliminate soy_js build rules
+
+## Move af_soy_library to `third_party/java/builddefs` and rename to `soy_library`
 
 ## Eliminate the SoyData type hierarchy
 

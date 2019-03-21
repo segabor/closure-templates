@@ -87,14 +87,15 @@ public final class ValidatedConformanceConfig {
         return new BannedFunction(ImmutableSet.copyOf(bannedFunction.getFunctionList()), error);
       case BANNED_RAW_TEXT:
         Requirement.BannedRawText bannedRawText = requirement.getBannedRawText();
-        return new BannedRawText(ImmutableSet.copyOf(bannedRawText.getTextList()), error);
+        return new BannedRawText(
+            ImmutableSet.copyOf(bannedRawText.getTextList()),
+            ImmutableSet.copyOf(bannedRawText.getExceptInHtmlAttributeList()),
+            error);
       case BANNED_HTML_TAG:
         Requirement.BannedHtmlTag bannedHtmlTag = requirement.getBannedHtmlTag();
         return new BannedHtmlTag(bannedHtmlTag.getTagList(), error);
       case REQUIRE_STRICT_AUTOESCAPING:
         return new RequireStrictAutoescaping(error);
-      case REQUIRE_STRONGLY_TYPED_IJ_PARAMS:
-        return new RequireStronglyTypedIjParams(error);
       case BAN_XID_FOR_CSS_OBFUSCATION:
         return new BanXidForCssObfuscation(error);
       case REQUIREMENTTYPE_NOT_SET:

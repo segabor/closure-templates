@@ -47,7 +47,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import javax.annotation.CheckReturnValue;
 import javax.annotation.Nullable;
 import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.Label;
@@ -425,28 +424,19 @@ final class TemplateVariableManager implements ClassFieldManager {
 
   @Override
   public FieldRef addStaticField(String proposedName, Expression initializer) {
-    String name = fieldNames.generateName(proposedName);
-    FieldRef ref =
-        FieldRef.create(
-            owner,
-            name,
-            initializer.resultType(),
-            Opcodes.ACC_STATIC | Opcodes.ACC_FINAL | Opcodes.ACC_PRIVATE,
-            !initializer.isNonNullable());
-    staticFields.add(new AutoValue_TemplateVariableManager_StaticFieldVariable(ref, initializer));
-    return ref;
+    return addStaticField(
+        proposedName, initializer, Opcodes.ACC_STATIC | Opcodes.ACC_FINAL | Opcodes.ACC_PRIVATE);
   }
 
-  FieldRef addPackagePrivateStaticField(
-      String proposedName, Type fieldType, Expression initializer) {
+  FieldRef addPackagePrivateStaticField(String proposedName, Expression initializer) {
+    return addStaticField(proposedName, initializer, Opcodes.ACC_STATIC | Opcodes.ACC_FINAL);
+  }
+
+  private FieldRef addStaticField(String proposedName, Expression initializer, int accessFlags) {
     String name = fieldNames.generateName(proposedName);
     FieldRef ref =
         FieldRef.create(
-            owner,
-            name,
-            fieldType,
-            Opcodes.ACC_STATIC | Opcodes.ACC_FINAL,
-            !initializer.isNonNullable());
+            owner, name, initializer.resultType(), accessFlags, !initializer.isNonNullable());
     staticFields.add(new AutoValue_TemplateVariableManager_StaticFieldVariable(ref, initializer));
     return ref;
   }
@@ -454,14 +444,8 @@ final class TemplateVariableManager implements ClassFieldManager {
   // TODO(lukes): consider moving all these optional 'one per template' fields to a different object
   // for management.
 
-  /**
-   * Defines all the fields necessary for the registered variables.
-   *
-   * @return a statement to initialize the fields
-   */
-  @CheckReturnValue
-  Statement defineFields(ClassVisitor writer) {
-    List<Statement> initializers = new ArrayList<>();
+  /** Defines all the fields necessary for the registered variables. */
+  void defineFields(ClassVisitor writer) {
     for (Variable var : allVariables) {
       var.maybeDefineField(writer);
     }
@@ -474,7 +458,6 @@ final class TemplateVariableManager implements ClassFieldManager {
     if (currentAppendable != null) {
       currentAppendable.defineField(writer);
     }
-    return Statement.concat(initializers);
   }
 
   /**
