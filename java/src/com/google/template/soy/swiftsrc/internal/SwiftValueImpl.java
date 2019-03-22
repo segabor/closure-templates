@@ -1,8 +1,11 @@
 package com.google.template.soy.swiftsrc.internal;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.template.soy.swiftsrc.internal.SwiftValueFactoryImpl.unwrap;
+import static com.google.template.soy.swiftsrc.restricted.SwiftExprUtils.maybeProtect;
 import com.google.template.soy.plugin.swift.restricted.SwiftValue;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
+import com.google.template.soy.swiftsrc.restricted.SwiftExprUtils;
 
 public final class SwiftValueImpl implements SwiftValue {
 
@@ -26,8 +29,21 @@ public final class SwiftValueImpl implements SwiftValue {
 
   @Override
   public SwiftValue call(SwiftValue... args) {
-    // TODO Auto-generated method stub
-    return null;
+    StringBuilder sb =
+        new StringBuilder()
+            .append(maybeProtect(expr, SwiftExprUtils.CALL_PRECEDENCE).getText())
+            .append("(");
+    boolean isFirst = true;
+    for (SwiftValue arg : args) {
+      if (isFirst) {
+        isFirst = false;
+      } else {
+        sb.append(", ");
+      }
+      sb.append(unwrap(arg).getText());
+    }
+    sb.append(")");
+    return new SwiftValueImpl(new SwiftExpr(sb.toString(), SwiftExprUtils.CALL_PRECEDENCE));
   }
 
   @Override

@@ -22,6 +22,7 @@ public final class SwiftExprUtils {
   /** Expression constant for empty string. */
   private static final SwiftExpr EMPTY_STRING = new SwiftStringExpr("\"\"");
 
+  public static final int CALL_PRECEDENCE = 9;
 
   /**
    * Map used to provide operator precedences in Python.

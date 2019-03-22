@@ -128,4 +128,13 @@ public class SwiftValueFactoryImpl extends SwiftValueFactory {
     return null;
   }
 
+  @Override
+  public SwiftValue systemFunction(String functionName) {
+    return new SwiftValueImpl(new SwiftStringExpr(functionName));
+  }
+
+  public static SwiftExpr unwrap(SwiftValue start) {
+    return ((SwiftValueImpl) start).expr;
+  }
+
 }
