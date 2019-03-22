@@ -54,7 +54,7 @@ public class SwiftSrcMain {
       ErrorReporter errorReporter) {
 
     // FIXME do we need this?
-    BidiGlobalDir bidiGlobalDir = null;
+    BidiGlobalDir bidiGlobalDir = BidiGlobalDir.LTR;
     // SoyBidiUtils.decodeBidiGlobalDirFromPyOptions(pySrcOptions.getBidiIsRtlFn());
     try (SoyScopedData.InScope inScope = apiCallScope.enter(/* msgBundle= */ null, bidiGlobalDir)) {
       return createVisitor(swiftSrcOptions, bidiGlobalDir, errorReporter, currentManifest).gen(soyTree, errorReporter);
@@ -90,7 +90,7 @@ public class SwiftSrcMain {
     // Generate the manifest and add it to the current manifest.
     ImmutableMap<String, String> manifest = generateManifest(soyNamespaces, outputs);
 
-    // Generate the Python source.
+    // Generate the Swift source.
     List<String> pyFileContents = genSwiftSource(soyTree, swiftSrcOptions, manifest, errorReporter);
 
     if (srcsToCompile.size() != pyFileContents.size()) {
