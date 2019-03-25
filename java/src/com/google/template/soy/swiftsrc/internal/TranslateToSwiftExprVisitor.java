@@ -74,7 +74,7 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
       SoyErrorKind.of("Proto accessors are not supported in Swift src.");
   private static final SoyErrorKind PROTO_INIT_NOT_SUPPORTED =
       SoyErrorKind.of("Proto init is not supported in Swift src.");
-  private static final SoyErrorKind SOY_PY_SRC_FUNCTION_NOT_FOUND =
+  private static final SoyErrorKind SOY_SWIFT_SRC_FUNCTION_NOT_FOUND =
       SoyErrorKind.of("Failed to find SoySwiftSrcFunction ''{0}''.");
   private static final SoyErrorKind UNTYPED_BRACKET_ACCESS_NOT_SUPPORTED =
       SoyErrorKind.of(
@@ -90,6 +90,8 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
   // FIXME
   private static final SwiftExpr ERROR =
       new SwiftExpr("raise Exception('Soy compilation failed')", Integer.MAX_VALUE);
+
+  private static final SwiftExpr NONE = new SwiftExpr("nil", Integer.MAX_VALUE);
 
   private final LocalVariableStack localVarExprs;
 
@@ -386,7 +388,7 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
       return new SwiftStringExpr("\"" + ((LoggingFunction) soyFunction).getPlaceholder() + "\"");
     } else {
       errorReporter.report(
-          node.getSourceLocation(), SOY_PY_SRC_FUNCTION_NOT_FOUND, node.getFunctionName());
+          node.getSourceLocation(), SOY_SWIFT_SRC_FUNCTION_NOT_FOUND, node.getFunctionName());
       return ERROR;
     }
   }
@@ -408,9 +410,18 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
         return visitXidFunction(node);
       case IS_PRIMARY_MSG_IN_USE:
         return visitIsPrimaryMsgInUseFunction(node);
+      case TO_FLOAT:
+        // this is a no-op in python
+        return visit(node.getChild(0));
+      case DEBUG_SOY_TEMPLATE_INFO:
+        // 'debugSoyTemplateInfo' is used for inspecting soy template info from rendered pages.
+        // FIXME Resolve to false now
+        return new SwiftExpr("false", Integer.MAX_VALUE);
       case V1_EXPRESSION:
         throw new UnsupportedOperationException(
             "the v1Expression function can't be used in templates compiled to Python");
+      case VE_DATA:
+        return NONE;
       case MSG_WITH_ID:
       case REMAINDER:
         // should have been removed earlier in the compiler
