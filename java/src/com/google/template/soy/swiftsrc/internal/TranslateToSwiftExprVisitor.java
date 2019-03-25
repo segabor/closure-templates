@@ -521,6 +521,7 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
       NotFoundBehavior notFoundBehavior,
       CoerceKeyToString coerceKeyToString) {
     if (coerceKeyToString == CoerceKeyToString.YES) {
+      // FIXME: key -> key.coerceToString
       key = new SwiftFunctionExprBuilder("runtime.maybe_coerce_key_to_string").addArg(key).asSwiftExpr();
     }
     if (notFoundBehavior == NotFoundBehavior.RETURN_NONE) {
