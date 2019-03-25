@@ -59,6 +59,8 @@ public class SoyToSwiftSrcCompiler extends AbstractSoyCompiler {
       exitWithError("Namespace manifests provided without outputting a new manifest.");
     } */
 
+    final String rendererMapFile = namespaceManifestPaths.isEmpty() ? "TemplateRenderers.swift" : namespaceManifestPaths.get(0);
+    
     // Create SoyPySrcOptions.
     SoySwiftSrcOptions pySrcOptions =
         new SoySwiftSrcOptions(
@@ -66,7 +68,7 @@ public class SoyToSwiftSrcCompiler extends AbstractSoyCompiler {
             // environmentModulePath,
             // bidiIsRtlFn,
             // translationClass,
-            ImmutableMap.<String, String>of(), "outputNamespaceManifest");
+            ImmutableMap.<String, String>of(), rendererMapFile);
 
     // Compile.
     sfs.compileToSwiftSrcFiles(outputPathFormat, pySrcOptions);

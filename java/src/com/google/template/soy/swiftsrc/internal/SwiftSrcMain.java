@@ -1,15 +1,13 @@
 package com.google.template.soy.swiftsrc.internal;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-
 import java.io.File;
 import java.io.IOException;
+import java.io.StringWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Properties;
-
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
@@ -23,6 +21,8 @@ import com.google.template.soy.shared.internal.MainEntryPointUtils;
 import com.google.template.soy.shared.internal.SoyScopedData;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
+import com.google.template.soy.soytree.TemplateNode;
+import com.google.template.soy.soytree.Visibility;
 import com.google.template.soy.swiftsrc.SoySwiftSrcOptions;
 import com.google.template.soy.swiftsrc.internal.GenSwiftExprsVisitor.GenSwiftExprsVisitorFactory;
 
@@ -109,15 +109,47 @@ public class SwiftSrcMain {
       }
     }
 
-    // Write out the manifest file.
+
+
+    // Write out template renderer map
+    // [namespace + ] template -> Swift fuction name
+    //
     if (swiftSrcOptions.namespaceManifestFile() != null) {
-      try (Writer out =
-          Files.newWriter(new File(swiftSrcOptions.namespaceManifestFile()), StandardCharsets.UTF_8)) {
-        Properties prop = new Properties();
-        for (String namespace : manifest.keySet()) {
-          prop.put(namespace, manifest.get(namespace));
+      try (Writer out = Files.newWriter(new File(swiftSrcOptions.namespaceManifestFile()),
+          StandardCharsets.UTF_8)) {
+        StringBuilder rendererMap = new StringBuilder();
+
+        rendererMap.append("import Soy\n");
+
+        rendererMap.append("\n\n");
+
+        rendererMap.append(
+            "public typealias SoyTemplateRenderFunc = ([String, SoyValue], [String: SoyValue]) -> String\n");
+        rendererMap.append("\n\n");
+
+        rendererMap.append(
+            "fileprivate let SOY_LOOKUP: [String: SoyTemplateRenderFunc] = [\n");
+
+        for (SoyFileNode soyFile : soyTree.getChildren()) {
+          for (TemplateNode template : soyFile.getChildren()) {
+            if (Visibility.PUBLIC == template.getVisibility()) {
+              // write out
+              String key = template.getTemplateName();
+              String functionName = GenSoyTemplateRendererName.makeFuncName(template);
+              rendererMap.append("    ").append("\"").append(key).append("\": ")
+                  .append(functionName).append(", \n");
+            }
+          }
         }
-        prop.store(out, null);
+        rendererMap.append("]\n");
+
+        rendererMap.append("\n\n");
+
+        rendererMap.append("public func findSoyRenderer(for templateName: String) -> SoyTemplateRenderFunc? {\n");
+        rendererMap.append("    return SOY_LOOKUP[templateName]\n");
+        rendererMap.append("}\n");
+        
+        out.write(rendererMap.toString());
       }
     }
   }
@@ -134,6 +166,7 @@ public class SwiftSrcMain {
    * Generate the manifest file by finding the output file paths and converting them into a Swift
    * import format.
    */
+  @Deprecated
   private static ImmutableMap<String, String> generateManifest(
       List<String> soyNamespaces, Multimap<String, Integer> outputs) {
     ImmutableMap.Builder<String, String> manifest = new ImmutableMap.Builder<>();

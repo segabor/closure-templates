@@ -37,10 +37,22 @@ public final class GenSoyTemplateRendererName {
    */
   @Nonnull
   public static String makeFuncName(CallBasicNode node) {
-    String calleeName = node.getSourceCalleeName().replaceFirst("^\\.", "");
+    String calleeName = node.getSourceCalleeName();
+    String calleeExprText = null;
+    
+    if (calleeName.startsWith(".")) {
+      // callee contains just a local template name
+      // ie. call .helloWorld
+      String localCalleeName = node.getSourceCalleeName().replaceFirst("^\\.", "");
 
-    SoyFileNode file = node.getNearestAncestor(SoyFileNode.class);
-    String calleeExprText = GenSoyTemplateRendererName.makeFuncName(file.getNamespace(), calleeName);
+      SoyFileNode soyModule = node.getNearestAncestor(SoyFileNode.class);
+      calleeExprText = GenSoyTemplateRendererName.makeFuncName(soyModule.getNamespace(), localCalleeName);
+    } else {
+      // callee contains namespace for remote call
+      // ie. call soy.examples.simple.helloWorld
+      int periodIndex = calleeName.lastIndexOf(".");
+      calleeExprText = GenSoyTemplateRendererName.makeFuncName(calleeName.substring(0, periodIndex), calleeName.substring(periodIndex+1));      
+    }
     
     return calleeExprText;
   }
