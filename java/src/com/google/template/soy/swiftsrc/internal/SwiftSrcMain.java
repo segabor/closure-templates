@@ -91,20 +91,20 @@ public class SwiftSrcMain {
     ImmutableMap<String, String> manifest = generateManifest(soyNamespaces, outputs);
 
     // Generate the Swift source.
-    List<String> pyFileContents = genSwiftSource(soyTree, swiftSrcOptions, manifest, errorReporter);
+    List<String> swiftFileContents = genSwiftSource(soyTree, swiftSrcOptions, manifest, errorReporter);
 
-    if (srcsToCompile.size() != pyFileContents.size()) {
+    if (srcsToCompile.size() != swiftFileContents.size()) {
       throw new AssertionError(
           String.format(
               "Expected to generate %d code chunk(s), got %d",
-              srcsToCompile.size(), pyFileContents.size()));
+              srcsToCompile.size(), swiftFileContents.size()));
     }
 
-    // Write out the Python outputs.
+    // Write out the Swift outputs.
     for (String outputFilePath : outputs.keySet()) {
       try (Writer out = Files.newWriter(new File(outputFilePath), StandardCharsets.UTF_8)) {
         for (int inputFileIndex : outputs.get(outputFilePath)) {
-          out.write(pyFileContents.get(inputFileIndex));
+          out.write(swiftFileContents.get(inputFileIndex));
         }
       }
     }
