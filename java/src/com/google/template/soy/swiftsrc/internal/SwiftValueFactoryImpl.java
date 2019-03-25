@@ -20,6 +20,8 @@ import com.google.template.soy.swiftsrc.restricted.SwiftStringExpr;
 /** A {@link SwiftValueFactory} implementation that can also manage invoking the plugins. */
 public class SwiftValueFactoryImpl extends SwiftValueFactory {
 
+  private static final String SOYKIT_RUNTIME_NS = "Runtime";
+  
   private static final SwiftValueImpl ERROR_VALUE =
       new SwiftValueImpl(
           new SwiftStringExpr(
@@ -130,7 +132,7 @@ public class SwiftValueFactoryImpl extends SwiftValueFactory {
 
   @Override
   public SwiftValue runtime(String functionName) {
-    return new SwiftValueImpl(new SwiftStringExpr(functionName));
+    return new SwiftValueImpl(new SwiftStringExpr(SOYKIT_RUNTIME_NS + "." + functionName));
   }
 
   public static SwiftExpr unwrap(SwiftValue start) {
