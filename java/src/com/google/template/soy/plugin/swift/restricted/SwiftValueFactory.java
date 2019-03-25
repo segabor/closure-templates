@@ -20,6 +20,6 @@ public abstract class SwiftValueFactory {
   /** Creates a reference to a global symbol, e.g. {@code Math}. */
   public abstract SwiftValue global(String globalSymbol);
 
-  /** Creates a reference to a function defined in system libraries. */
-  public abstract SwiftValue systemFunction(String functionName);
+  /** Creates a reference to a function defined in SoyKit runtime. */
+  public abstract SwiftValue runtime(String functionName);
 }

@@ -129,7 +129,7 @@ public class SwiftValueFactoryImpl extends SwiftValueFactory {
   }
 
   @Override
-  public SwiftValue systemFunction(String functionName) {
+  public SwiftValue runtime(String functionName) {
     return new SwiftValueImpl(new SwiftStringExpr(functionName));
   }
 
