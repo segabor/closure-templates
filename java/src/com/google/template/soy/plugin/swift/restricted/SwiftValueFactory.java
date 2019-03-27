@@ -2,6 +2,11 @@ package com.google.template.soy.plugin.swift.restricted;
 
 /** A factory for instructing soy how to implement a {@link SoySWiftSourceFunction}. */
 public abstract class SwiftValueFactory {
+  
+  public enum RuntimeNamespace {
+    Math, Lists
+  }
+  
   /** Creates an integer constant. */
   public abstract SwiftValue constant(long num);
 
@@ -21,5 +26,5 @@ public abstract class SwiftValueFactory {
   public abstract SwiftValue global(String globalSymbol);
 
   /** Creates a reference to a function defined in SoyKit runtime. */
-  public abstract SwiftValue runtime(String functionName);
+  public abstract SwiftValue runtime(RuntimeNamespace namespace, String functionName);
 }
