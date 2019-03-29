@@ -94,20 +94,17 @@ public class SwiftValueFactoryImpl extends SwiftValueFactory {
 
   @Override
   public SwiftValue constant(long num) {
-    // TODO Auto-generated method stub
-    return null;
+    return new SwiftValueImpl(new SwiftStringExpr(Long.toString(num)));
   }
 
   @Override
   public SwiftValue constant(double num) {
-    // TODO Auto-generated method stub
-    return null;
+    return new SwiftValueImpl(new SwiftStringExpr(Double.toString(num)));
   }
 
   @Override
   public SwiftValue constant(String str) {
-    // TODO Auto-generated method stub
-    return null;
+    return new SwiftValueImpl(new SwiftStringExpr(str));
   }
 
   @Override
