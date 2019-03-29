@@ -6,7 +6,6 @@ import com.google.auto.value.AutoValue;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
-import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.exprtree.ExprNode;
@@ -187,11 +186,6 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
      */
     @Override
     protected void visitSoyFileNode(SoyFileNode node) {
-
-      /* if (node.getSoyFileKind() != SoyFileKind.SRC) {
-        return; // don't generate code for deps
-      } */
-
       swiftCodeBuilder = new SwiftCodeBuilder();
 
       // Encode all source files in utf-8 to allow for special unicode characters in the generated
