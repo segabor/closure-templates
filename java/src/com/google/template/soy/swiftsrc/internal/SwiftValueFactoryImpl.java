@@ -23,7 +23,7 @@ public class SwiftValueFactoryImpl extends SwiftValueFactory {
   private static final SwiftValueImpl ERROR_VALUE =
       new SwiftValueImpl(
           new SwiftStringExpr(
-              "uh oh, if you see this the soy compiler has swallowed an error", Integer.MIN_VALUE));
+              "/* uh oh, if you see this the soy compiler has swallowed an error */", Integer.MIN_VALUE));
 
   private static final SoyErrorKind NULL_RETURN =
       SoyErrorKind.of(
