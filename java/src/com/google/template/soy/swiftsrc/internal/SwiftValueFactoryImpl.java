@@ -27,7 +27,7 @@ public class SwiftValueFactoryImpl extends SwiftValueFactory {
 
   private static final SoyErrorKind NULL_RETURN =
       SoyErrorKind.of(
-          formatPlain("{2}.applyForPythonSource returned null."), StyleAllowance.NO_PUNCTUATION);
+          formatPlain("{2}.applyForSwiftSource returned null."), StyleAllowance.NO_PUNCTUATION);
 
   private static final SoyErrorKind UNEXPECTED_ERROR =
       SoyErrorKind.of(formatPlain("{2}"), StyleAllowance.NO_PUNCTUATION);
