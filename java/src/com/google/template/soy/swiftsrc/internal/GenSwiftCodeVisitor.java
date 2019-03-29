@@ -754,7 +754,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     /** Helper for visitSoyFileNode(SoyFileNode) to add code to require general dependencies. */
     private void addCodeToRequireGeneralDeps() {
       swiftCodeBuilder.appendLine("import Foundation");
-      swiftCodeBuilder.appendLine("import Soy");
+      swiftCodeBuilder.appendLine("import SoyKit");
       swiftCodeBuilder.appendLine();
 
       // Add import and instantiate statements for translator module

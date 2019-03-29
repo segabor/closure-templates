@@ -119,7 +119,7 @@ public class SwiftSrcMain {
           StandardCharsets.UTF_8)) {
         StringBuilder rendererMap = new StringBuilder();
 
-        rendererMap.append("import Soy\n");
+        rendererMap.append("import SoyKit\n");
 
         rendererMap.append("\n\n");
 
