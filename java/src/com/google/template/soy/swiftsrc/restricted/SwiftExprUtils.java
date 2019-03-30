@@ -23,9 +23,10 @@ public final class SwiftExprUtils {
   private static final SwiftExpr EMPTY_STRING = new SwiftStringExpr("\"\"");
 
   public static final int CALL_PRECEDENCE = 9;
+  public static final int GETPROP_PRECEDENCE = 9;
 
   /**
-   * Map used to provide operator precedences in Python.
+   * Map used to provide operator precedences in Swift.
    *
    * @see <a href="https://docs.python.org/2/reference/expressions.html#operator-precedence">Python
    *     operator precedence.</a>

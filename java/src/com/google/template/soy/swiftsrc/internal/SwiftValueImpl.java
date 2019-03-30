@@ -48,8 +48,7 @@ public final class SwiftValueImpl implements SwiftValue {
 
   @Override
   public SwiftValue getProp(String ident) {
-    // TODO Auto-generated method stub
-    return null;
+    return new SwiftValueImpl(new SwiftExpr(expr.getText() + "." + ident, SwiftExprUtils.GETPROP_PRECEDENCE));
   }
 
   @Override
