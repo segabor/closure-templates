@@ -575,7 +575,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       // Remove the localVarExprs frame that we added above.
       localVarExprs.popFrame();
 
-      // The end of the Python 'for' loop.
+      // The end of the Swift 'for' loop.
       swiftCodeBuilder.decreaseIndent();
 
       // close for loop
@@ -609,8 +609,8 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
       // Generate code to define the local var.
       TranslateToSwiftExprVisitor translator = new TranslateToSwiftExprVisitor(localVarExprs, pluginValueFactory, errorReporter);
-      SwiftExpr valuePyExpr = translator.exec(node.getExpr());
-      swiftCodeBuilder.appendLine("let ", generatedVarName, ": SoyValue = ", valuePyExpr.getText());
+      SwiftExpr valueExpr = translator.exec(node.getExpr());
+      swiftCodeBuilder.appendLine("let ", generatedVarName, ": SoyValue = ", valueExpr.getText());
 
       // Add a mapping for generating future references to this local var.
       localVarExprs.addVariable(
