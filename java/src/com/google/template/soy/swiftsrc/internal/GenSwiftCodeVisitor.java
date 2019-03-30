@@ -493,23 +493,14 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       TranslateToSwiftExprVisitor translator =
           new TranslateToSwiftExprVisitor(localVarExprs, pluginValueFactory, errorReporter);
       
-      SwiftExpr dataRefPyExpr = translator.exec(node.getExpr());
+      SwiftExpr dataRefExpr = translator.exec(node.getExpr());
       // swiftCodeBuilder.appendLine(listVarName, " = ", dataRefPyExpr.getText());
 
       // If has 'ifempty' node, add the wrapper 'if' statement.
-      boolean hasIfemptyNode = node.numChildren() == 2;
+      final boolean hasIfemptyNode = node.numChildren() == 2;
 
-      // HACK - figure out what's being iterated
-      // TODO: infer correct Swift type from SoyType
-      ForNonemptyNode loopNode = (ForNonemptyNode) node.getChild(0);
-      String loopVarTypeSwift = "CustomStringConvertible"; // fall-back
-      SoyType loopVarType = loopNode.getVar().type();
-      if (loopVarType.getKind().isKnownStringOrSanitizedContent()) {
-        // Only string types are supported
-        loopVarTypeSwift = "String";
-      }
-      
-      swiftCodeBuilder.appendLine("if let ", listVarName, " = " + dataRefPyExpr.getText() + " as? ["+loopVarTypeSwift+"] {");
+      swiftCodeBuilder.appendLine("let ", listVarName, " = " + dataRefExpr.getText());
+      swiftCodeBuilder.appendLine("if case let .array(_"+listVarName+") = "+listVarName+", !_" + listVarName + ".isEmpty {");
       swiftCodeBuilder.increaseIndent();
 
       // Generate code for nonempty case.
@@ -557,7 +548,8 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       // Build the local variable names.
       String baseVarName = node.getVarName();
       String forNodeId = Integer.toString(node.getForNodeId());
-      String listVarName = baseVarName + "List" + forNodeId;
+      // Use the exposed value
+      String listVarName = "_" + baseVarName + "List" + forNodeId;
       String indexVarName = baseVarName + "Index" + forNodeId;
       String dataVarName = baseVarName + "Data" + forNodeId;
 
