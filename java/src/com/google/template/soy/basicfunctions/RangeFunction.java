@@ -31,6 +31,7 @@ import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
 import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
 import com.google.template.soy.plugin.swift.restricted.SwiftValue;
 import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory.RuntimeNamespace;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import java.lang.reflect.Method;
@@ -117,7 +118,28 @@ public final class RangeFunction
   @Override
   public SwiftValue applyForSwiftSource(SwiftValueFactory factory, List<SwiftValue> args,
       SwiftPluginContext context) {
-    // TODO clone Java approach
-    throw new RuntimeException("Unimplemented feature");
+    SwiftValue start;
+    SwiftValue end;
+    SwiftValue step;
+    switch (args.size()) {
+      case 1:
+        start = factory.constant(0);
+        end = args.get(0);
+        step = factory.constant(1);
+        break;
+      case 2:
+        start = args.get(0);
+        end = args.get(1);
+        step = factory.constant(1);
+        break;
+      case 3:
+        start = args.get(0);
+        end = args.get(1);
+        step = args.get(2);
+        break;
+      default:
+        throw new AssertionError();
+    }
+    return factory.runtime(RuntimeNamespace.Lists, "range").call(start, end, step);
   }
 }
