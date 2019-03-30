@@ -249,10 +249,13 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
           node.getVisibility().getAttributeValue() + " ",
           "func ",
           swiftFuncName,
-          // These defaults are safe because soy only ever reads from these parameters.  If that
-          // changes, bad things could happen.
-          "(_ data: [String:SoyValue] = [:], _ ijData: [String:SoyValue] = [:]) -> String {");
+          "(_ data: SoyValue = .map([:]), _ ijData: SoyValue = .map([:])) -> String {");
       swiftCodeBuilder.increaseIndent();
+
+      generatePreconditions(node);
+      
+      swiftCodeBuilder.appendLine("");
+      swiftCodeBuilder.appendLine("");
 
       generateFunctionBody(node);
 
@@ -756,17 +759,16 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       swiftCodeBuilder.appendLine("import Foundation");
       swiftCodeBuilder.appendLine("import SoyKit");
       swiftCodeBuilder.appendLine();
+    }
 
-      // Add import and instantiate statements for translator module
-      // TODO(steveyang): remember the check when implementing MsgNode
-      /** if (!swiftSrcOptions.getTranslationClass().isEmpty()) {
-        NamespaceAndName namespaceAndName =
-            NamespaceAndName.fromModule(swiftSrcOptions.getTranslationClass());
-        String translationName = namespaceAndName.name();
-        swiftCodeBuilder.appendLine(
-            "from ", namespaceAndName.namespace(), " import ", translationName);
-        swiftCodeBuilder.appendLine(PyExprUtils.TRANSLATOR_NAME, " = ", translationName, "()");
-      } **/
+    private void generatePreconditions(TemplateNode node) {
+      swiftCodeBuilder.appendLine("guard case let .map(_) = data, case let .map(_) = ijData else {");
+      swiftCodeBuilder.increaseIndent();
+      swiftCodeBuilder.appendLine("// Input type mismatch detected!");
+      swiftCodeBuilder.appendLine("// TODO provide feedback");
+      swiftCodeBuilder.appendLine("return \"\"");
+      swiftCodeBuilder.decreaseIndent();
+      swiftCodeBuilder.appendLine("}");
     }
 
     /** Helper for visitTemplateNode which generates the function body. */
