@@ -26,5 +26,5 @@ public abstract class SwiftValueFactory {
   public abstract SwiftValue global(String globalSymbol);
 
   /** Creates a reference to a function defined in SoyKit runtime. */
-  public abstract SwiftValue runtime(RuntimeNamespace namespace, String functionName);
+  public abstract SwiftValue runtime(RuntimeNamespace namespace, String functionName, boolean throwing);
 }

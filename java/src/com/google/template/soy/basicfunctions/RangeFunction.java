@@ -140,6 +140,6 @@ public final class RangeFunction
       default:
         throw new AssertionError();
     }
-    return factory.runtime(RuntimeNamespace.Lists, "range").call(start, end, step);
+    return factory.runtime(RuntimeNamespace.Lists, "range", true).call(start, end, step);
   }
 }

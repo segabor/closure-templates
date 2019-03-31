@@ -126,8 +126,15 @@ public class SwiftValueFactoryImpl extends SwiftValueFactory {
   }
 
   @Override
-  public SwiftValue runtime(RuntimeNamespace namespace, String functionName) {
-    return new SwiftValueImpl(new SwiftStringExpr(namespace.name() + "." + functionName));
+  public SwiftValue runtime(RuntimeNamespace namespace, String functionName, boolean throwing) {
+    StringBuilder exprBuilder = new StringBuilder();
+    
+    if (throwing) {
+      exprBuilder.append("try ");
+    }
+    exprBuilder.append(namespace.name() + "." + functionName);
+
+    return new SwiftValueImpl(new SwiftStringExpr(exprBuilder.toString()));
   }
 
   public static SwiftExpr unwrap(SwiftValue start) {

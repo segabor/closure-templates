@@ -108,6 +108,6 @@ public final class RoundFunction
   @Override
   public SwiftValue applyForSwiftSource(
       SwiftValueFactory factory, List<SwiftValue> args, SwiftPluginContext context) {
-    return factory.runtime(RuntimeNamespace.Math, "round").call(args.get(0));
+    return factory.runtime(RuntimeNamespace.Math, "round", false).call(args.get(0));
   }
 }

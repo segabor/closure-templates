@@ -249,7 +249,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
           node.getVisibility().getAttributeValue() + " ",
           "func ",
           swiftFuncName,
-          "(_ data: SoyValue = .map([:]), _ ijData: SoyValue = .map([:])) -> String {");
+          "(_ data: SoyValue = .map([:]), _ ijData: SoyValue = .map([:])) throws -> String {");
       swiftCodeBuilder.increaseIndent();
 
       generatePreconditions(node);
