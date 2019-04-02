@@ -6273,7 +6273,7 @@ goog.array.zip = function(var_args) {
  * Shuffles the values in the specified array using the Fisher-Yates in-place
  * shuffle (also known as the Knuth Shuffle). By default, calls Math.random()
  * and so resets the state of that random number generator. Similarly, may reset
- * the state of the any other specified random number generator.
+ * the state of any other specified random number generator.
  *
  * Runtime: O(n)
  *
@@ -6408,7 +6408,6 @@ goog.debug.errorcontext.CONTEXT_KEY_ = '__closure__error__context__984382';
  * @visibility {//javascript/closure/dom:__pkg__}
  * @visibility {//javascript/closure/html:__pkg__}
  * @visibility {//javascript/closure/labs/useragent:__pkg__}
- * @visibility {//javascript/closure/string:__pkg__}
  */
 
 
@@ -6798,7 +6797,6 @@ goog.string.internal.compareElements_ = function(left, right) {
  * should not be used outside of goog.labs.userAgent.*.
  *
  * @visibility {//javascript/abc/libs/objects3d:__subpackages__}
- * @visibility {//javascript/closure/bin/sizetests:__pkg__}
  * @visibility {//javascript/closure/dom:__subpackages__}
  * @visibility {//javascript/closure/style:__pkg__}
  * @visibility {//javascript/closure/testing:__pkg__}
@@ -11293,8 +11291,8 @@ goog.dom.HtmlElement = function() {};
 
 /**
  * @fileoverview Defines the goog.dom.TagName class. Its constants enumerate
- * all HTML tag names specified in either the the W3C HTML 4.01 index of
- * elements or the HTML5.1 specification.
+ * all HTML tag names specified in either the W3C HTML 4.01 index of elements
+ * or the HTML5.1 specification.
  *
  * References:
  * https://www.w3.org/TR/html401/index/elements.html
