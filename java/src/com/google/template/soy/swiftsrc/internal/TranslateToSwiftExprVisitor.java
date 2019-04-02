@@ -47,6 +47,10 @@ import com.google.template.soy.types.SoyType.Kind;
 
 public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNodeVisitor<SwiftExpr> {
 
+  public static final String DATA_INTERNAL_VAR_NAME = "__data";
+  
+  public static final String IJDATA_INTERNAL_VAR_NAME = "__ijData";
+
   /** How a key access should behave if a key is not in the structure. */
   private enum NotFoundBehavior {
     /** Return {@code None} if the key is not in the structure. */
@@ -251,7 +255,7 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
           VarRefNode varRef = (VarRefNode) node;
           if (varRef.isInjected()) {
             // Case 1: Injected data reference.
-            return genCodeForLiteralKeyAccess("ijData", varRef.getName());
+            return genCodeForLiteralKeyAccess(IJDATA_INTERNAL_VAR_NAME, varRef.getName());
           } else {
         	  	// FIXME take care of proper handling of local vars if needed
             SwiftExpr translation = localVarExprs.getVariableExpression(varRef.getName());
@@ -260,7 +264,7 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
               return translation.getText();
             } else {
               // Case 3: Data reference.
-              return genCodeForLiteralKeyAccess("data", varRef.getName());
+              return genCodeForLiteralKeyAccess(DATA_INTERNAL_VAR_NAME, varRef.getName());
             }
           }
         }

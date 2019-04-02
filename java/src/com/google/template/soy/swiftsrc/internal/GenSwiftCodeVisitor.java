@@ -1,5 +1,7 @@
 package com.google.template.soy.swiftsrc.internal;
 
+import static com.google.template.soy.swiftsrc.internal.TranslateToSwiftExprVisitor.DATA_INTERNAL_VAR_NAME;
+import static com.google.template.soy.swiftsrc.internal.TranslateToSwiftExprVisitor.IJDATA_INTERNAL_VAR_NAME;
 import java.util.ArrayList;
 import java.util.List;
 import com.google.auto.value.AutoValue;
@@ -754,7 +756,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     }
 
     private void generatePreconditions(TemplateNode node) {
-      swiftCodeBuilder.appendLine("guard case let .map(_) = data, case let .map(_) = ijData else {");
+      swiftCodeBuilder.appendLine("guard case let .map("+DATA_INTERNAL_VAR_NAME +") = data, case let .map("+IJDATA_INTERNAL_VAR_NAME+") = ijData else {");
       swiftCodeBuilder.increaseIndent();
       swiftCodeBuilder.appendLine("// Input type mismatch detected!");
       swiftCodeBuilder.appendLine("// TODO provide feedback");
