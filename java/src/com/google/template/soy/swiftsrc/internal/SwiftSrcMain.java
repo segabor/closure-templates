@@ -124,7 +124,7 @@ public class SwiftSrcMain {
         rendererMap.append("\n\n");
 
         rendererMap.append(
-            "public typealias SoyTemplateRenderFunc = ([String, SoyValue], [String: SoyValue]) -> String\n");
+            "public typealias SoyTemplateRenderFunc = (SoyValue, SoyValue) throws -> String\n");
         rendererMap.append("\n\n");
 
         rendererMap.append(
