@@ -36,6 +36,7 @@ import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
 import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
 import com.google.template.soy.plugin.swift.restricted.SwiftValue;
 import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory.RuntimeNamespace;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
@@ -132,8 +133,6 @@ public final class ConcatListsFunction
   public SwiftValue applyForSwiftSource(
       SwiftValueFactory factory, List<SwiftValue> args, SwiftPluginContext context) {
 
-    throw new RuntimeException("Not implemented yet ...");
-    // TODO complete implementation
-    // return arg1 " + " arg2 " + " arg3 ...
+    return factory.runtime(RuntimeNamespace.Lists, "concatLists", true).call(args.toArray(new SwiftValue[args.size()]));
   }
 }
