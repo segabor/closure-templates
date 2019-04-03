@@ -35,6 +35,7 @@ import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
 import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
 import com.google.template.soy.plugin.swift.restricted.SwiftValue;
 import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory.RuntimeNamespace;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
@@ -80,6 +81,6 @@ public final class FloorFunction
   @Override
   public SwiftValue applyForSwiftSource(
       SwiftValueFactory factory, List<SwiftValue> args, SwiftPluginContext context) {
-    return factory.global("floor").call(args.get(0));
+    return factory.runtime(RuntimeNamespace.Math, "floor", true).call(args.get(0));
   }
 }
