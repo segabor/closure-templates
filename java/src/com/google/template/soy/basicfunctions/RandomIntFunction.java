@@ -32,6 +32,7 @@ import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
 import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
 import com.google.template.soy.plugin.swift.restricted.SwiftValue;
 import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory.RuntimeNamespace;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import java.lang.reflect.Method;
@@ -77,7 +78,6 @@ public final class RandomIntFunction
   @Override
   public SwiftValue applyForSwiftSource(SwiftValueFactory factory, List<SwiftValue> args,
       SwiftPluginContext context) {
-    // TODO should be "Int.random(in: 0..<" + arg.get(0) + ")"
-    throw new RuntimeException("Unimplemented feature ...");
+    return factory.runtime(RuntimeNamespace.Math, "randomInt", true).call(args.get(0));
   }
 }
