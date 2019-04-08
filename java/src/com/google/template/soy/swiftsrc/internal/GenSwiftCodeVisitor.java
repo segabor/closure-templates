@@ -43,7 +43,6 @@ import com.google.template.soy.swiftsrc.internal.TranslateToSwiftExprVisitor.Con
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.google.template.soy.swiftsrc.restricted.SwiftExprUtils;
 import com.google.template.soy.swiftsrc.restricted.SwiftFunctionExprBuilder;
-import com.google.template.soy.types.SoyType;
 
 public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
   private static final SoyErrorKind NON_NAMESPACED_TEMPLATE =
@@ -709,13 +708,17 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     protected void visitVeLogNode(VeLogNode node) {
       if (node.getLogonlyExpression() != null) {
         TranslateToSwiftExprVisitor translator = new TranslateToSwiftExprVisitor(localVarExprs, pluginValueFactory, errorReporter);
+        translator.flipConditionalMode();
         SwiftExpr isLogonly = translator.exec(node.getLogonlyExpression());
-        swiftCodeBuilder.appendLine("if ", isLogonly.getText(), ":");
+        translator.flipConditionalMode();
+
+        swiftCodeBuilder.appendLine("if ", isLogonly.getText(), " {");
         swiftCodeBuilder.increaseIndent();
         swiftCodeBuilder.appendLine(
             "raise Exception('Cannot set logonly=\"true\" unless there is a "
                 + "logger configured, but pysrc doesn\\'t support loggers')");
         swiftCodeBuilder.decreaseIndent();
+        swiftCodeBuilder.appendLine("}");
       }
       // TODO(lukes): expand implementation
       visitChildren(node);
