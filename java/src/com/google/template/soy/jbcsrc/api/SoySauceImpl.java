@@ -21,12 +21,12 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.template.soy.jbcsrc.shared.Names.rewriteStackTrace;
 
 import com.google.common.base.Ascii;
-import com.google.common.base.Optional;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedSet;
+import com.google.errorprone.annotations.concurrent.GuardedBy;
 import com.google.template.soy.data.LoggingAdvisingAppendable;
 import com.google.template.soy.data.SanitizedContent;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
@@ -105,7 +105,7 @@ public final class SoySauceImpl implements SoySauce {
   private final class RendererImpl implements Renderer {
     private final String templateName;
     private final CompiledTemplate.Factory templateFactory;
-    private final Optional<ContentKind> contentKind;
+    private final ContentKind contentKind;
     private Predicate<String> activeDelegatePackages = arg -> false;
     private SoyMsgBundle msgs = SoyMsgBundle.EMPTY;
     private SoyLogger logger = SoyLogger.NO_OP;
@@ -118,13 +118,10 @@ public final class SoySauceImpl implements SoySauce {
     private SoyRecord data = SoyValueConverter.EMPTY_DICT;
     private SoyRecord ij = SoyValueConverter.EMPTY_DICT;
     private ContentKind expectedContentKind = ContentKind.HTML;
-    private boolean contentKindExplicitlySet;
     private Map<String, Supplier<Object>> perRenderPluginInstances = null;
 
     RendererImpl(
-        String templateName,
-        CompiledTemplate.Factory templateFactory,
-        Optional<ContentKind> contentKind) {
+        String templateName, CompiledTemplate.Factory templateFactory, ContentKind contentKind) {
       this.templateName = templateName;
       this.templateFactory = checkNotNull(templateFactory);
       this.contentKind = contentKind;
@@ -188,28 +185,23 @@ public final class SoySauceImpl implements SoySauce {
     @Override
     public Renderer setExpectedContentKind(ContentKind expectedContentKind) {
       checkNotNull(expectedContentKind);
-      this.contentKindExplicitlySet = true;
       this.expectedContentKind = expectedContentKind;
       return this;
     }
 
     @Override
     public WriteContinuation render(AdvisingAppendable out) throws IOException {
-      if (contentKindExplicitlySet || contentKind.isPresent()) {
-        enforceContentKind();
-      }
+      enforceContentKind();
       return startRender(OutputAppendable.create(out, logger));
     }
 
     @Override
     public Continuation<String> render() {
-      if (contentKindExplicitlySet || contentKind.isPresent()) {
-        enforceContentKind();
-      }
+      enforceContentKind();
       StringBuilder sb = new StringBuilder();
       OutputAppendable buf = OutputAppendable.create(sb, logger);
       try {
-        return Continuations.stringContinuation(startRender(buf), sb, buf);
+        return Continuations.stringContinuation(startRender(buf), sb);
       } catch (IOException e) {
         throw new AssertionError("impossible", e);
       }
@@ -221,7 +213,7 @@ public final class SoySauceImpl implements SoySauce {
       StringBuilder sb = new StringBuilder();
       OutputAppendable buf = OutputAppendable.create(sb, logger);
       try {
-        return Continuations.strictContinuation(startRender(buf), sb, buf, expectedContentKind);
+        return Continuations.strictContinuation(startRender(buf), sb, expectedContentKind);
       } catch (IOException e) {
         throw new AssertionError("impossible", e);
       }
@@ -249,26 +241,17 @@ public final class SoySauceImpl implements SoySauce {
 
     private void enforceContentKind() {
       if (expectedContentKind == SanitizedContent.ContentKind.TEXT) {
-        // Allow any template to be called as text. This is consistent with the fact that
-        // kind="text" templates can call any other template.
+        // Allow any template to be called as text.
         return;
       }
-      if (!contentKind.isPresent()) {
-        throw new IllegalStateException(
-            "Cannot render a non strict template '"
-                + templateName
-                + "' as '"
-                + Ascii.toLowerCase(expectedContentKind.name())
-                + "'");
-      }
-      if (expectedContentKind != contentKind.get()) {
+      if (expectedContentKind != contentKind) {
         throw new IllegalStateException(
             "Expected template '"
                 + templateName
                 + "' to be kind=\""
                 + Ascii.toLowerCase(expectedContentKind.name())
                 + "\" but was kind=\""
-                + Ascii.toLowerCase(contentKind.get().name())
+                + Ascii.toLowerCase(contentKind.name())
                 + "\"");
       }
     }
@@ -296,10 +279,21 @@ public final class SoySauceImpl implements SoySauce {
 
   private static final class WriteContinuationImpl implements WriteContinuation {
     final RenderResult result;
+    final Object lock = new Object();
+
+    @GuardedBy("lock")
     final Scoper scoper;
+
+    @GuardedBy("lock")
     final RenderContext context;
+
+    @GuardedBy("lock")
     final LoggingAdvisingAppendable out;
+
+    @GuardedBy("lock")
     final CompiledTemplate template;
+
+    @GuardedBy("lock")
     boolean hasContinueBeenCalled;
 
     WriteContinuationImpl(
@@ -323,11 +317,13 @@ public final class SoySauceImpl implements SoySauce {
 
     @Override
     public WriteContinuation continueRender() throws IOException {
-      if (hasContinueBeenCalled) {
-        throw new IllegalStateException("continueRender() has already been called.");
+      synchronized (lock) {
+        if (hasContinueBeenCalled) {
+          throw new IllegalStateException("continueRender() has already been called.");
+        }
+        hasContinueBeenCalled = true;
+        return doRender(template, scoper, out, context);
       }
-      hasContinueBeenCalled = true;
-      return doRender(template, scoper, out, context);
     }
   }
 

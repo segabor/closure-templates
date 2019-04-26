@@ -86,7 +86,6 @@ import com.google.template.soy.exprtree.VeLiteralNode;
 import com.google.template.soy.internal.proto.ProtoUtils;
 import com.google.template.soy.jssrc.dsl.CodeChunk;
 import com.google.template.soy.jssrc.dsl.Expression;
-import com.google.template.soy.jssrc.dsl.GoogRequire;
 import com.google.template.soy.jssrc.dsl.SoyJsPluginUtils;
 import com.google.template.soy.jssrc.dsl.Statement;
 import com.google.template.soy.jssrc.internal.NullSafeAccumulator.FieldAccess;
@@ -269,15 +268,15 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
 
   @Override
   protected Expression visitRecordLiteralNode(RecordLiteralNode node) {
-    LinkedHashMap<Expression, Expression> objLiteral = new LinkedHashMap<>();
+    LinkedHashMap<String, Expression> objLiteral = new LinkedHashMap<>();
 
     // Process children
     for (int i = 0; i < node.numChildren(); i++) {
-      objLiteral.put(id(node.getKey(i).identifier()), visit(node.getChild(i)));
+      objLiteral.put(node.getKey(i).identifier(), visit(node.getChild(i)));
     }
 
     // Build the record literal
-    return Expression.objectLiteral(objLiteral.keySet(), objLiteral.values());
+    return Expression.objectLiteral(objLiteral);
   }
 
   @Override
@@ -693,7 +692,7 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
     JsExpr jsExpr =
         V1JsExprTranslator.translateToJsExpr(
             expr.getValue(), expr.getSourceLocation(), variableMappings, errorReporter);
-    return Expression.fromExpr(jsExpr, ImmutableList.<GoogRequire>of());
+    return Expression.fromExpr(jsExpr, ImmutableList.of());
   }
 
   private Expression visitVeDataFunction(FunctionNode node) {

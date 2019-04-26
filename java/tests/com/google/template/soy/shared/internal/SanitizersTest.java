@@ -23,8 +23,6 @@ import static org.junit.Assert.assertEquals;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.data.Dir;
-import com.google.template.soy.data.LoggingAdvisingAppendable;
-import com.google.template.soy.data.LoggingAdvisingAppendable.BufferingAppendable;
 import com.google.template.soy.data.SanitizedContent;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
 import com.google.template.soy.data.SoyValue;
@@ -35,7 +33,6 @@ import com.google.template.soy.data.restricted.IntegerData;
 import com.google.template.soy.data.restricted.NullData;
 import com.google.template.soy.data.restricted.StringData;
 import com.google.template.soy.shared.internal.TagWhitelist.OptionalSafeTag;
-import java.io.IOException;
 import java.util.EnumSet;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -64,7 +61,7 @@ public class SanitizersTest {
   @Test
   public void testEscapeJsString() {
     // The minimal escapes.
-    // Do not remove anything from this set without talking to your friendly local ise-team@.
+    // Do not remove anything from this set without talking to your friendly local go/ise-team-yaqs.
     assertThat(Sanitizers.escapeJsString("\u0000 \" \' \\ \r \n \u2028 \u2029"))
         .isEqualTo("\\x00 \\x22 \\x27 \\\\ \\r \\n \\u2028 \\u2029");
 
@@ -90,13 +87,13 @@ public class SanitizersTest {
   @Test
   public void testEscapeJsRegExpString() {
     // The minimal escapes.
-    // Do not remove anything from this set without talking to your friendly local ise-team@.
+    // Do not remove anything from this set without talking to your friendly local go/ise-team-yaqs.
     assertEquals(
         "\\x00 \\x22 \\x27 \\\\ \\/ \\r \\n \\u2028 \\u2029"
             +
             // RegExp operators.
             " \\x24\\x5e\\x2a\\x28\\x29\\x2d\\x2b\\x7b\\x7d\\x5b\\x5d\\x7c\\x3f",
-        Sanitizers.escapeJsRegex("\u0000 \" \' \\ / \r \n \u2028 \u2029" + " $^*()-+{}[]|?"));
+        Sanitizers.escapeJsRegex("\u0000 \" \' \\ / \r \n \u2028 \u2029 $^*()-+{}[]|?"));
 
     for (String hazard : EMBEDDING_HAZARDS) {
       assertWithMessage(hazard).that(Sanitizers.escapeJsRegex(hazard)).doesNotContain(hazard);
@@ -144,7 +141,7 @@ public class SanitizersTest {
   @Test
   public void testEscapeCssString() {
     // The minimal escapes.
-    // Do not remove anything from this set without talking to your friendly local ise-team@.
+    // Do not remove anything from this set without talking to your friendly local go/ise-team-yaqs.
     assertThat(Sanitizers.escapeCssString("\u0000 \" \' \\ \n \u000c \r"))
         .isEqualTo("\\0  \\22  \\27  \\5c  \\a  \\c  \\d ");
 
@@ -265,7 +262,7 @@ public class SanitizersTest {
   @Test
   public void testEscapeUri() {
     // The minimal escapes.
-    // Do not remove anything from this set without talking to your friendly local ise-team@.
+    // Do not remove anything from this set without talking to your friendly local go/ise-team-yaqs.
     assertThat(Sanitizers.escapeUri("\u0000\n\f\r\"#&'/:=?@"))
         .isEqualTo("%00%0A%0C%0D%22%23%26%27%2F%3A%3D%3F%40");
 
@@ -554,7 +551,7 @@ public class SanitizersTest {
   @Test
   public void testEscapeHtmlAttributeNospace() {
     // The minimal escapes.
-    // Do not remove anything from this set without talking to your friendly local ise-team@.
+    // Do not remove anything from this set without talking to your friendly local go/ise-team-yaqs.
     assertThat(Sanitizers.escapeHtmlAttributeNospace("\u0009\n\u000B\u000C\r \"'\u0060<>&"))
         .isEqualTo("&#9;&#10;&#11;&#12;&#13;&#32;&quot;&#39;&#96;&lt;&gt;&amp;");
 
@@ -575,7 +572,7 @@ public class SanitizersTest {
   @Test
   public void testNormalizeHtml() {
     // The minimal escapes.
-    // Do not remove anything from this set without talking to your friendly local ise-team@.
+    // Do not remove anything from this set without talking to your friendly local go/ise-team-yaqs.
     assertThat(Sanitizers.normalizeHtml("\"'<>")).isEqualTo("&quot;&#39;&lt;&gt;");
 
     String escapedAscii =
@@ -595,7 +592,7 @@ public class SanitizersTest {
   @Test
   public void testNormalizeHtmlNospace() {
     // The minimal escapes.
-    // Do not remove anything from this set without talking to your friendly local ise-team@.
+    // Do not remove anything from this set without talking to your friendly local go/ise-team-yaqs.
     assertThat(Sanitizers.normalizeHtmlNospace("\u0009\n\u000B\u000C\r \"'\u0060<>"))
         .isEqualTo("&#9;&#10;&#11;&#12;&#13;&#32;&quot;&#39;&#96;&lt;&gt;");
 
@@ -794,74 +791,6 @@ public class SanitizersTest {
     assertThat(Sanitizers.cleanHtml("<span dir=ltr>f<object>oo</span>", treatSpanSafe))
         .isEqualTo(
             UnsafeSanitizedContentOrdainer.ordainAsSafe("<span>foo</span>", ContentKind.HTML));
-  }
-
-  @Test
-  public void testFilterNoAutoescape() {
-    // Filter out anything marked with sanitized content of kind "text" which indicates it
-    // previously was constructed without any escaping.
-    assertThat(
-            Sanitizers.filterNoAutoescape(
-                UnsafeSanitizedContentOrdainer.ordainAsSafe(
-                    "x", SanitizedContent.ContentKind.TEXT)))
-        .isEqualTo(StringData.forValue("zSoyz"));
-    assertThat(
-            Sanitizers.filterNoAutoescape(
-                UnsafeSanitizedContentOrdainer.ordainAsSafe(
-                    "<!@*!@(*!@(>", SanitizedContent.ContentKind.TEXT)))
-        .isEqualTo(StringData.forValue("zSoyz"));
-
-    // Everything else should be let through. Hope it's safe!
-    assertThat(
-            Sanitizers.filterNoAutoescape(
-                    UnsafeSanitizedContentOrdainer.ordainAsSafe(
-                        "<div>test</div>", SanitizedContent.ContentKind.HTML))
-                .stringValue())
-        .isEqualTo("<div>test</div>");
-    assertThat(
-            Sanitizers.filterNoAutoescape(
-                    UnsafeSanitizedContentOrdainer.ordainAsSafe(
-                        "foo='bar'", SanitizedContent.ContentKind.ATTRIBUTES))
-                .stringValue())
-        .isEqualTo("foo='bar'");
-    assertThat(
-            Sanitizers.filterNoAutoescape(
-                    UnsafeSanitizedContentOrdainer.ordainAsSafe(
-                        ".foo{color:green}", SanitizedContent.ContentKind.CSS))
-                .stringValue())
-        .isEqualTo(".foo{color:green}");
-    assertThat(Sanitizers.filterNoAutoescape(StringData.forValue("<div>test</div>")))
-        .isEqualTo(StringData.forValue("<div>test</div>"));
-    assertThat(Sanitizers.filterNoAutoescape(NullData.INSTANCE)).isEqualTo(NullData.INSTANCE);
-    assertThat(Sanitizers.filterNoAutoescape(IntegerData.forValue(123)))
-        .isEqualTo(IntegerData.forValue(123));
-  }
-
-  @Test
-  public void testFilterNoAutoescapeStreamingNoContentKind() throws IOException {
-    BufferingAppendable buffer = LoggingAdvisingAppendable.buffering();
-    LoggingAdvisingAppendable escapingBuffer = Sanitizers.filterNoAutoescapeStreaming(buffer);
-    escapingBuffer.append("foo");
-    assertThat(buffer.getAndClearBuffer()).isEqualTo("foo");
-  }
-
-  @Test
-  public void testFilterNoAutoescapeStreamingHtml() throws IOException {
-    BufferingAppendable buffer = LoggingAdvisingAppendable.buffering();
-    LoggingAdvisingAppendable escapingBuffer = Sanitizers.filterNoAutoescapeStreaming(buffer);
-    escapingBuffer.setSanitizedContentKind(ContentKind.HTML);
-    escapingBuffer.append("foo");
-    assertThat(buffer.getAndClearBuffer()).isEqualTo("foo");
-  }
-
-  @Test
-  public void testFilterNoAutoescapeStreamingText() throws IOException {
-    BufferingAppendable buffer = LoggingAdvisingAppendable.buffering();
-    LoggingAdvisingAppendable escapingBuffer = Sanitizers.filterNoAutoescapeStreaming(buffer);
-    escapingBuffer.setSanitizedContentKind(ContentKind.TEXT);
-    assertThat(buffer.getAndClearBuffer()).isEqualTo("zSoyz");
-    escapingBuffer.append("foo");
-    assertThat(buffer.getAndClearBuffer()).isEmpty();
   }
 
   @Test

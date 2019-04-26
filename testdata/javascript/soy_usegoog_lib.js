@@ -205,6 +205,34 @@ goog.define = function(name, defaultValue) {
 
 
 /**
+ * @define {number} Integer year indicating the set of browser features that are
+ * guaranteed to be present.  This is defined to include exactly features that
+ * work correctly on all "modern" browsers that are stable on January 1 of the
+ * specified year.  For example,
+ * ```js
+ * if (goog.FEATURESET_YEAR >= 2019) {
+ *   // use APIs known to be available on all major stable browsers Jan 1, 2019
+ * } else {
+ *   // polyfill for older browsers
+ * }
+ * ```
+ * This is intended to be the primary define for removing
+ * unnecessary browser compatibility code (such as ponyfills and workarounds),
+ * and should inform the default value for most other defines:
+ * ```js
+ * const ASSUME_NATIVE_PROMISE =
+ *     goog.define('ASSUME_NATIVE_PROMISE', goog.FEATURESET_YEAR >= 2016);
+ * ```
+ *
+ * The default assumption is that IE9 is the lowest supported browser, which was
+ * first available Jan 1, 2012.
+ *
+ * TODO(user): Reference more thorough documentation when it's available.
+ */
+goog.FEATURESET_YEAR = goog.define('goog.FEATURESET_YEAR', 2012);
+
+
+/**
  * @define {boolean} DEBUG is provided as a convenience so that debugging code
  * that should not be included in a production. It can be easily stripped
  * by specifying --define goog.DEBUG=false to the Closure Compiler aka
@@ -640,16 +668,6 @@ goog.declareModuleId = function(namespace) {
     };
   }
 };
-
-
-/**
- * Deprecated old name for goog.declareModuleId. This function is being renamed
- * to help disambiguate with goog.module.declareLegacyNamespace.
- *
- * @type {function(string): undefined}
- * @suppress {missingProvide}
- */
-goog.module.declareNamespace = goog.declareModuleId;
 
 
 /**
@@ -4420,6 +4438,7 @@ goog.asserts.setErrorHandler = function(errorHandler) {
  * @param {...*} var_args The items to substitute into the failure message.
  * @return {T} The value of the condition.
  * @throws {goog.asserts.AssertionError} When the condition evaluates to false.
+ * @closurePrimitive {asserts.truthy}
  */
 goog.asserts.assert = function(condition, opt_message, var_args) {
   if (goog.asserts.ENABLE_ASSERTS && !condition) {
@@ -4447,6 +4466,7 @@ goog.asserts.assert = function(condition, opt_message, var_args) {
  * @param {string=} opt_message Error message in case of failure.
  * @param {...*} var_args The items to substitute into the failure message.
  * @throws {goog.asserts.AssertionError} Failure.
+ * @closurePrimitive {asserts.fail}
  */
 goog.asserts.fail = function(opt_message, var_args) {
   if (goog.asserts.ENABLE_ASSERTS) {
@@ -4465,6 +4485,7 @@ goog.asserts.fail = function(opt_message, var_args) {
  * @param {...*} var_args The items to substitute into the failure message.
  * @return {number} The value, guaranteed to be a number when asserts enabled.
  * @throws {goog.asserts.AssertionError} When the value is not a number.
+ * @closurePrimitive {asserts.matchesReturn}
  */
 goog.asserts.assertNumber = function(value, opt_message, var_args) {
   if (goog.asserts.ENABLE_ASSERTS && !goog.isNumber(value)) {
@@ -4483,6 +4504,7 @@ goog.asserts.assertNumber = function(value, opt_message, var_args) {
  * @param {...*} var_args The items to substitute into the failure message.
  * @return {string} The value, guaranteed to be a string when asserts enabled.
  * @throws {goog.asserts.AssertionError} When the value is not a string.
+ * @closurePrimitive {asserts.matchesReturn}
  */
 goog.asserts.assertString = function(value, opt_message, var_args) {
   if (goog.asserts.ENABLE_ASSERTS && !goog.isString(value)) {
@@ -4502,6 +4524,7 @@ goog.asserts.assertString = function(value, opt_message, var_args) {
  * @return {!Function} The value, guaranteed to be a function when asserts
  *     enabled.
  * @throws {goog.asserts.AssertionError} When the value is not a function.
+ * @closurePrimitive {asserts.matchesReturn}
  */
 goog.asserts.assertFunction = function(value, opt_message, var_args) {
   if (goog.asserts.ENABLE_ASSERTS && !goog.isFunction(value)) {
@@ -4520,6 +4543,7 @@ goog.asserts.assertFunction = function(value, opt_message, var_args) {
  * @param {...*} var_args The items to substitute into the failure message.
  * @return {!Object} The value, guaranteed to be a non-null object.
  * @throws {goog.asserts.AssertionError} When the value is not an object.
+ * @closurePrimitive {asserts.matchesReturn}
  */
 goog.asserts.assertObject = function(value, opt_message, var_args) {
   if (goog.asserts.ENABLE_ASSERTS && !goog.isObject(value)) {
@@ -4538,6 +4562,7 @@ goog.asserts.assertObject = function(value, opt_message, var_args) {
  * @param {...*} var_args The items to substitute into the failure message.
  * @return {!Array<?>} The value, guaranteed to be a non-null array.
  * @throws {goog.asserts.AssertionError} When the value is not an array.
+ * @closurePrimitive {asserts.matchesReturn}
  */
 goog.asserts.assertArray = function(value, opt_message, var_args) {
   if (goog.asserts.ENABLE_ASSERTS && !goog.isArray(value)) {
@@ -4557,6 +4582,7 @@ goog.asserts.assertArray = function(value, opt_message, var_args) {
  * @return {boolean} The value, guaranteed to be a boolean when asserts are
  *     enabled.
  * @throws {goog.asserts.AssertionError} When the value is not a boolean.
+ * @closurePrimitive {asserts.matchesReturn}
  */
 goog.asserts.assertBoolean = function(value, opt_message, var_args) {
   if (goog.asserts.ENABLE_ASSERTS && !goog.isBoolean(value)) {
@@ -4576,6 +4602,7 @@ goog.asserts.assertBoolean = function(value, opt_message, var_args) {
  * @return {!Element} The value, likely to be a DOM Element when asserts are
  *     enabled.
  * @throws {goog.asserts.AssertionError} When the value is not an Element.
+ * @closurePrimitive {asserts.matchesReturn}
  */
 goog.asserts.assertElement = function(value, opt_message, var_args) {
   if (goog.asserts.ENABLE_ASSERTS &&
@@ -4602,6 +4629,7 @@ goog.asserts.assertElement = function(value, opt_message, var_args) {
  *     type.
  * @return {T}
  * @template T
+ * @closurePrimitive {asserts.matchesReturn}
  */
 goog.asserts.assertInstanceof = function(value, type, opt_message, var_args) {
   if (goog.asserts.ENABLE_ASSERTS && !(value instanceof type)) {
@@ -9795,6 +9823,10 @@ goog.labs.userAgent.platform.getVersion = function() {
     // Note: some old versions of Camino do not report an OSX version.
     // Default to 10.
     version = match ? match[1].replace(/_/g, '.') : '10';
+  } else if (goog.labs.userAgent.platform.isKaiOS()) {
+    re = /(?:KaiOS)\/(\S+)/i;
+    var match = re.exec(userAgentString);
+    version = match && match[1];
   } else if (goog.labs.userAgent.platform.isAndroid()) {
     re = /Android\s+([^\);]+)(\)|;)/;
     var match = re.exec(userAgentString);
@@ -16217,6 +16249,17 @@ goog.html.SAFE_MIME_TYPE_PATTERN_ = new RegExp(
         'text/csv|' +
         'video/(?:mpeg|mp4|ogg|webm|quicktime))$',
     'i');
+
+
+/**
+ * @param {string} mimeType The MIME type to check if safe.
+ * @return {boolean} True if the MIME type is safe and creating a Blob via
+ *   `SafeUrl.fromBlob()` with that type will not fail due to the type. False
+ *   otherwise.
+ */
+goog.html.SafeUrl.isSafeMimeType = function(mimeType) {
+  return goog.html.SAFE_MIME_TYPE_PATTERN_.test(mimeType);
+};
 
 
 /**
@@ -24897,17 +24940,16 @@ goog.soy.data.SanitizedContent.prototype.toSafeUrl = function() {
  * sometimes used to mark that should never be used unescaped.
  *
  * @param {*} content Plain text with no guarantees.
- * @param {?goog.i18n.bidi.Dir=} opt_contentDir The content direction; null if
- *     unknown and thus to be estimated when necessary. Default: null.
+ * @param {?goog.i18n.bidi.Dir=} contentDir ignored
  * @extends {goog.soy.data.SanitizedContent}
  * @constructor
  */
-goog.soy.data.UnsanitizedText = function(content, opt_contentDir) {
+goog.soy.data.UnsanitizedText = function(content, contentDir) {
   // Not calling the superclass constructor which just throws an exception.
 
   /** @override */
   this.content = String(content);
-  this.contentDir = opt_contentDir != null ? opt_contentDir : null;
+  this.contentDir = null;
 };
 goog.inherits(goog.soy.data.UnsanitizedText, goog.soy.data.SanitizedContent);
 
@@ -25872,20 +25914,14 @@ soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_ = function(ctor) {
 
 
 /**
- * Protects a string from being used in an noAutoescaped context.
+ * Marks content as UnsanitizedText. This serves no purpose anymore.
  *
- * This is useful for content where there is significant risk of accidental
- * unescaped usage in a Soy template. A great case is for user-controlled
- * data that has historically been a source of vulernabilities.
- *
- * @param {?} content Text to protect.
- * @param {?goog.i18n.bidi.Dir=} opt_contentDir The content direction; null if
- *     unknown and thus to be estimated when necessary. Default: null.
- * @return {!goog.soy.data.UnsanitizedText} A wrapper that is rejected by the
- *     Soy noAutoescape print directive.
+ * @param {?} content Text.
+ * @param {?goog.i18n.bidi.Dir=} contentDir ignored
+ * @return {!goog.soy.data.UnsanitizedText}
  */
-soydata.markUnsanitizedText = function(content, opt_contentDir) {
-  return new goog.soy.data.UnsanitizedText(content, opt_contentDir);
+soydata.markUnsanitizedText = function(content, contentDir) {
+  return new goog.soy.data.UnsanitizedText(content);
 };
 
 
@@ -26432,18 +26468,15 @@ soydata.$$makeSanitizedContentFactoryWithDefaultDirOnlyForInternalBlocks_ =
  * Creates kind="text" block contents (internal use only).
  *
  * @param {?} content Text.
- * @param {?goog.i18n.bidi.Dir=} opt_contentDir The content direction; null if
- *     unknown and thus to be estimated when necessary. Default: null.
  * @return {!goog.soy.data.UnsanitizedText|!soydata.$$EMPTY_STRING_} Wrapped
  *     result.
  */
-soydata.$$markUnsanitizedTextForInternalBlocks = function(
-    content, opt_contentDir) {
+soydata.$$markUnsanitizedTextForInternalBlocks = function(content) {
   var contentString = String(content);
   if (!contentString) {
     return soydata.$$EMPTY_STRING_.VALUE;
   }
-  return new goog.soy.data.UnsanitizedText(contentString, opt_contentDir);
+  return new goog.soy.data.UnsanitizedText(contentString);
 };
 
 
@@ -27266,29 +27299,6 @@ soy.$$filterCssValue = function(value) {
 };
 
 
-/**
- * Sanity-checks noAutoescape input for explicitly tainted content.
- *
- * SanitizedContentKind.TEXT is used to explicitly mark input that was never
- * meant to be used unescaped.
- *
- * @param {?} value The value to filter.
- * @return {?} The value, that we dearly hope will not cause an attack.
- */
-soy.$$filterNoAutoescape = function(value) {
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.TEXT)) {
-    // Fail in development mode.
-    goog.asserts.fail(
-        'Tainted SanitizedContentKind.TEXT for |noAutoescape: `%s`',
-        [value.getContent()]);
-    // Return innocuous data in production.
-    return 'zSoyz';
-  }
-
-  return value;
-};
-
-
 // -----------------------------------------------------------------------------
 // Basic directives/functions.
 
@@ -27603,12 +27613,7 @@ soy.$$bidiSpanWrap = function(bidiGlobalDir, text) {
   // explicit and automatic HTML escaping, if any, is done before calling
   // |bidiSpanWrap because the BidiSpanWrapDirective Java class implements
   // SanitizedContentOperator, but this does not mean that the input has to be
-  // HTML SanitizedContent. In legacy usage, a string that is not
-  // SanitizedContent is often printed in an autoescape="false" template or by
-  // a print with a |noAutoescape, in which case our input is just SoyData.) If
-  // the output will be treated as HTML, the input had better be safe
-  // HTML/HTML-escaped (even if it isn't HTML SanitizedData), or we have an XSS
-  // opportunity and a much bigger problem than bidi garbling.
+  // HTML SanitizedContent.
   var html = goog.html.uncheckedconversions.
       safeHtmlFromStringKnownToSatisfyTypeContract(
           goog.string.Const.from(
@@ -27644,12 +27649,7 @@ soy.$$bidiSpanWrap = function(bidiGlobalDir, text) {
 soy.$$bidiUnicodeWrap = function(bidiGlobalDir, text) {
   var formatter = soy.$$getBidiFormatterInstance_(bidiGlobalDir);
 
-  // We treat the value as HTML if and only if it says it's HTML, even though in
-  // legacy usage, we sometimes have an HTML string (not SanitizedContent) that
-  // is passed to an autoescape="false" template or a {print $foo|noAutoescape},
-  // with the output going into an HTML context without escaping. We simply have
-  // no way of knowing if this is what is happening when we get
-  // non-SanitizedContent input, and most of the time it isn't.
+  // We treat the value as HTML if and only if it says it's HTML.
   var isHtml =
       soydata.isContentKind_(text, goog.soy.data.SanitizedContentKind.HTML);
   var wrappedText = formatter.unicodeWrapWithKnownDir(
@@ -27666,7 +27666,7 @@ soy.$$bidiUnicodeWrap = function(bidiGlobalDir, text) {
   // string data.
   // ATTENTION: Do these need to be ...ForInternalBlocks()?
   if (soydata.isContentKind_(text, goog.soy.data.SanitizedContentKind.TEXT)) {
-    return new goog.soy.data.UnsanitizedText(wrappedText, wrappedTextDir);
+    return soydata.markUnsanitizedText(wrappedText);
   }
   if (isHtml) {
     return soydata.VERY_UNSAFE.ordainSanitizedHtml(wrappedText, wrappedTextDir);

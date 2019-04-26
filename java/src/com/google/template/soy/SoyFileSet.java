@@ -396,18 +396,6 @@ public final class SoyFileSet {
     }
 
     /**
-     * Sets whether to force strict autoescaping. Enabling will cause compile time exceptions if
-     * non-strict autoescaping is used in namespaces or templates.
-     *
-     * @param strictAutoescapingRequired Whether strict autoescaping is required.
-     * @return This builder.
-     */
-    public Builder setStrictAutoescapingRequired(boolean strictAutoescapingRequired) {
-      getGeneralOptions().setStrictAutoescapingRequired(strictAutoescapingRequired);
-      return this;
-    }
-
-    /**
      * Sets the map from compile-time global name to value.
      *
      * <p>The values can be any of the Soy primitive types: null, boolean, integer, float (Java
@@ -658,6 +646,14 @@ public final class SoyFileSet {
     // pass.
     parse(
         passManagerBuilder()
+            // We have to set disableAllTypeChecking to make sure default parameter types don't
+            // break calculating TemplateMetadata objects.  This is because SoyConformancePass runs
+            // before ResolveExpressionTypesPass which normally populates the parameter types for
+            // default params.  With disableAllTypeChecking set an earlier pass will just set those
+            // types to unknown
+            // TODO(lukes):  change the pass continuation mechanism to avoid generating a template
+            // registry if we halt prior to cross template passes.
+            .disableAllTypeChecking()
             .addPassContinuationRule(
                 SoyConformancePass.class, PassContinuationRule.STOP_AFTER_PASS));
     throwIfErrorsPresent();
@@ -886,18 +882,6 @@ public final class SoyFileSet {
     // otherwise, it was already explicitly set to false which is what we want.
   }
 
-  private void requireStrictAutoescaping() {
-    TriState strictAutoescapingRequired = generalOptions.isStrictAutoescapingRequired();
-    if (strictAutoescapingRequired == TriState.UNSET) {
-      generalOptions.setStrictAutoescapingRequired(true);
-    } else if (strictAutoescapingRequired == TriState.DISABLED) {
-      throw new IllegalStateException(
-          "SoyGeneralOptions.isStrictAutoescapingRequired(false) is not supported with this"
-              + " method");
-    }
-    // otherwise, it was already explicitly set to true which is what we want.
-  }
-
   /**
    * Compiles this Soy file set into JS source code files and returns these JS files as a list of
    * strings, one per file.
@@ -943,7 +927,6 @@ public final class SoyFileSet {
    */
   public List<String> compileToIncrementalDomSrc(SoyIncrementalDomSrcOptions jsSrcOptions) {
     resetErrorReporter();
-    requireStrictAutoescaping();
     // For incremental dom backend, we don't desugar HTML nodes since it requires HTML context.
     ParseResult result = parse(passManagerBuilder().desugarHtmlNodes(false));
     throwIfErrorsPresent();
@@ -968,7 +951,6 @@ public final class SoyFileSet {
   void compileToPySrcFiles(String outputPathFormat, SoyPySrcOptions pySrcOptions)
       throws IOException {
     resetErrorReporter();
-    requireStrictAutoescaping();
     ParseResult result = parse();
     throwIfErrorsPresent();
     new PySrcMain(scopedData.enterable())

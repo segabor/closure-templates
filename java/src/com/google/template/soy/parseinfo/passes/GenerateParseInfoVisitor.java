@@ -406,11 +406,14 @@ public final class GenerateParseInfoVisitor
     }
     ilb.appendLine("import com.google.template.soy.parseinfo.SoyFileInfo;");
     ilb.appendLine("import com.google.template.soy.parseinfo.SoyTemplateInfo;");
+    ilb.appendLine("import javax.annotation.Generated;");
 
     // ------ Class start. ------
     ilb.appendLine();
     ilb.appendLine();
     appendJavadoc(ilb, "Soy parse info for " + node.getFileName() + ".", true, false);
+
+    ilb.appendLine("@Generated(\"com.google.template.soy.SoyParseInfoGenerator\")");
     ilb.appendLine("public final class ", javaClassName, " extends SoyFileInfo {");
     ilb.increaseIndent();
 
@@ -684,12 +687,11 @@ public final class GenerateParseInfoVisitor
         }
       }
       appendImmutableMap(ilb, "<String, ParamRequisiteness>", entrySnippetPairs.build());
-      ilb.appendLineEnd(",");
+      ilb.appendLineEnd(");");
     } else {
-      ilb.appendLine("ImmutableMap.<String, ParamRequisiteness>of(),");
+      ilb.appendLine("ImmutableMap.<String, ParamRequisiteness>of());");
     }
 
-    ilb.appendLine("\"", node.getAutoescapeMode().getAttributeValue(), "\");");
     ilb.decreaseIndent(2);
 
     ilb.decreaseIndent();

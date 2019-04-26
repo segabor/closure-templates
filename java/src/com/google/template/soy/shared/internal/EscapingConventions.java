@@ -228,7 +228,7 @@ public final class EscapingConventions {
      * @return {@code null} if there is no such function.
      */
     public List<String> getLangFunctionNames(EscapingLanguage language) {
-      return ImmutableList.<String>of();
+      return ImmutableList.of();
     }
 
     /** Returns an innocuous string in this context that can be used when filtering. */
@@ -492,7 +492,7 @@ public final class EscapingConventions {
     @Override
     public List<String> getLangFunctionNames(EscapingLanguage language) {
       if (language == EscapingLanguage.JAVASCRIPT) {
-        return ImmutableList.<String>of("goog.string.htmlEscape");
+        return ImmutableList.of("goog.string.htmlEscape");
       }
       return super.getLangFunctionNames(language);
     }
@@ -827,7 +827,7 @@ public final class EscapingConventions {
 
     @Override
     protected ImmutableList<Escape> defineEscapes() {
-      return ImmutableList.<Escape>of();
+      return ImmutableList.of();
     }
   }
 
@@ -909,7 +909,7 @@ public final class EscapingConventions {
       // Disallows any protocol that is not in a whitelist.
       // The below passes if there is
       // (1) Either a protocol in a whitelist (http, https, mailto).  This could be expanded but
-      //     talk to your friendly local ise-team@ first.
+      //     talk to your friendly local go/ise-team-yaqs first.
       // (2) or no protocol.  A protocol must be followed by a colon.  The below allows that by
       //     allowing colons only after one of the characters [/?#].
       //     A colon after a hash (#) must be in the fragment.
@@ -1033,7 +1033,7 @@ public final class EscapingConventions {
     protected ImmutableList<Escape> defineEscapes() {
       // No normalization or escaping necessary -- the filter is limited to a strict subset that
       // doesn't involve html stop-chars.
-      return ImmutableList.<Escape>of();
+      return ImmutableList.of();
     }
 
     @Override
@@ -1065,7 +1065,7 @@ public final class EscapingConventions {
 
     @Override
     protected ImmutableList<Escape> defineEscapes() {
-      return ImmutableList.<Escape>of();
+      return ImmutableList.of();
     }
 
     @Override
@@ -1098,7 +1098,7 @@ public final class EscapingConventions {
 
     @Override
     protected ImmutableList<Escape> defineEscapes() {
-      return ImmutableList.<Escape>of();
+      return ImmutableList.of();
     }
 
     @Override
@@ -1128,7 +1128,7 @@ public final class EscapingConventions {
 
     @Override
     protected ImmutableList<Escape> defineEscapes() {
-      return ImmutableList.<Escape>of();
+      return ImmutableList.of();
     }
 
     @Override
@@ -1178,9 +1178,9 @@ public final class EscapingConventions {
     @Override
     public List<String> getLangFunctionNames(EscapingLanguage language) {
       if (language == EscapingLanguage.JAVASCRIPT) {
-        return ImmutableList.<String>of("goog.string.urlEncode", "encodeURIComponent");
+        return ImmutableList.of("goog.string.urlEncode", "encodeURIComponent");
       } else if (language == EscapingLanguage.PYTHON) {
-        return ImmutableList.<String>of("quote");
+        return ImmutableList.of("quote");
       }
       return super.getLangFunctionNames(language);
     }
@@ -1214,7 +1214,7 @@ public final class EscapingConventions {
 
     @Override
     protected ImmutableList<Escape> defineEscapes() {
-      return ImmutableList.<Escape>of();
+      return ImmutableList.of();
     }
   }
 
@@ -1239,7 +1239,7 @@ public final class EscapingConventions {
 
     @Override
     protected ImmutableList<Escape> defineEscapes() {
-      return ImmutableList.<Escape>of();
+      return ImmutableList.of();
     }
   }
 

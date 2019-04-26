@@ -69,7 +69,7 @@ public final class SanitizedContents {
   /** Creates an empty string constant. */
   public static SanitizedContent emptyString(ContentKind kind) {
     if (kind == ContentKind.TEXT) {
-      return UnsanitizedString.create("", Dir.NEUTRAL);
+      return UnsanitizedString.create("");
     }
     return SanitizedContent.create("", kind, Dir.NEUTRAL); // Empty string is neutral.
   }
@@ -78,9 +78,12 @@ public final class SanitizedContents {
    * Creates a SanitizedContent object of kind TEXT of a given direction (null if unknown).
    *
    * <p>This is useful when stubbing out a function that needs to create a SanitizedContent object.
+   *
+   * @deprecated Call {@link #unsanitizedText(String)} instead
    */
+  @Deprecated
   public static UnsanitizedString unsanitizedText(String text, @Nullable Dir dir) {
-    return UnsanitizedString.create(text, dir);
+    return UnsanitizedString.create(text);
   }
 
   /**
@@ -89,7 +92,7 @@ public final class SanitizedContents {
    * <p>This is useful when stubbing out a function that needs to create a SanitizedContent object.
    */
   public static UnsanitizedString unsanitizedText(String text) {
-    return unsanitizedText(text, null);
+    return UnsanitizedString.create(text);
   }
 
   /**
@@ -209,11 +212,32 @@ public final class SanitizedContents {
   /**
    * Wraps an assumed-safe CSS constant.
    *
-   * <p>This only accepts compile-time constants, based on the assumption that URLs that are
+   * <p>This only accepts compile-time constants, based on the assumption that CSSes that are
    * controlled by the application (and not user input) are considered safe.
    */
   public static SanitizedContent constantCss(@CompileTimeConstant final String constant) {
     return fromConstant(constant, ContentKind.CSS, Dir.LTR);
+  }
+
+  /**
+   * Wraps an assumed-safe JS constant.
+   *
+   * <p>This only accepts compile-time constants, based on the assumption that scripts that are
+   * controlled by the application (and not user input) are considered safe.
+   */
+  public static SanitizedContent constantJs(@CompileTimeConstant final String constant) {
+    return fromConstant(constant, ContentKind.JS, Dir.LTR);
+  }
+
+  /**
+   * Wraps an assumed-safe trusted_resource_uri constant.
+   *
+   * <p>This only accepts compile-time constants, based on the assumption that trusted resource URIs
+   * that are controlled by the application (and not user input) are considered safe.
+   */
+  public static SanitizedContent constantTrustedResourceUri(
+      @CompileTimeConstant final String constant) {
+    return fromConstant(constant, ContentKind.TRUSTED_RESOURCE_URI, Dir.LTR);
   }
 
   /**

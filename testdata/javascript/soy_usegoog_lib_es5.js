@@ -174,7 +174,10 @@ $jscomp.polyfill("WeakMap", function(NativeWeakMap) {
   function WeakMapMembership() {
   }
   function insert(target) {
-    $jscomp.owns(target, prop) || $jscomp.defineProperty(target, prop, {value:new WeakMapMembership});
+    if (!$jscomp.owns(target, prop)) {
+      var obj = new WeakMapMembership;
+      $jscomp.defineProperty(target, prop, {value:obj});
+    }
   }
   function patch(name) {
     var prev = Object[name];
@@ -383,6 +386,7 @@ goog.define = function(name, defaultValue) {
   goog.exportPath_(name, defaultValue);
   return defaultValue;
 };
+goog.FEATURESET_YEAR = 2012;
 goog.DEBUG = !1;
 goog.LOCALE = "en";
 goog.TRUSTED_SITE = !0;
@@ -466,7 +470,6 @@ goog.declareModuleId = function(namespace) {
     goog.loadedModules_[namespace] = {exports:exports, type:goog.ModuleType.ES6, moduleId:namespace};
   }
 };
-goog.module.declareNamespace = goog.declareModuleId;
 goog.setTestOnly = function(opt_message) {
   if (goog.DISALLOW_TEST_ONLY_CODE) {
     throw opt_message = opt_message || "", Error("Importing test-only code into non-debug environment" + (opt_message ? ": " + opt_message : "."));
@@ -2359,8 +2362,8 @@ goog.labs.userAgent.platform.getVersion = function() {
     var match = re.exec(userAgentString);
     version = match ? match[1] : "0.0";
   } else {
-    goog.labs.userAgent.platform.isIos() ? (re = /(?:iPhone|iPod|iPad|CPU)\s+OS\s+(\S+)/, version = (match = re.exec(userAgentString)) && match[1].replace(/_/g, ".")) : goog.labs.userAgent.platform.isMacintosh() ? (re = /Mac OS X ([0-9_.]+)/, version = (match = re.exec(userAgentString)) ? match[1].replace(/_/g, ".") : "10") : goog.labs.userAgent.platform.isAndroid() ? (re = /Android\s+([^\);]+)(\)|;)/, version = (match = re.exec(userAgentString)) && match[1]) : goog.labs.userAgent.platform.isChromeOS() && 
-    (re = /(?:CrOS\s+(?:i686|x86_64)\s+([0-9.]+))/, version = (match = re.exec(userAgentString)) && match[1]);
+    goog.labs.userAgent.platform.isIos() ? (re = /(?:iPhone|iPod|iPad|CPU)\s+OS\s+(\S+)/, version = (match = re.exec(userAgentString)) && match[1].replace(/_/g, ".")) : goog.labs.userAgent.platform.isMacintosh() ? (re = /Mac OS X ([0-9_.]+)/, version = (match = re.exec(userAgentString)) ? match[1].replace(/_/g, ".") : "10") : goog.labs.userAgent.platform.isKaiOS() ? (re = /(?:KaiOS)\/(\S+)/i, version = (match = re.exec(userAgentString)) && match[1]) : goog.labs.userAgent.platform.isAndroid() ? (re = 
+    /Android\s+([^\);]+)(\)|;)/, version = (match = re.exec(userAgentString)) && match[1]) : goog.labs.userAgent.platform.isChromeOS() && (re = /(?:CrOS\s+(?:i686|x86_64)\s+([0-9.]+))/, version = (match = re.exec(userAgentString)) && match[1]);
   }
   return version || "";
 };
@@ -3648,6 +3651,9 @@ goog.html.SafeUrl.fromConstant = function(url) {
   return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(goog.string.Const.unwrap(url));
 };
 goog.html.SAFE_MIME_TYPE_PATTERN_ = /^(?:audio\/(?:3gpp2|3gpp|aac|L16|midi|mp3|mp4|mpeg|oga|ogg|opus|x-m4a|x-wav|wav|webm)|image\/(?:bmp|gif|jpeg|jpg|png|tiff|webp|x-icon)|text\/csv|video\/(?:mpeg|mp4|ogg|webm|quicktime))$/i;
+goog.html.SafeUrl.isSafeMimeType = function(mimeType) {
+  return goog.html.SAFE_MIME_TYPE_PATTERN_.test(mimeType);
+};
 goog.html.SafeUrl.fromBlob = function(blob) {
   var url = goog.html.SAFE_MIME_TYPE_PATTERN_.test(blob.type) ? goog.fs.url.createObjectUrl(blob) : goog.html.SafeUrl.INNOCUOUS_STRING;
   return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(url);
@@ -5764,9 +5770,9 @@ goog.soy.data.SanitizedContent.prototype.contentDir = null;
 goog.soy.data.SanitizedContent.prototype.toString = function() {
   return this.content;
 };
-goog.soy.data.UnsanitizedText = function(content, opt_contentDir) {
+goog.soy.data.UnsanitizedText = function(content) {
   this.content = String(content);
-  this.contentDir = null != opt_contentDir ? opt_contentDir : null;
+  this.contentDir = null;
 };
 goog.inherits(goog.soy.data.UnsanitizedText, goog.soy.data.SanitizedContent);
 goog.soy.data.UnsanitizedText.prototype.contentKind = goog.soy.data.SanitizedContentKind.TEXT;
@@ -5968,8 +5974,8 @@ soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_ = function(ctor) {
     return new InstantiableCtor(String(content));
   };
 };
-soydata.markUnsanitizedText = function(content, opt_contentDir) {
-  return new goog.soy.data.UnsanitizedText(content, opt_contentDir);
+soydata.markUnsanitizedText = function(content) {
+  return new goog.soy.data.UnsanitizedText(content);
 };
 soydata.VERY_UNSAFE.ordainSanitizedHtml = soydata.$$makeSanitizedContentFactory_(goog.soy.data.SanitizedHtml);
 soydata.VERY_UNSAFE.ordainSanitizedJs = soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_(goog.soy.data.SanitizedJs);
@@ -6080,9 +6086,9 @@ soydata.$$makeSanitizedContentFactoryWithDefaultDirOnlyForInternalBlocks_ = func
     return contentString ? new InstantiableCtor(contentString) : soydata.$$EMPTY_STRING_.VALUE;
   };
 };
-soydata.$$markUnsanitizedTextForInternalBlocks = function(content, opt_contentDir) {
+soydata.$$markUnsanitizedTextForInternalBlocks = function(content) {
   var contentString = String(content);
-  return contentString ? new goog.soy.data.UnsanitizedText(contentString, opt_contentDir) : soydata.$$EMPTY_STRING_.VALUE;
+  return contentString ? new goog.soy.data.UnsanitizedText(contentString) : soydata.$$EMPTY_STRING_.VALUE;
 };
 soydata.VERY_UNSAFE.$$ordainSanitizedHtmlForInternalBlocks = soydata.$$makeSanitizedContentFactoryForInternalBlocks_(goog.soy.data.SanitizedHtml);
 soydata.VERY_UNSAFE.$$ordainSanitizedJsForInternalBlocks = soydata.$$makeSanitizedContentFactoryWithDefaultDirOnlyForInternalBlocks_(goog.soy.data.SanitizedJs);
@@ -6290,9 +6296,6 @@ soy.$$escapeCssString = function(value) {
 soy.$$filterCssValue = function(value) {
   return soy.checks.isCss(value) ? soy.$$embedCssIntoHtml_(value.content) : null == value ? "" : value instanceof goog.html.SafeStyle ? soy.$$embedCssIntoHtml_(goog.html.SafeStyle.unwrap(value)) : value instanceof goog.html.SafeStyleSheet ? soy.$$embedCssIntoHtml_(goog.html.SafeStyleSheet.unwrap(value)) : soy.esc.$$filterCssValueHelper(value);
 };
-soy.$$filterNoAutoescape = function(value) {
-  return soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.TEXT) ? (goog.asserts.fail("Tainted SanitizedContentKind.TEXT for |noAutoescape: `%s`", [value.content]), "zSoyz") : value;
-};
 soy.$$changeNewlineToBr = function(value) {
   var result = goog.string.newLineToBr(String(value), !1);
   return soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.HTML) ? soydata.VERY_UNSAFE.ordainSanitizedHtml(result, soydata.getContentDir(value)) : result;
@@ -6372,7 +6375,7 @@ soy.$$bidiSpanWrap = function(bidiGlobalDir, text) {
 };
 soy.$$bidiUnicodeWrap = function(bidiGlobalDir, text) {
   var formatter = soy.$$getBidiFormatterInstance_(bidiGlobalDir), isHtml = soydata.isContentKind_(text, goog.soy.data.SanitizedContentKind.HTML), wrappedText = formatter.unicodeWrapWithKnownDir(soydata.getContentDir(text), text + "", isHtml), wrappedTextDir = formatter.contextDir_;
-  return soydata.isContentKind_(text, goog.soy.data.SanitizedContentKind.TEXT) ? new goog.soy.data.UnsanitizedText(wrappedText, wrappedTextDir) : isHtml ? soydata.VERY_UNSAFE.ordainSanitizedHtml(wrappedText, wrappedTextDir) : wrappedText;
+  return soydata.isContentKind_(text, goog.soy.data.SanitizedContentKind.TEXT) ? soydata.markUnsanitizedText(wrappedText) : isHtml ? soydata.VERY_UNSAFE.ordainSanitizedHtml(wrappedText, wrappedTextDir) : wrappedText;
 };
 soy.asserts.assertType = function(condition, paramName, param, jsDocTypeStr) {
   if (goog.asserts.ENABLE_ASSERTS && !condition) {

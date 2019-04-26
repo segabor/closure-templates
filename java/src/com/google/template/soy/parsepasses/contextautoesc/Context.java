@@ -75,6 +75,7 @@ public final class Context {
           "alternate",
           "amphtml",
           "apple-touch-icon",
+          "apple-touch-icon-precomposed",
           "apple-touch-startup-image",
           "author",
           "bookmark",
@@ -273,10 +274,6 @@ public final class Context {
       if (uriType == UriType.TRUSTED_RESOURCE) {
         return derive(UriPart.AUTHORITY_OR_PATH);
       }
-      // TODO(gboyer): When we start enforcing strict URI syntax, make it an error to call this if
-      // we're already in MAYBE*_SCHEME, because it is possible in a non-strict contextual template
-      // that someone would use noAutoescape to try and get around the requirement of no print
-      // statements in MAYBE*_SCHEME.
       return derive(UriPart.MAYBE_VARIABLE_SCHEME);
     }
     return this;
@@ -563,7 +560,7 @@ public final class Context {
         // In normal HTML PCDATA context, it makes sense to escape all of the print nodes, but not
         // escape the entire message.  This allows Soy to support putting anchors and other small
         // bits of HTML in messages.
-        return Optional.of(new MsgEscapingStrategy(this, ImmutableList.<EscapingMode>of()));
+        return Optional.of(new MsgEscapingStrategy(this, ImmutableList.of()));
 
       case CSS_DQ_STRING:
       case CSS_SQ_STRING:
@@ -573,14 +570,13 @@ public final class Context {
       case URI:
         if (state == HtmlContext.URI && uriPart != UriPart.QUERY) {
           // NOTE: Only support the query portion of URIs.
-          return Optional.<MsgEscapingStrategy>absent();
+          return Optional.absent();
         }
         // In other contexts like JS and CSS strings, it makes sense to treat the message's
         // placeholders as plain text, but escape the entire result of message evaluation.
         return Optional.of(
             new MsgEscapingStrategy(
-                new Context(HtmlContext.TEXT),
-                getEscapingModes(node, ImmutableList.<PrintDirectiveNode>of())));
+                new Context(HtmlContext.TEXT), getEscapingModes(node, ImmutableList.of())));
 
       case HTML_RCDATA:
       case HTML_NORMAL_ATTR_VALUE:
@@ -597,7 +593,7 @@ public final class Context {
       default:
         // Other contexts, primarily source code contexts, don't have a meaningful way to support
         // natural language text.
-        return Optional.<MsgEscapingStrategy>absent();
+        return Optional.absent();
     }
   }
 
@@ -860,7 +856,7 @@ public final class Context {
       }
     }
 
-    return a.equals(b) ? Optional.of(a) : Optional.<Context>absent();
+    return a.equals(b) ? Optional.of(a) : Optional.absent();
   }
 
   static Optional<Context> union(Iterable<Context> contexts) {
@@ -1218,11 +1214,16 @@ public final class Context {
           elType = ElementType.BASE;
           break;
         case "link":
-          String rel = getStaticAttributeValue(node, "rel");
-          elType =
-              rel != null && REGULAR_LINK_PATTERN.matcher(rel).matches()
-                  ? ElementType.NORMAL
-                  : ElementType.LINK_EXECUTABLE;
+          if (node.getDirectAttributeNamed("rel") == null
+              && node.getDirectAttributeNamed("itemprop") != null) {
+            elType = ElementType.NORMAL;
+          } else {
+            String rel = getStaticAttributeValue(node, "rel");
+            elType =
+                rel != null && REGULAR_LINK_PATTERN.matcher(rel).matches()
+                    ? ElementType.NORMAL
+                    : ElementType.LINK_EXECUTABLE;
+          }
           break;
         case "meta":
           String httpEquiv = getStaticAttributeValue(node, "http-equiv");

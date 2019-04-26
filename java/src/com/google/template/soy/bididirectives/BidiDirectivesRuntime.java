@@ -25,6 +25,7 @@ import com.google.template.soy.data.LoggingAdvisingAppendable;
 import com.google.template.soy.data.LoggingFunctionInvocation;
 import com.google.template.soy.data.SanitizedContent;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
+import com.google.template.soy.data.SanitizedContents;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.UnsafeSanitizedContentOrdainer;
 import com.google.template.soy.data.restricted.NullData;
@@ -52,17 +53,15 @@ public final class BidiDirectivesRuntime {
     }
     BidiFormatter bidiFormatter = BidiFormatter.getInstance(dir.toDir());
 
-    // We treat the value as HTML if and only if it says it's HTML, even though in legacy usage, we
-    // sometimes have an HTML string (not SanitizedContent) that is passed to an autoescape="false"
-    // template or a {print $foo |noAutoescape}, with the output going into an HTML context without
-    // escaping. We simply have no way of knowing if this is what is happening when we get
-    // non-SanitizedContent input, and most of the time it isn't.
+    // We treat the value as HTML if and only if it says it's HTML.
     boolean isHtml = valueKind == ContentKind.HTML;
     String wrappedValue = bidiFormatter.unicodeWrap(valueDir, value.coerceToString(), isHtml);
 
     // Unicode-wrapping UnsanitizedText gives UnsanitizedText.
     // Unicode-wrapping safe HTML.
-    if (valueKind == ContentKind.TEXT || valueKind == ContentKind.HTML) {
+    if (valueKind == ContentKind.TEXT) {
+      return SanitizedContents.unsanitizedText(wrappedValue);
+    } else if (valueKind == ContentKind.HTML) {
       // Bidi-wrapping a value converts it to the context directionality. Since it does not cost us
       // anything, we will indicate this known direction in the output SanitizedContent, even though
       // the intended consumer of that information - a bidi wrapping directive - has already been
@@ -98,11 +97,7 @@ public final class BidiDirectivesRuntime {
     // be treated as HTML (without escaping), and because |bidiSpanWrap is not itself specified to
     // do HTML escaping in Soy. (Both explicit and automatic HTML escaping, if any, is done before
     // calling |bidiSpanWrap because BidiSpanWrapDirective implements SanitizedContentOperator,
-    // but this does not mean that the input has to be HTML SanitizedContent. In legacy usage, a
-    // string that is not SanitizedContent is often printed in an autoescape="false" template or by
-    // a print with a |noAutoescape, in which case our input is just SoyData.) If the output will be
-    // treated as HTML, the input had better be safe HTML/HTML-escaped (even if it isn't HTML
-    // SanitizedData), or we have an XSS opportunity and a much bigger problem than bidi garbling.
+    // but this does not mean that the input has to be HTML SanitizedContent.
     String wrappedValue =
         bidiFormatter.spanWrap(valueDir, value.coerceToString(), /* isHtml= */ true);
 

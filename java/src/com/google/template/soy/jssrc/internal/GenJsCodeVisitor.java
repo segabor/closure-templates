@@ -16,6 +16,7 @@
 
 package com.google.template.soy.jssrc.internal;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.template.soy.jssrc.dsl.Expression.EMPTY_OBJECT_LITERAL;
 import static com.google.template.soy.jssrc.dsl.Expression.dottedIdNoRequire;
@@ -176,6 +177,8 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
   protected ErrorReporter errorReporter;
   protected TranslationContext templateTranslationContext;
 
+  protected List<Statement> staticVarDeclarations;
+
   /**
    * Used for looking up the local name for a given template call to a fully qualified template
    * name. This is created on a per {@link SoyFileNode} basis.
@@ -328,10 +331,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     return doVisitReturningCodeChunk(node, true);
   }
 
-  /**
-   * Do not use directly; use {@link #visitChildrenReturningCodeChunk} or {@link
-   * #visitNodeReturningCodeChunk} instead.
-   */
+  /** Do not use directly; use {@link #visitChildrenReturningCodeChunk} instead. */
   private Statement doVisitReturningCodeChunk(SoyNode node, boolean visitChildren) {
     // Replace jsCodeBuilder with a child JsCodeBuilder.
     JsCodeBuilder original = jsCodeBuilder;
@@ -451,7 +451,11 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     // Add code for each template.
     for (TemplateNode template : node.getChildren()) {
       jsCodeBuilder.appendLine().appendLine();
+      staticVarDeclarations = new ArrayList<>();
       visit(template);
+      if (!staticVarDeclarations.isEmpty()) {
+        jsCodeBuilder.append(Statement.of(staticVarDeclarations));
+      }
     }
     jsCodeBuilder.appendGoogRequiresTo(file);
     jsCodeBuilder.appendCodeTo(file);
@@ -691,14 +695,14 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     assistantForMsgs = null;
 
     JsDoc jsDoc = generateFunctionJsDoc(node, alias);
-    Expression function = Expression.function(jsDoc, generateFunctionBody(node));
+    Expression function = Expression.function(jsDoc, generateFunctionBody(node, alias));
     ImmutableList.Builder<Statement> declarations = ImmutableList.builder();
 
     if (jsSrcOptions.shouldGenerateGoogModules()) {
       declarations.add(VariableDeclaration.builder(alias).setJsDoc(jsDoc).setRhs(function).build());
       // don't export deltemplates or private templates
       if (!(node instanceof TemplateDelegateNode) && node.getVisibility() == Visibility.PUBLIC) {
-        declarations.add(assign(JsRuntime.EXPORTS.dotAccess(partialName), id(alias)));
+        declarations.add(assign(JsRuntime.EXPORTS.dotAccess(partialName), aliasExp));
       }
     } else {
       declarations.add(Statement.assign(aliasExp, function, jsDoc));
@@ -706,15 +710,13 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
     // ------ Add the @typedef of opt_data. ------
     if (!node.getParams().isEmpty()) {
-      String paramsRecordType = genParamsRecordType(node);
-      StringBuilder sb = new StringBuilder();
-      sb.append(JsDoc.builder().addParameterizedAnnotation("typedef", paramsRecordType).build());
-      sb.append("\n");
-      // TODO(b/35203585): find a way to represent declarations like this in codechunks
-      sb.append(alias).append(".Params");
       declarations.add(
-          Statement.treatRawStringAsStatementLegacyOnly(
-              sb.toString(), ImmutableList.<GoogRequire>of()));
+          aliasExp
+              .dotAccess("Params")
+              .asStatement(
+                  JsDoc.builder()
+                      .addParameterizedAnnotation("typedef", genParamsRecordType(node))
+                      .build()));
     }
 
     // ------ Add the fully qualified template name to the function to use in debug code. ------
@@ -734,7 +736,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
                       stringLiteral(delTemplateNamer.getDelegateName(nodeAsDelTemplate))),
                   stringLiteral(nodeAsDelTemplate.getDelTemplateVariant()),
                   number(nodeAsDelTemplate.getDelPriority().getValue()),
-                  dottedIdNoRequire(alias))
+                  aliasExp)
               .asStatement());
     }
 
@@ -765,7 +767,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
   /** Generates the function body. */
   @CheckReturnValue
-  protected Statement generateFunctionBody(TemplateNode node) {
+  protected Statement generateFunctionBody(TemplateNode node, String alias) {
     ImmutableList.Builder<Statement> bodyStatements = ImmutableList.builder();
     bodyStatements.add(
         Statement.assign(
@@ -776,10 +778,14 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     if (node instanceof TemplateElementNode) {
       TemplateElementNode elementNode = (TemplateElementNode) node;
       for (TemplateStateVar stateVar : elementNode.getStateVars()) {
-        bodyStatements.add(
-            VariableDeclaration.builder(stateVar.name())
-                .setRhs(getExprTranslator().exec(stateVar.defaultValue()))
-                .build());
+        Expression expr = getExprTranslator().exec(stateVar.defaultValue());
+        // A  state variable can be something like ns.foo.FooProto|null. Without
+        // this cast, access to this variable can trigger JS conformance errors
+        // due to unknown type.
+        if (!stateVar.type().equals(stateVar.defaultValue().getType())) {
+          expr = expr.castAs(JsType.forJsSrc(stateVar.type()).typeExpr());
+        }
+        bodyStatements.add(VariableDeclaration.builder(stateVar.name()).setRhs(expr).build());
       }
     }
     // Generate statement to ensure data is defined, if necessary.
@@ -791,7 +797,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     }
 
     // Type check parameters.
-    bodyStatements.add(genParamTypeChecks(node));
+    bodyStatements.add(genParamTypeChecks(node, alias));
 
     SanitizedContentKind kind = node.getContentKind();
     if (isComputableAsJsExprsVisitor.exec(node)) {
@@ -1490,6 +1496,58 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     return sb.toString();
   }
 
+  protected final Statement genParamDefault(
+      TemplateParam param,
+      Expression paramTempVar,
+      String alias,
+      JsType defaultType,
+      boolean declareStatic) {
+    checkArgument(param.hasDefault());
+
+    Statement defaultValueAssignment;
+    Expression defaultValue = translateExpr(param.defaultValue());
+    if (defaultValue.isCheap()) {
+      defaultValueAssignment = Statement.assign(paramTempVar, defaultValue);
+    } else {
+      Statement staticVar;
+      Expression staticVarRef;
+      JsDoc jsDoc =
+          JsDoc.builder()
+              .addParameterizedAnnotation(
+                  "private", defaultType.typeExprForRecordMember(/* isOptional= */ true))
+              .build();
+      if (jsSrcOptions.shouldGenerateGoogModules()) {
+        String varName = String.format("%s$defaultValue$%s", alias, param.name());
+        staticVar = VariableDeclaration.builder(varName).setJsDoc(jsDoc).build();
+        staticVarRef = id(varName);
+      } else {
+        staticVarRef =
+            dottedIdNoRequire(alias).dotAccess(String.format("defaultValue$%s_", param.name()));
+        staticVar = staticVarRef.asStatement(jsDoc);
+      }
+      if (declareStatic) {
+        staticVarDeclarations.add(staticVar);
+        defaultValueAssignment =
+            Statement.of(
+                Statement.assign(paramTempVar, staticVarRef),
+                Statement.ifStatement(
+                        Expression.not(JsRuntime.GOOG_IS_DEF.call(paramTempVar)),
+                        Statement.assign(paramTempVar, staticVarRef.assign(defaultValue)))
+                    .build());
+      } else {
+        defaultValueAssignment =
+            Statement.assign(
+                paramTempVar,
+                JsRuntime.GOOG_ASSERTS_ASSERT.call(
+                    staticVarRef,
+                    stringLiteral("cached default value will be initialized during render")));
+      }
+    }
+    return Statement.ifStatement(
+            Expression.not(JsRuntime.GOOG_IS_DEF.call(paramTempVar)), defaultValueAssignment)
+        .build();
+  }
+
   /**
    * Generate code to verify the runtime types of the input params. Also typecasts the input
    * parameters and assigns them to local variables for use in the template.
@@ -1497,7 +1555,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
    * @param node the template node.
    */
   @CheckReturnValue
-  protected Statement genParamTypeChecks(TemplateNode node) {
+  protected Statement genParamTypeChecks(TemplateNode node, String alias) {
     ImmutableList.Builder<Statement> declarations = ImmutableList.builder();
     for (TemplateParam param : node.getAllParams()) {
       String paramName = param.name();
@@ -1511,6 +1569,13 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       if (coerced != null) {
         // since we have coercion logic, dump into a temporary
         paramChunk = generator.declarationBuilder().setRhs(coerced).build().ref();
+      }
+      if (param.hasDefault()) {
+        if (coerced == null) {
+          paramChunk = generator.declarationBuilder().setRhs(paramChunk).build().ref();
+        }
+        declarations.add(
+            genParamDefault(param, paramChunk, alias, jsType, /* declareStatic= */ true));
       }
       // The param value to assign
       Expression value;

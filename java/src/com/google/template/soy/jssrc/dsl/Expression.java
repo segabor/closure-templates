@@ -30,6 +30,7 @@ import com.google.template.soy.exprtree.Operator.Associativity;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Marker class for a chunk of code that represents a value.
@@ -104,7 +105,7 @@ public abstract class Expression extends CodeChunk {
    * <p>Most dotted identifiers should be accessed via the {@link GoogRequire} api.
    */
   public static Expression dottedIdNoRequire(String dotSeparatedIdentifiers) {
-    return dottedIdWithRequires(dotSeparatedIdentifiers, ImmutableSet.<GoogRequire>of());
+    return dottedIdWithRequires(dotSeparatedIdentifiers, ImmutableSet.of());
   }
 
   static Expression dottedIdWithRequires(
@@ -213,10 +214,20 @@ public abstract class Expression extends CodeChunk {
     return ArrayLiteral.create(ImmutableList.copyOf(elements));
   }
 
-  /** Creates a code chunk representing a javascript map literal. */
-  public static Expression objectLiteral(
-      Iterable<? extends Expression> keys, Iterable<? extends Expression> values) {
-    return ObjectLiteral.create(ImmutableList.copyOf(keys), ImmutableList.copyOf(values));
+  /**
+   * Creates a code chunk representing a javascript map literal: {@code {key1: value1, key2:
+   * value2}}
+   */
+  public static Expression objectLiteral(Map<String, Expression> object) {
+    return ObjectLiteral.create(object);
+  }
+
+  /**
+   * Creates a code chunk representing a javascript map literal, where the keys are quoted: {@code
+   * {'key1': value1, 'key2': value2}}
+   */
+  public static Expression objectLiteralWithQuotedKeys(Map<String, Expression> object) {
+    return ObjectLiteral.createWithQuotedKeys(object);
   }
 
   /**
@@ -236,6 +247,11 @@ public abstract class Expression extends CodeChunk {
   /** Formats this expression as a statement. */
   public final Statement asStatement() {
     return ExpressionStatement.of(this);
+  }
+
+  /** Formats this expression as a statement with JsDoc. */
+  public final Statement asStatement(JsDoc jsDoc) {
+    return ExpressionStatement.of(this, jsDoc);
   }
 
   public final Expression plus(Expression rhs) {
@@ -332,6 +348,10 @@ public abstract class Expression extends CodeChunk {
 
   public final Expression castAs(String typeExpression) {
     return Cast.create(this, typeExpression);
+  }
+
+  public final Expression castAs(String typeExpression, ImmutableSet<GoogRequire> googRequires) {
+    return Cast.create(this, typeExpression, googRequires);
   }
 
   public final Expression instanceOf(Expression identifier) {

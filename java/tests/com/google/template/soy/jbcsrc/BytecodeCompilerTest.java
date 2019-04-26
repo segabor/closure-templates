@@ -491,7 +491,7 @@ public class BytecodeCompilerTest {
   }
 
   @Test
-  public void testPropNodeBoolean() {
+  public void testStateNodeBoolean() {
     assertThatElementBody("{@state foo:= 1}", "<p>{if $foo}1{else}0{/if}</p>")
         .rendersAs("<p>1</p>");
   }
@@ -741,9 +741,9 @@ public class BytecodeCompilerTest {
   @Test
   public void testInjectParam() {
     assertThatTemplateBody("{@inject foo : int }", "{$foo + 1}")
-        .rendersAs("2", ImmutableMap.<String, Object>of(), ImmutableMap.of("foo", 1))
-        .rendersAs("3", ImmutableMap.<String, Object>of(), ImmutableMap.of("foo", 2))
-        .rendersAs("4", ImmutableMap.<String, Object>of(), ImmutableMap.of("foo", 3));
+        .rendersAs("2", ImmutableMap.of(), ImmutableMap.of("foo", 1))
+        .rendersAs("3", ImmutableMap.of(), ImmutableMap.of("foo", 2))
+        .rendersAs("4", ImmutableMap.of(), ImmutableMap.of("foo", 3));
   }
 
   @Test
@@ -891,23 +891,7 @@ public class BytecodeCompilerTest {
     } catch (IllegalArgumentException expected) {
     }
     // we can still access metadata
-    assertThat(templates.getTemplateContentKind("ns.foo")).hasValue(ContentKind.HTML);
-  }
-
-  @Test
-  public void testContentKindNonStrict() {
-    assertThat(
-            TemplateTester.compileFile(
-                    "{namespace ns}",
-                    "/** foo */",
-                    "{template .foo autoescape=\"deprecated-contextual\"}",
-                    "{/template}")
-                .getTemplateFactory("ns.foo")
-                .getClass()
-                .getDeclaringClass()
-                .getAnnotation(TemplateMetadata.class)
-                .contentKind())
-        .isEmpty();
+    assertThat(templates.getTemplateContentKind("ns.foo")).isEqualTo(ContentKind.HTML);
   }
 
   @Test
