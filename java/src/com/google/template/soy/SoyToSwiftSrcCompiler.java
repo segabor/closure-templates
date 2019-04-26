@@ -48,8 +48,6 @@ public class SoyToSwiftSrcCompiler extends AbstractSoyCompiler {
   protected void compile(SoyFileSet.Builder sfsBuilder) throws IOException {
     // Disallow external call entirely in Swift.
     sfsBuilder.setAllowExternalCalls(false);
-    // Require strict templates in Swift.
-    sfsBuilder.setStrictAutoescapingRequired(true);
     SoyFileSet sfs = sfsBuilder.build();
     // Load the manifest if available.
     // TODO

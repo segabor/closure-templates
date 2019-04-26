@@ -964,7 +964,6 @@ public final class SoyFileSet {
       String outputPathFormat, SoySwiftSrcOptions swiftSrcOptions)
       throws IOException {
     resetErrorReporter();
-    requireStrictAutoescaping();
     ParseResult result = parse();
     throwIfErrorsPresent();
     new SwiftSrcMain(scopedData.enterable())
