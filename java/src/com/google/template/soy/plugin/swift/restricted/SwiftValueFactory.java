@@ -4,7 +4,7 @@ package com.google.template.soy.plugin.swift.restricted;
 public abstract class SwiftValueFactory {
   
   public enum RuntimeNamespace {
-    Math, Lists, Util
+    Math, Lists, Util, Strings
   }
   
   /** Creates an integer constant. */
