@@ -89,6 +89,6 @@ final class StrContainsFunction
   @Override
   public SwiftValue applyForSwiftSource(SwiftValueFactory factory, List<SwiftValue> args,
       SwiftPluginContext context) {
-    return factory.runtime(RuntimeNamespace.Strings, "StrContains", true).call(args.get(0));
+    return factory.runtime(RuntimeNamespace.Strings, "strContains", true).call(args.get(0));
   }
 }

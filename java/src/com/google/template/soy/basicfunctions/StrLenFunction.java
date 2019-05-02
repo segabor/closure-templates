@@ -87,6 +87,6 @@ final class StrLenFunction
   @Override
   public SwiftValue applyForSwiftSource(SwiftValueFactory factory, List<SwiftValue> args,
       SwiftPluginContext context) {
-    return factory.runtime(RuntimeNamespace.Strings, "StrLength", true).call(args.get(0));
+    return factory.runtime(RuntimeNamespace.Strings, "strLength", true).call(args.get(0));
   }
 }
