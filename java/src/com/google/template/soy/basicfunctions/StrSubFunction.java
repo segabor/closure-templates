@@ -33,6 +33,7 @@ import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
 import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
 import com.google.template.soy.plugin.swift.restricted.SwiftValue;
 import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory.RuntimeNamespace;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
@@ -105,7 +106,12 @@ final class StrSubFunction
   @Override
   public SwiftValue applyForSwiftSource(SwiftValueFactory factory, List<SwiftValue> args,
       SwiftPluginContext context) {
-    // TODO should be %s[%s.index(%s.startIndex, offsetBy: %d) ..< %s.index(%s.startIndex, offsetBy: %d)]
-    throw new RuntimeException("Unimplemented feature");
+
+    final SwiftValue str = args.get(0);
+    final SwiftValue startIndex = args.get(1);
+    final SwiftValue endIndex = args.size() > 2 ? args.get(2) : factory.constant(-1);
+
+    return factory.runtime(RuntimeNamespace.Strings, "strSub", true).call(str, startIndex,
+        endIndex);
   }
 }
