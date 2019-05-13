@@ -42,7 +42,6 @@ import com.google.template.soy.swiftsrc.internal.GenSwiftExprsVisitor.GenSwiftEx
 import com.google.template.soy.swiftsrc.internal.TranslateToSwiftExprVisitor.ConditionalEvaluationMode;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.google.template.soy.swiftsrc.restricted.SwiftExprUtils;
-import com.google.template.soy.swiftsrc.restricted.SwiftFunctionExprBuilder;
 
 public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
   private static final SoyErrorKind NON_NAMESPACED_TEMPLATE =
@@ -367,46 +366,12 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       swiftCodeBuilder.appendLine("}");
     }
 
-    /**
-     * Python does not support switch statements, so just replace with if: ... elif: ... else: ...
-     * As some expressions may generate different results each time, the expression is stored before
-     * conditionals (which prevents expression inlining).
-     *
-     * <p>Example:
-     *
-     * <pre>
-     *   {switch $boo}
-     *     {case 0}
-     *       ...
-     *     {case 1, 2}
-     *       ...
-     *     {default}
-     *       ...
-     *   {/switch}
-     * </pre>
-     *
-     * might generate
-     *
-     * <pre>
-     *   switchValue = data.get('boo')
-     *   if switchValue == 0:
-     *     ...
-     *   elif switchValue == 1:
-     *     ...
-     *   elif switchValue == 2:
-     *     ...
-     *   else:
-     *     ...
-     * </pre>
-     */
-    // FIXME
     @Override
     protected void visitSwitchNode(SwitchNode node) {
       // Run the switch value creation first to ensure side effects always occur.
       TranslateToSwiftExprVisitor translator = new TranslateToSwiftExprVisitor(localVarExprs, pluginValueFactory, errorReporter);
-      String switchValueVarName = "switchValue";
-      SwiftExpr switchValuePyExpr = translator.exec(node.getExpr());
-      swiftCodeBuilder.appendLine(switchValueVarName, " = ", switchValuePyExpr.getText());
+
+      SwiftExpr switchValueExpr = translator.exec(node.getExpr());
 
       // If a Switch with only a default is provided (no case statements), just execute the inner
       // code directly.
@@ -415,32 +380,21 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
         return;
       }
 
-      boolean isFirstCase = true;
+      swiftCodeBuilder.appendLine("switch ", switchValueExpr.getText(), " {");
+      swiftCodeBuilder.increaseIndent();
+
       for (SoyNode child : node.getChildren()) {
         if (child instanceof SwitchCaseNode) {
           SwitchCaseNode scn = (SwitchCaseNode) child;
-
           for (ExprNode caseExpr : scn.getExprList()) {
-            SwiftExpr casePyExpr = translator.exec(caseExpr);
-            SwiftExpr conditionFn =
-                new SwiftFunctionExprBuilder("runtime.type_safe_eq")
-                    .addArg(new SwiftExpr(switchValueVarName, Integer.MAX_VALUE))
-                    .addArg(casePyExpr)
-                    .asSwiftExpr();
+            SwiftExpr caseSwiftExpr = translator.exec(caseExpr);
 
-            if (isFirstCase) {
-              swiftCodeBuilder
-                  .appendLineStart("if ")
-                  .append(conditionFn.getText())
-                  .appendLineEnd(":");
-              isFirstCase = false;
-            } else {
-              swiftCodeBuilder
-                  .appendLineStart("elif ")
-                  .append(conditionFn.getText())
-                  .appendLineEnd(":");
-            }
+            swiftCodeBuilder
+                .appendLineStart("case ")
+                .append(caseSwiftExpr.getText())
+                .appendLineEnd(":");
 
+            // build default case
             swiftCodeBuilder.increaseIndent();
             visitChildren(scn);
             swiftCodeBuilder.decreaseIndent();
@@ -448,7 +402,9 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
         } else if (child instanceof SwitchDefaultNode) {
           SwitchDefaultNode sdn = (SwitchDefaultNode) child;
 
-          swiftCodeBuilder.appendLine("else:");
+          swiftCodeBuilder.appendLine("default:");
+
+          // build default case
           swiftCodeBuilder.increaseIndent();
           visitChildren(sdn);
           swiftCodeBuilder.decreaseIndent();
@@ -456,6 +412,9 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
           throw new AssertionError("Unexpected switch child node type. Child: " + child);
         }
       }
+      
+      swiftCodeBuilder.decreaseIndent();
+      swiftCodeBuilder.appendLine("}");
     }
 
     /**
