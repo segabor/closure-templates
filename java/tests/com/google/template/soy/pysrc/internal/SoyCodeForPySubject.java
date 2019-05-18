@@ -16,6 +16,8 @@
 
 package com.google.template.soy.pysrc.internal;
 
+import static com.google.common.truth.Fact.fact;
+import static com.google.common.truth.Fact.simpleFact;
 import static com.google.common.truth.Truth.assertAbout;
 import static com.google.common.truth.Truth.assertThat;
 
@@ -41,6 +43,7 @@ public final class SoyCodeForPySubject extends Subject<SoyCodeForPySubject, Stri
 
   private static final String RUNTIME_PATH = "example.runtime";
 
+  private final String actual;
   private String bidiIsRtlFn = "";
 
   private String environmentModulePath = "";
@@ -61,6 +64,7 @@ public final class SoyCodeForPySubject extends Subject<SoyCodeForPySubject, Stri
    */
   SoyCodeForPySubject(FailureMetadata failureMetadata, String code, boolean isFile) {
     super(failureMetadata, code);
+    this.actual = code;
     this.isFile = isFile;
   }
 
@@ -146,14 +150,17 @@ public final class SoyCodeForPySubject extends Subject<SoyCodeForPySubject, Stri
       } else {
         compileBody();
       }
-      fail("Compilation suceeded when it should have failed.");
+      failWithoutActual(
+          fact("expected compilation to fail with", expectedClass),
+          simpleFact("but it succeeded"),
+          fact("code was", this.actual));
     } catch (Exception actual) {
       assertThat(actual).isInstanceOf(expectedClass);
     }
   }
 
   private String compileFile() {
-    SoyFileSetNode node = SoyFileSetParserBuilder.forFileContents(actual()).parse().fileSet();
+    SoyFileSetNode node = SoyFileSetParserBuilder.forFileContents(actual).parse().fileSet();
     List<String> fileContents =
         PySrcMain.createVisitor(
                 defaultOptions(), BidiGlobalDir.LTR, ErrorReporter.exploding(), ImmutableMap.of())
@@ -164,7 +171,7 @@ public final class SoyCodeForPySubject extends Subject<SoyCodeForPySubject, Stri
   private String compileBody() {
     SoyNode node =
         SharedTestUtils.getNode(
-            SoyFileSetParserBuilder.forTemplateContents(actual()).parse().fileSet(), 0);
+            SoyFileSetParserBuilder.forTemplateContents(actual).parse().fileSet(), 0);
 
     // Setup the GenPyCodeVisitor's state before the node is visited.
     GenPyCodeVisitor genPyCodeVisitor =

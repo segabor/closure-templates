@@ -55,8 +55,8 @@ public class SoyTypeRegistryTest {
     ListType listOfInt2 = typeRegistry.getOrCreateListType(IntType.getInstance());
     ListType listOfFloat = typeRegistry.getOrCreateListType(FloatType.getInstance());
 
-    assertThat(listOfInt2).isSameAs(listOfInt);
-    assertThat(listOfFloat).isNotSameAs(listOfInt);
+    assertThat(listOfInt2).isSameInstanceAs(listOfInt);
+    assertThat(listOfFloat).isNotSameInstanceAs(listOfInt);
   }
 
   @Test
@@ -73,9 +73,9 @@ public class SoyTypeRegistryTest {
         typeRegistry.getOrCreateLegacyObjectMapType(
             StringType.getInstance(), StringType.getInstance());
 
-    assertThat(mapOfIntToString2).isSameAs(mapOfIntToString);
-    assertThat(mapOfIntToInt).isNotSameAs(mapOfIntToString);
-    assertThat(mapOfStringToString).isNotSameAs(mapOfIntToString);
+    assertThat(mapOfIntToString2).isSameInstanceAs(mapOfIntToString);
+    assertThat(mapOfIntToInt).isNotSameInstanceAs(mapOfIntToString);
+    assertThat(mapOfStringToString).isNotSameInstanceAs(mapOfIntToString);
   }
 
   @Test
@@ -84,8 +84,8 @@ public class SoyTypeRegistryTest {
     SoyType u2 = typeRegistry.getOrCreateUnionType(IntType.getInstance(), FloatType.getInstance());
     SoyType u3 = typeRegistry.getOrCreateUnionType(IntType.getInstance(), StringType.getInstance());
 
-    assertThat(u2).isSameAs(u1);
-    assertThat(u3).isNotSameAs(u1);
+    assertThat(u2).isSameInstanceAs(u1);
+    assertThat(u3).isNotSameInstanceAs(u1);
   }
 
   @Test
@@ -103,18 +103,18 @@ public class SoyTypeRegistryTest {
         typeRegistry.getOrCreateRecordType(
             ImmutableMap.of("a", IntType.getInstance(), "c", FloatType.getInstance()));
 
-    assertThat(r2).isSameAs(r1);
-    assertThat(r3).isNotSameAs(r1);
-    assertThat(r4).isNotSameAs(r1);
+    assertThat(r2).isSameInstanceAs(r1);
+    assertThat(r3).isNotSameInstanceAs(r1);
+    assertThat(r4).isNotSameInstanceAs(r1);
   }
 
   @Test
   public void testNumberType() {
     // Make sure the type registry knows about the special number type
     assertThat(SoyTypes.NUMBER_TYPE)
-        .isSameAs(
+        .isSameInstanceAs(
             typeRegistry.getOrCreateUnionType(FloatType.getInstance(), IntType.getInstance()));
     assertThat(SoyTypes.NUMBER_TYPE)
-        .isSameAs(typeRegistry.getOrCreateUnionType(SoyTypes.NUMBER_TYPE));
+        .isSameInstanceAs(typeRegistry.getOrCreateUnionType(SoyTypes.NUMBER_TYPE));
   }
 }

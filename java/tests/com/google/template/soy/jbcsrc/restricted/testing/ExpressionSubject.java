@@ -16,8 +16,10 @@
 
 package com.google.template.soy.jbcsrc.restricted.testing;
 
+import static com.google.common.truth.Fact.fact;
+import static com.google.common.truth.Fact.simpleFact;
+
 import com.google.common.base.Joiner;
-import com.google.common.base.Objects;
 import com.google.common.truth.FailureMetadata;
 import com.google.common.truth.Subject;
 import com.google.common.truth.Truth;
@@ -43,92 +45,77 @@ public final class ExpressionSubject extends Subject<ExpressionSubject, Expressi
     return Truth.assertAbout(ExpressionSubject::new).that(resp);
   }
 
+  private final Expression actual;
   private final ExpressionEvaluator evaluator = new ExpressionEvaluator();
 
   private ExpressionSubject(FailureMetadata failureMetadata, Expression subject) {
     super(failureMetadata, subject);
+    this.actual = subject;
   }
 
   public ExpressionSubject evaluatesTo(int expected) {
-    evaluator.compile(actual());
-    if (((IntInvoker) evaluator.invoker).invoke() != expected) {
-      fail("evaluatesTo", expected);
-    }
+    evaluator.compile(actual);
+    check("invoke()").that(((IntInvoker) evaluator.invoker).invoke()).isEqualTo(expected);
     return this;
   }
 
   public ExpressionSubject evaluatesTo(boolean expected) {
-    evaluator.compile(actual());
+    evaluator.compile(this.actual);
     boolean actual;
     try {
       actual = ((BooleanInvoker) evaluator.invoker).invoke();
     } catch (Throwable t) {
-      failWithBadResults("evalutes to", expected, "fails with", t);
-      return this;
+      return failExpectingValue(expected, t);
     }
-    if (actual != expected) {
-      failWithBadResults("evaluates to", expected, "evaluates to", actual);
-    }
+    check("invoke()").that(actual).isEqualTo(expected);
     return this;
   }
 
   public ExpressionSubject evaluatesTo(double expected) {
-    evaluator.compile(actual());
+    evaluator.compile(this.actual);
     double actual;
     try {
       actual = ((DoubleInvoker) evaluator.invoker).invoke();
     } catch (Throwable t) {
-      failWithBadResults("evalutes to", expected, "fails with", t);
-      return this;
+      return failExpectingValue(expected, t);
     }
-    if (actual != expected) {
-      failWithBadResults("evaluates to", expected, "evaluates to", actual);
-    }
+    check("invoke()").that(actual).isEqualTo(expected);
     return this;
   }
 
   public ExpressionSubject evaluatesTo(long expected) {
-    evaluator.compile(actual());
+    evaluator.compile(this.actual);
     long actual;
     try {
       actual = ((LongInvoker) evaluator.invoker).invoke();
     } catch (Throwable t) {
-      failWithBadResults("evalutes to", expected, "fails with", t);
-      return this;
+      return failExpectingValue(expected, t);
     }
-    if (actual != expected) {
-      failWithBadResults("evaluates to", expected, "evaluates to", actual);
-    }
+    check("invoke()").that(actual).isEqualTo(expected);
     return this;
   }
 
   public ExpressionSubject evaluatesTo(char expected) {
-    evaluator.compile(actual());
+    evaluator.compile(this.actual);
     char actual;
     try {
       actual = ((CharInvoker) evaluator.invoker).invoke();
     } catch (Throwable t) {
-      failWithBadResults("evalutes to", expected, "fails with", t);
-      return this;
+      return failExpectingValue(expected, t);
     }
-    if (actual != expected) {
-      failWithBadResults("evaluates to", expected, "evaluates to", actual);
-    }
+    check("invoke()").that(actual).isEqualTo(expected);
     return this;
   }
 
   public ExpressionSubject evaluatesTo(Object expected) {
-    evaluator.compile(actual());
+    evaluator.compile(this.actual);
     Object actual;
     try {
       actual = ((ObjectInvoker) evaluator.invoker).invoke();
     } catch (Throwable t) {
-      failWithBadResults("evaluates to", expected, "fails with", t);
-      return this;
+      return failExpectingValue(expected, t);
     }
-    if (!Objects.equal(actual, expected)) {
-      failWithBadResults("evaluates to", expected, "evaluates to", actual);
-    }
+    check("invoke()").that(actual).isEqualTo(expected);
     return this;
   }
 
@@ -137,11 +124,9 @@ public final class ExpressionSubject extends Subject<ExpressionSubject, Expressi
    * coupled tests.
    */
   public ExpressionSubject hasCode(String... instructions) {
-    evaluator.compile(actual());
+    evaluator.compile(actual);
     String formatted = Joiner.on('\n').join(instructions);
-    if (!formatted.equals(actual().trace().trim())) {
-      fail("hasCode", formatted);
-    }
+    check("code()").that(actual.trace().trim()).isEqualTo(formatted);
     return this;
   }
 
@@ -150,27 +135,34 @@ public final class ExpressionSubject extends Subject<ExpressionSubject, Expressi
    * coupled tests.
    */
   public ExpressionSubject doesNotContainCode(String... instructions) {
-    evaluator.compile(actual());
+    evaluator.compile(this.actual);
     String formatted = Joiner.on('\n').join(instructions);
-    String actual = actual().trace().trim();
-    if (actual.contains(formatted)) {
-      failWithBadResults("doesNotContainCode", formatted, "evaluates to", actual);
-    }
+    String actual = this.actual.trace().trim();
+    check("code()").that(actual).doesNotContain(formatted);
     return this;
   }
 
   public ExpressionSubject evaluatesToInstanceOf(Class<?> expected) {
-    evaluator.compile(actual());
+    evaluator.compile(this.actual);
     Object actual;
     try {
       actual = ((ObjectInvoker) evaluator.invoker).invoke();
     } catch (Throwable t) {
-      failWithBadResults("evalutes to instance of", expected, "fails with", t);
+      failWithoutActual(
+          fact("expected to evaluate to an instance of", expected),
+          fact("but failed with", t),
+          fact("expression was", this.actual));
       return this;
     }
-    if (!expected.isInstance(actual)) {
-      failWithBadResults("evaluates to instance of", expected, "evaluates to", actual);
-    }
+    check("invoke()").that(actual).isInstanceOf(expected);
+    return this;
+  }
+
+  private ExpressionSubject failExpectingValue(Object expected, Throwable t) {
+    failWithoutActual(
+        fact("expected to evaluate to", expected),
+        fact("but failed with", t),
+        fact("expression was", this.actual));
     return this;
   }
 
@@ -179,19 +171,17 @@ public final class ExpressionSubject extends Subject<ExpressionSubject, Expressi
   }
 
   public ExpressionSubject throwsException(Class<? extends Throwable> clazz, String message) {
-    evaluator.compile(actual());
+    evaluator.compile(actual);
     try {
       evaluator.invoker.voidInvoke();
     } catch (Throwable t) {
-      if (!clazz.isInstance(t)) {
-        failWithBadResults("throws an exception of type", clazz, "fails with", t);
-      }
-      if (message != null && !t.getMessage().equals(message)) {
-        failWithBadResults("throws an exception with message", message, "fails with", t);
+      check("thrownException()").that(t).isInstanceOf(clazz);
+      if (message != null) {
+        check("thrownException()").that(t).hasMessageThat().isEqualTo(message);
       }
       return this;
     }
-    fail("throws an exception");
+    failWithActual(simpleFact("expected to throw an exception"));
     return this; // dead code, but the compiler can't prove it
   }
 }

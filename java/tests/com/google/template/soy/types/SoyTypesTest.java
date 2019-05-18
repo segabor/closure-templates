@@ -696,23 +696,26 @@ public class SoyTypesTest {
   }
 
   private static final class SoyTypeSubject extends Subject<SoyTypeSubject, String> {
+    private final String actual;
+
     protected SoyTypeSubject(FailureMetadata metadata, String actual) {
       super(metadata, actual);
+      this.actual = actual;
     }
 
     void isAssignableFrom(String other) {
-      SoyType leftType = parseType(actual());
+      SoyType leftType = parseType(actual);
       SoyType rightType = parseType(other);
       if (!leftType.isAssignableFrom(rightType)) {
-        fail("isAssignableFrom", other);
+        failWithActual("expected to be assignable from", other);
       }
     }
 
     void isNotAssignableFrom(String other) {
-      SoyType leftType = parseType(actual());
+      SoyType leftType = parseType(actual);
       SoyType rightType = parseType(other);
       if (leftType.isAssignableFrom(rightType)) {
-        fail("isNotAssignableFrom", other);
+        failWithActual("expected not to be assignable from", other);
       }
     }
 
@@ -723,23 +726,21 @@ public class SoyTypesTest {
     }
 
     void isEqualTo(String other) {
-      SoyType leftType = parseType(actual());
+      SoyType leftType = parseType(actual);
       SoyType rightType = parseType(other);
       if (!leftType.equals(rightType)) {
-        fail("isEqualTo", other);
+        failWithActual("expected", other);
       }
       // make sure that assignability is compatible with equality.
       if (!leftType.isAssignableFrom(rightType)) {
         failWithoutActual(
             simpleFact(
-                lenientFormat(
-                    "types are equal, but %s is not assignable from %s", actual(), other)));
+                lenientFormat("types are equal, but %s is not assignable from %s", actual, other)));
       }
       if (!rightType.isAssignableFrom(leftType)) {
         failWithoutActual(
             simpleFact(
-                lenientFormat(
-                    "types are equal, but %s is not assignable from %s", other, actual())));
+                lenientFormat("types are equal, but %s is not assignable from %s", other, actual)));
       }
     }
 
@@ -750,17 +751,17 @@ public class SoyTypesTest {
     }
 
     void isNotEqualTo(String other) {
-      SoyType leftType = parseType(actual());
+      SoyType leftType = parseType(actual);
       SoyType rightType = parseType(other);
       if (leftType.equals(rightType)) {
-        fail("isNotEqualTo", other);
+        failWithActual("expected not to be", other);
       }
       // make sure that assignability is compatible with equality.
       if (leftType.isAssignableFrom(rightType) && rightType.isAssignableFrom(leftType)) {
         failWithoutActual(
             simpleFact(
                 lenientFormat(
-                    "types are not equal, but %s and %s are mutally assignable", actual(), other)));
+                    "types are not equal, but %s and %s are mutally assignable", actual, other)));
       }
     }
 

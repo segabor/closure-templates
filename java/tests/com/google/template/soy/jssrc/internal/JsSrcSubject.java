@@ -61,6 +61,7 @@ abstract class JsSrcSubject<T extends Subject<T, String>> extends Subject<T, Str
 
   private static final Joiner JOINER = Joiner.on('\n');
 
+  private final String actual;
   private final SoyGeneralOptions generalOptions = new SoyGeneralOptions().disableOptimizer();
   SoyJsSrcOptions jsSrcOptions = new SoyJsSrcOptions();
   private SoyTypeRegistry typeRegistry = new SoyTypeRegistry();
@@ -71,6 +72,7 @@ abstract class JsSrcSubject<T extends Subject<T, String>> extends Subject<T, Str
 
   private JsSrcSubject(FailureMetadata failureMetadata, @Nullable String s) {
     super(failureMetadata, s);
+    this.actual = s;
   }
 
   static ForFile assertThatSoyFile(String... lines) {
@@ -157,7 +159,7 @@ abstract class JsSrcSubject<T extends Subject<T, String>> extends Subject<T, Str
 
   private ParseResult parse() {
     SoyFileSetParserBuilder builder =
-        SoyFileSetParserBuilder.forFileContents(actual())
+        SoyFileSetParserBuilder.forFileContents(actual)
             .allowUnboundGlobals(true)
             .allowV1Expression(true)
             .typeRegistry(typeRegistry)
@@ -206,9 +208,7 @@ abstract class JsSrcSubject<T extends Subject<T, String>> extends Subject<T, Str
 
     StringSubject generatesTemplateThat() {
       generateCode();
-      if (fileNode.numChildren() != 1) {
-        fail("expected to only have 1 template: " + fileNode.getChildren());
-      }
+      check("parse().getChildren()").that(fileNode.getChildren()).hasSize(1);
       TemplateNode template = fileNode.getChild(0);
       // we know that 'file' contains exactly one template.  so find it.
       int functionIndex = file.indexOf("function(");
@@ -224,9 +224,7 @@ abstract class JsSrcSubject<T extends Subject<T, String>> extends Subject<T, Str
       String templateBody;
         int startOfJsDoc = file.substring(0, startOfFunction).lastIndexOf("/**");
         templateBody = file.substring(startOfJsDoc, endOfFunction);
-      return check()
-          .withMessage("Unexpected template body generated for %s:", actual())
-          .that(templateBody);
+      return check("generatedTemplate()").that(templateBody);
     }
 
     @Override

@@ -17,7 +17,6 @@
 package com.google.template.soy.jbcsrc;
 
 import static com.google.common.base.Preconditions.checkNotNull;
-import static com.google.common.base.Strings.lenientFormat;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static com.google.common.truth.Fact.simpleFact;
 import static com.google.template.soy.data.SoyValueConverter.EMPTY_DICT;
@@ -149,6 +148,7 @@ public final class TemplateTester {
   }
 
   static final class CompiledTemplateSubject extends Subject<CompiledTemplateSubject, String> {
+    private final String actual;
     private final List<SoyFunction> soyFunctions = new ArrayList<>();
     private final List<SoySourceFunction> soySourceFunctions = new ArrayList<>();
     private final RenderContext.Builder defaultContextBuilder = createDefaultBuilder();
@@ -161,6 +161,7 @@ public final class TemplateTester {
 
     private CompiledTemplateSubject(FailureMetadata failureMetadata, String subject) {
       super(failureMetadata, subject);
+      this.actual = subject;
     }
 
     CompiledTemplateSubject withTypeRegistry(SoyTypeRegistry typeRegistry) {
@@ -233,11 +234,9 @@ public final class TemplateTester {
             simpleFact(
                 String.format(
                     "Expected %s to fail to render with a %s, but it rendered '%s'",
-                    actual(), expected, "")));
+                    actual, expected, "")));
       } catch (Throwable t) {
-        if (!expected.isInstance(t)) {
-          failWithBadResults("failsToRenderWith", expected, "failed with", t);
-        }
+        check("failure()").that(t).isInstanceOf(expected);
       }
       return this; // may be dead
     }
@@ -257,16 +256,16 @@ public final class TemplateTester {
             simpleFact(
                 String.format(
                     "Expected %s to fail to render, but it rendered '%s'.",
-                    actual(), builder.toString())));
+                    actual, builder.toString())));
       } catch (Throwable t) {
-        return check().that(t);
+        return check("failure()").that(t);
       }
       throw new AssertionError("unreachable");
     }
 
     @CheckReturnValue
     public IterableSubject failsToCompileWithErrorsThat() {
-      SoyFileSetParserBuilder builder = SoyFileSetParserBuilder.forFileContents(actual());
+      SoyFileSetParserBuilder builder = SoyFileSetParserBuilder.forFileContents(actual);
       for (SoyFunction function : soyFunctions) {
         builder.addSoyFunction(function);
       }
@@ -291,9 +290,9 @@ public final class TemplateTester {
         failWithoutActual(
             simpleFact(
                 String.format(
-                    "Expected %s to fail to compile, but it compiled successfully.", actual())));
+                    "Expected %s to fail to compile, but it compiled successfully.", actual)));
       }
-      return check().that(Lists.transform(errors.getErrors(), SoyError::message));
+      return check("errors()").that(Lists.transform(errors.getErrors(), SoyError::message));
     }
 
     private SoyRecord asRecord(Map<String, ?> params) {
@@ -316,20 +315,15 @@ public final class TemplateTester {
         // TODO(lukes): the fact that we are catching an exception means we have structured
         // this subject poorly.  The subject should be responsible for asserting, not actually
         // invoking the functionality under test.
-        failWithCauseAndMessage(e, "Unexpected failure for %s", actualAsString());
+        failWithCauseAndMessage(e, "template was not expected to throw an exception");
         result = null;
       }
       if (result.type() != RenderResult.Type.DONE) {
-        fail("renders to completion", result);
+        failWithActual("expected to render to completion", result);
       }
 
-      String output = builder.toString();
-      if (!output.equals(expectedOutput)) {
-        failWithBadResults("renders as", expectedOutput, "renders as", output);
-      }
-      if (!expectedLogged.equals(logOutput.toString())) {
-        failWithBadResults("logs", expectedLogged, "logs", logOutput.toString());
-      }
+      check("render()").that(builder.toString()).isEqualTo(expectedOutput);
+      check("logOutput()").that(logOutput.toString()).isEqualTo(expectedLogged);
       return this;
     }
 
@@ -337,15 +331,15 @@ public final class TemplateTester {
     protected String actualCustomStringRepresentation() {
       if (classData == null) {
         // hasn't been compiled yet.  just use the source text
-        return actual();
+        return actual;
       }
 
-      return "(<\n" + actual() + "\n Compiled as: \n" + Joiner.on('\n').join(classData) + "\n>)";
+      return "(<\n" + actual + "\n Compiled as: \n" + Joiner.on('\n').join(classData) + "\n>)";
     }
 
     private void compile() {
       if (classData == null) {
-        SoyFileSetParserBuilder builder = SoyFileSetParserBuilder.forFileContents(actual());
+        SoyFileSetParserBuilder builder = SoyFileSetParserBuilder.forFileContents(actual);
         for (SoyFunction function : soyFunctions) {
           builder.addSoyFunction(function);
         }
@@ -409,8 +403,8 @@ public final class TemplateTester {
      * makes the assertion "about" the exception, Truth includes it as a cause.
      */
 
-    private void failWithCauseAndMessage(Throwable cause, String format, Object... args) {
-      check().about(UnexpectedFailureSubject::new).that(cause).doFail(format, args);
+    private void failWithCauseAndMessage(Throwable cause, String message) {
+      check("thrownException()").about(UnexpectedFailureSubject::new).that(cause).doFail(message);
     }
 
     private static final class UnexpectedFailureSubject
@@ -419,8 +413,8 @@ public final class TemplateTester {
         super(metadata, actual);
       }
 
-      void doFail(String format, Object... args) {
-        failWithoutActual(simpleFact(lenientFormat(format, args)));
+      void doFail(String message) {
+        failWithoutActual(simpleFact(message));
       }
     }
   }
