@@ -109,7 +109,7 @@ public class IsComputableAsSwiftExprVisitor extends AbstractReturningSoyNodeVisi
 
   @Override
   protected Boolean visitCallNode(CallNode node) {
-    return areChildrenComputableAsSwiftExprs(node);
+    return false;
   }
 
   @Override
