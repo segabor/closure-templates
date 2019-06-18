@@ -22,19 +22,15 @@ import SanitizedHtml from 'goog:goog.soy.data.SanitizedHtml'; // from //javascri
 import SanitizedHtmlAttribute from 'goog:goog.soy.data.SanitizedHtmlAttribute'; // from //javascript/closure/soy:data
 import SanitizedJs from 'goog:goog.soy.data.SanitizedJs'; // from //javascript/closure/soy:data
 import SanitizedUri from 'goog:goog.soy.data.SanitizedUri'; // from //javascript/closure/soy:data
-import UnsanitizedText from 'goog:goog.soy.data.UnsanitizedText'; // from //javascript/closure/soy:data
 import * as googString from 'goog:goog.string';  // from //javascript/closure/string
 import * as soy from 'goog:soy';  // from //javascript/template/soy:soy_usegoog_js
 import {isAttribute} from 'goog:soy.checks';  // from //javascript/template/soy:checks
 import {ordainSanitizedHtml} from 'goog:soydata.VERY_UNSAFE';  // from //javascript/template/soy:soy_usegoog_js
 import * as incrementaldom from 'incrementaldom';  // from //third_party/javascript/incremental_dom:incrementaldom
 
-import {IncrementalDomRenderer, isMatchingKey} from './api_idom';
+import {IncrementalDomRenderer, isMatchingKey, serializeKey} from './api_idom';
 import {IdomFunction, PatchFunction, SoyElement} from './element_lib_idom';
 import {getSoyUntyped} from './global';
-
-type TextualValue =
-    UnsanitizedText|SanitizedUri|SanitizedJs|string|number|boolean;
 
 // Declare properties that need to be applied not as attributes but as
 // actual DOM properties.
@@ -82,10 +78,10 @@ function tryGetElement<T extends SoyElement<{}, {}>>(
     const el = getSoyUntyped(currentPointer);
     if (el instanceof elementClassCtor && isDataInitialized(currentPointer)) {
       const currentPointerKey = getKey(currentPointer) as string;
-      const currentPointerKeyArr = JSON.parse(currentPointerKey);
       if (isMatchingKey(
-              incrementaldom.getCurrentKeyStack().concat(firstElementKey),
-              currentPointerKeyArr)) {
+              serializeKey(firstElementKey) +
+                  incrementaldom.getCurrentKeyStack(),
+              currentPointerKey)) {
         return el;
       }
     }

@@ -18,7 +18,6 @@ package com.google.template.soy.jbcsrc.restricted;
 import static com.google.common.truth.Fact.fact;
 import static com.google.common.truth.Fact.simpleFact;
 
-import com.google.common.base.Optional;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.truth.FailureMetadata;
 import com.google.common.truth.Subject;
@@ -48,6 +47,7 @@ import com.google.template.soy.types.StringType;
 import com.google.template.soy.types.UnionType;
 import com.google.template.soy.types.UnknownType;
 import java.util.List;
+import java.util.Optional;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -113,7 +113,7 @@ public class SoyRuntimeTypeTest {
     return Truth.assertAbout(SoyRuntimeTypeSubject::new).that(type);
   }
 
-  private static final class SoyRuntimeTypeSubject extends Subject<SoyRuntimeTypeSubject, SoyType> {
+  private static final class SoyRuntimeTypeSubject extends Subject {
     private final SoyType actual;
 
     protected SoyRuntimeTypeSubject(FailureMetadata metadata, SoyType actual) {

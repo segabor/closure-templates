@@ -16,7 +16,11 @@
 
 package com.google.template.soy.shared;
 
+import static com.google.common.truth.Truth.assertWithMessage;
+import static java.util.stream.Collectors.toCollection;
+
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.AbstractExprNodeVisitor;
@@ -30,11 +34,16 @@ import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.UnknownType;
+import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import javax.annotation.Nullable;
+import java.util.stream.Stream;
+import org.junit.Test;
 
 /**
  * Shared utilities for unit tests.
@@ -50,13 +59,11 @@ public final class SharedTestUtils {
    * Builds a test Soy file's content from the given Soy code, which will be the body of the only
    * template in the test Soy file.
    *
-   * @param soyDocParamNames Param names to declare in SoyDoc of the single template.
    * @param soyCode The code to parse as the full body of a template.
    * @return The test Soy file's content.
    */
-  public static String buildTestSoyFileContent(
-      @Nullable List<String> soyDocParamNames, String soyCode) {
-    return buildTestSoyFileContent(false, soyDocParamNames, soyCode);
+  public static String buildTestSoyFileContent(String soyCode) {
+    return buildTestSoyFileContent(false, soyCode);
   }
 
   /**
@@ -64,33 +71,21 @@ public final class SharedTestUtils {
    * template in the test Soy file.
    *
    * @param strictHtml Whether to use strict html mode in this namespace.
-   * @param soyDocParamNames Param names to declare in SoyDoc of the single template.
    * @param soyCode The code to parse as the full body of a template.
    * @return The test Soy file's content.
    */
-  public static String buildTestSoyFileContent(
-      boolean strictHtml,
-      @Nullable List<String> soyDocParamNames,
-      String soyCode) {
+  public static String buildTestSoyFileContent(boolean strictHtml, String soyCode) {
     String namespace = "brittle.test.ns";
     String templateName = ".brittleTestTemplate";
 
-    StringBuilder soyFileContentBuilder = new StringBuilder();
-    soyFileContentBuilder.append("{namespace " + namespace + "}\n").append("/** Test template.");
-    if (soyDocParamNames != null) {
-      for (String paramName : soyDocParamNames) {
-        soyFileContentBuilder.append(" @param " + paramName);
-      }
-    }
-    soyFileContentBuilder
-        .append(" */\n")
-        .append("{template " + templateName)
-        .append(strictHtml ? "" : " stricthtml=\"false\"")
-        .append("}\n")
-        .append(soyCode)
-        .append("\n")
-        .append("{/template}\n");
-    return soyFileContentBuilder.toString();
+    return String.format(
+        ""
+            + "{namespace %s}\n"
+            + "/** Test template. */\n"
+            + "{template %s%s}\n"
+            + "%s\n"
+            + "{/template}\n",
+        namespace, templateName, strictHtml ? "" : " stricthtml=\"false\"", soyCode);
   }
 
   /**
@@ -176,5 +171,35 @@ public final class SharedTestUtils {
       node = ((ParentSoyNode<?>) node).getChild(index);
     }
     return node;
+  }
+
+  public static void testAllTestFilesAreCovered(String dir, Class<?> clazz) throws Exception {
+    testAllTestFilesAreCovered(dir, clazz, ImmutableSet.of());
+  }
+
+  public static void testAllTestFilesAreCovered(
+      String dir, Class<?> clazz, Set<String> filesWithoutTestMethods) throws Exception {
+    Set<String> testFiles;
+    try (Stream<Path> stream = Files.list(Paths.get(dir))) {
+      testFiles =
+          stream
+              .map(
+                  path -> {
+                    String filename = path.getFileName().toString();
+                    filename = filename.substring(0, filename.indexOf('.'));
+                    return filename;
+                  })
+              .collect(toCollection(HashSet::new));
+    }
+    Set<String> testMethods =
+        Arrays.stream(clazz.getMethods())
+            .filter(method -> method.isAnnotationPresent(Test.class))
+            .map(Method::getName)
+            .collect(toCollection(HashSet::new));
+
+    assertWithMessage(
+            "These files are missing tests methods. Delete the files or add test methods for them.")
+        .that(Sets.difference(Sets.difference(testFiles, filesWithoutTestMethods), testMethods))
+        .isEmpty();
   }
 }

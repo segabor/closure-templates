@@ -25,18 +25,13 @@ import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.OBJECT;
 import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.RENDER_CONTEXT_TYPE;
 import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.SOY_RECORD_TYPE;
 import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.constantSanitizedContentKindAsContentKind;
-import static com.google.template.soy.jbcsrc.restricted.FieldRef.createField;
-import static com.google.template.soy.jbcsrc.restricted.FieldRef.createFinalField;
 import static com.google.template.soy.jbcsrc.restricted.LocalVariable.createLocal;
 import static com.google.template.soy.jbcsrc.restricted.LocalVariable.createThisVar;
 import static com.google.template.soy.soytree.SoyTreeUtils.getAllNodesOfType;
 
 import com.google.auto.value.AutoAnnotation;
 import com.google.common.collect.ImmutableMap;
-import com.google.template.soy.base.internal.SanitizedContentKind;
-import com.google.template.soy.base.internal.UniqueNameGenerator;
-import com.google.template.soy.data.SoyRecord;
-import com.google.template.soy.data.SoyValueProvider;
+import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.VarDefn.Kind;
 import com.google.template.soy.exprtree.VarRefNode;
@@ -44,14 +39,12 @@ import com.google.template.soy.jbcsrc.ExpressionCompiler.BasicExpressionCompiler
 import com.google.template.soy.jbcsrc.SoyNodeCompiler.CompiledMethodBody;
 import com.google.template.soy.jbcsrc.internal.ClassData;
 import com.google.template.soy.jbcsrc.internal.InnerClasses;
-import com.google.template.soy.jbcsrc.internal.JbcSrcNameGenerators;
 import com.google.template.soy.jbcsrc.internal.SoyClassWriter;
 import com.google.template.soy.jbcsrc.restricted.AnnotationRef;
 import com.google.template.soy.jbcsrc.restricted.BytecodeUtils;
 import com.google.template.soy.jbcsrc.restricted.CodeBuilder;
 import com.google.template.soy.jbcsrc.restricted.Expression;
 import com.google.template.soy.jbcsrc.restricted.FieldRef;
-import com.google.template.soy.jbcsrc.restricted.JbcSrcPluginContext;
 import com.google.template.soy.jbcsrc.restricted.LocalVariable;
 import com.google.template.soy.jbcsrc.restricted.MethodRef;
 import com.google.template.soy.jbcsrc.restricted.SoyExpression;
@@ -68,13 +61,11 @@ import com.google.template.soy.soytree.LetContentNode;
 import com.google.template.soy.soytree.LetValueNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.TemplateDelegateNode;
-import com.google.template.soy.soytree.TemplateElementNode;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.Visibility;
 import com.google.template.soy.soytree.defn.LocalVar;
 import com.google.template.soy.soytree.defn.TemplateHeaderVarDefn;
 import com.google.template.soy.soytree.defn.TemplateParam;
-import com.google.template.soy.soytree.defn.TemplateStateVar;
 import com.google.template.soy.types.NullType;
 import com.google.template.soy.types.SoyTypeRegistry;
 import java.util.ArrayList;
@@ -96,10 +87,12 @@ final class TemplateCompiler {
   private static final TypeInfo TEMPLATE_TYPE = TypeInfo.create(CompiledTemplate.class);
 
   private final CompiledTemplateRegistry registry;
-  private final FieldRef paramsField;
-  private final FieldRef ijField;
+  // lazily allocated
+  private FieldRef paramsField;
+  // lazily allocated
+  private FieldRef ijField;
   private final FieldRef stateField;
-  private final UniqueNameGenerator fieldNames = JbcSrcNameGenerators.forFieldNames();
+  private final FieldManager fields;
   private final ImmutableMap<String, FieldRef> paramFields;
   private final CompiledTemplateMetadata template;
   private final TemplateNode templateNode;
@@ -117,19 +110,15 @@ final class TemplateCompiler {
     this.registry = registry;
     this.template = template;
     this.templateNode = templateNode;
-    TypeInfo ownerType = template.typeInfo();
-    this.paramsField = createFinalField(ownerType, PARAMS_FIELD, SoyRecord.class).asNonNull();
-    this.ijField = createFinalField(ownerType, IJ_FIELD, SoyRecord.class).asNonNull();
-    this.stateField = createField(ownerType, STATE_FIELD, Type.INT_TYPE);
-    this.innerClasses = new InnerClasses(ownerType);
-    fieldNames.claimName(PARAMS_FIELD);
-    fieldNames.claimName(IJ_FIELD);
-    fieldNames.claimName(STATE_FIELD);
+    this.innerClasses = new InnerClasses(template.typeInfo());
+    this.fields = new FieldManager(template.typeInfo());
+    this.stateField = fields.addField(STATE_FIELD, Type.INT_TYPE).asNonNull();
+
     ImmutableMap.Builder<String, FieldRef> builder = ImmutableMap.builder();
     for (TemplateParam param : templateNode.getAllParams()) {
       String name = param.name();
-      fieldNames.claimName(name);
-      builder.put(name, createFinalField(ownerType, name, SoyValueProvider.class).asNonNull());
+      builder.put(
+          name, fields.addFinalField(name, BytecodeUtils.SOY_VALUE_PROVIDER_TYPE).asNonNull());
     }
     this.paramFields = builder.build();
     this.reporter = reporter;
@@ -165,26 +154,32 @@ final class TemplateCompiler {
       new TemplateFactoryCompiler(template, templateNode, innerClasses).compile();
     }
 
+    // TODO(lukes): change the flow of this method so these methods return method bodies and we only
+    // write the methods to the writer after generating everything.
+    // this should make the order of operations clearer and limit access to the writer.
     writer =
         SoyClassWriter.builder(template.typeInfo())
             .setAccess(Opcodes.ACC_PUBLIC + Opcodes.ACC_SUPER + Opcodes.ACC_FINAL)
             .implementing(TEMPLATE_TYPE)
             .sourceFileName(templateNode.getSourceLocation().getFileName())
             .build();
+    BasicExpressionCompiler constantCompiler =
+        ExpressionCompiler.createConstantCompiler(
+            new SimpleLocalVariableManager(BytecodeUtils.CLASS_INIT, /* isStatic=*/ true),
+            fields,
+            reporter,
+            soyTypeRegistry);
     generateTemplateMetadata();
     generateKindMethod();
-    stateField.defineField(writer);
-    paramsField.defineField(writer);
-    ijField.defineField(writer);
-    for (FieldRef field : paramFields.values()) {
-      field.defineField(writer);
-    }
 
-    ImmutableMap<TemplateParam, SoyExpression> defaultParamInitializers = generateRenderMethod();
+    generateRenderMethod(constantCompiler);
 
-    generateConstructor(defaultParamInitializers);
+    generateConstructor(constantCompiler);
 
     innerClasses.registerAllInnerClasses(writer);
+    fields.defineFields(writer);
+    fields.defineStaticInitializer(writer);
+
     writer.visitEnd();
 
     classes.add(writer.toClassData());
@@ -202,8 +197,7 @@ final class TemplateCompiler {
 
   /** Writes a {@link TemplateMetadata} to the generated class. */
   private void generateTemplateMetadata() {
-    SanitizedContentKind contentKind = templateNode.getContentKind();
-    String kind = contentKind == null ? "" : contentKind.name();
+    String kind = templateNode.getContentKind().name();
 
     // using linked hash sets below for determinism
     Set<String> uniqueIjs = new LinkedHashSet<>();
@@ -235,19 +229,29 @@ final class TemplateCompiler {
       deltemplateMetadata = createDefaultDelTemplateMetadata();
     }
     TemplateMetadata metadata =
-        createTemplateMetadata(kind, uniqueIjs, callees, delCallees, deltemplateMetadata);
+        createTemplateMetadata(
+            kind,
+            new ImmutableSet.Builder<String>()
+                .addAll(templateNode.getRequiredCssNamespaces())
+                .addAll(templateNode.getParent().getRequiredCssNamespaces())
+                .build(),
+            uniqueIjs,
+            callees,
+            delCallees,
+            deltemplateMetadata);
     TEMPLATE_METADATA_REF.write(metadata, writer);
   }
 
   @AutoAnnotation
   static TemplateMetadata createTemplateMetadata(
       String contentKind,
+      Set<String> requiredCssNames,
       Set<String> injectedParams,
       Set<String> callees,
       Set<String> delCallees,
       TemplateMetadata.DelTemplateMetadata deltemplateMetadata) {
     return new AutoAnnotation_TemplateCompiler_createTemplateMetadata(
-        contentKind, injectedParams, callees, delCallees, deltemplateMetadata);
+        contentKind, requiredCssNames, injectedParams, callees, delCallees, deltemplateMetadata);
   }
 
   @AutoAnnotation
@@ -261,7 +265,7 @@ final class TemplateCompiler {
     return new AutoAnnotation_TemplateCompiler_createDelTemplateMetadata(delPackage, name, variant);
   }
 
-  private ImmutableMap<TemplateParam, SoyExpression> generateRenderMethod() {
+  private void generateRenderMethod(BasicExpressionCompiler constantCompiler) {
     final Label start = new Label();
     final Label end = new Label();
     final LocalVariable thisVar = createThisVar(template.typeInfo(), start, end);
@@ -270,21 +274,9 @@ final class TemplateCompiler {
     final LocalVariable contextVar =
         createLocal("context", 2, RENDER_CONTEXT_TYPE, start, end).asNonNullable();
     final TemplateVariableManager variableSet =
-        new TemplateVariableManager(
-            fieldNames, template.typeInfo(), thisVar, template.renderMethod().method());
-    ImmutableMap<TemplateStateVar, SoyExpression> stateInitializers = ImmutableMap.of();
-    BasicExpressionCompiler constantCompiler =
-        ExpressionCompiler.createConstantCompiler(variableSet, reporter, soyTypeRegistry);
-    if (templateNode instanceof TemplateElementNode) {
-      stateInitializers =
-          generateStateInitializers(
-              (TemplateElementNode) templateNode, variableSet, constantCompiler);
-    }
-    ImmutableMap<TemplateParam, SoyExpression> defaultParamInitializers =
-        generateDefaultParamInitializers(templateNode, variableSet, constantCompiler);
+        new TemplateVariableManager(fields, thisVar, template.renderMethod().method());
     TemplateVariables variables =
-        new TemplateVariables(
-            variableSet, thisVar, stateInitializers, new RenderContextExpression(contextVar));
+        new TemplateVariables(variableSet, thisVar, new RenderContextExpression(contextVar));
     final CompiledMethodBody methodBody =
         SoyNodeCompiler.create(
                 registry,
@@ -294,6 +286,8 @@ final class TemplateCompiler {
                 AppendableExpression.forLocal(appendableVar),
                 variableSet,
                 variables,
+                fields,
+                constantCompiler,
                 reporter,
                 soyTypeRegistry)
             .compile(templateNode);
@@ -313,41 +307,10 @@ final class TemplateCompiler {
       }
     }.writeIOExceptionMethod(Opcodes.ACC_PUBLIC, template.renderMethod().method(), writer);
     writer.setNumDetachStates(methodBody.numberOfDetachStates());
-    variableSet.defineStaticFields(writer);
-    variableSet.defineFields(writer);
-    return defaultParamInitializers;
-  }
-
-  private ImmutableMap<TemplateStateVar, SoyExpression> generateStateInitializers(
-      TemplateElementNode node,
-      TemplateVariableManager varManager,
-      BasicExpressionCompiler constantCompiler) {
-    ImmutableMap.Builder<TemplateStateVar, SoyExpression> builder = ImmutableMap.builder();
-    for (TemplateStateVar state : node.getStateVars()) {
-      SoyExpression stateValue = getDefaultValueVarRef(state, varManager, constantCompiler);
-      builder.put(state, stateValue);
-    }
-    return builder.build();
-  }
-
-  private ImmutableMap<TemplateParam, SoyExpression> generateDefaultParamInitializers(
-      TemplateNode template,
-      TemplateVariableManager varManager,
-      BasicExpressionCompiler constantCompiler) {
-    ImmutableMap.Builder<TemplateParam, SoyExpression> params = ImmutableMap.builder();
-    for (TemplateParam param : template.getParams()) {
-      if (param.hasDefault()) {
-        SoyExpression defaultParamRef = getDefaultValueVarRef(param, varManager, constantCompiler);
-        params.put(param, defaultParamRef);
-      }
-    }
-    return params.build();
   }
 
   private SoyExpression getDefaultValueVarRef(
-      TemplateHeaderVarDefn headerVar,
-      TemplateVariableManager varManager,
-      BasicExpressionCompiler constantCompiler) {
+      TemplateHeaderVarDefn headerVar, BasicExpressionCompiler constantCompiler) {
     SoyExpression varRef;
     if (headerVar.defaultValue().getType() == NullType.getInstance()) {
       // a special case for null to avoid poor handling elsewhere in the compiler.
@@ -363,9 +326,9 @@ final class TemplateCompiler {
       FieldRef ref;
       if (headerVar.kind() == Kind.STATE) {
         // State fields are package private so that lazy closures can access them directly.
-        ref = varManager.addPackagePrivateStaticField(headerVar.name(), varRef);
+        ref = fields.addPackagePrivateStaticField(headerVar.name(), varRef);
       } else {
-        ref = varManager.addStaticField("default$" + headerVar.name(), varRef);
+        ref = fields.addStaticField("default$" + headerVar.name(), varRef);
       }
       varRef = varRef.withSource(ref.accessor());
     }
@@ -376,21 +339,31 @@ final class TemplateCompiler {
    * Generate a public constructor that assigns our final field and checks for missing required
    * params.
    *
-   * <p>This constructor is called by the generate factory classes.
+   * <p>This constructor is called by the generated factory classes.
    */
-  private void generateConstructor(
-      ImmutableMap<TemplateParam, SoyExpression> defaultParamInitializers) {
+  private void generateConstructor(BasicExpressionCompiler constantCompiler) {
     final Label start = new Label();
     final Label end = new Label();
     final LocalVariable thisVar = createThisVar(template.typeInfo(), start, end);
     final LocalVariable paramsVar = createLocal("params", 1, SOY_RECORD_TYPE, start, end);
     final LocalVariable ijVar = createLocal("ij", 2, SOY_RECORD_TYPE, start, end);
     final List<Statement> assignments = new ArrayList<>();
-    assignments.add(paramsField.putInstanceField(thisVar, paramsVar));
-    assignments.add(ijField.putInstanceField(thisVar, ijVar));
+    // these aren't always needed, so we lazily allocate the fields
+    if (paramsField != null) {
+      assignments.add(paramsField.putInstanceField(thisVar, paramsVar));
+    }
+    if (ijField != null) {
+      assignments.add(ijField.putInstanceField(thisVar, ijVar));
+    }
     for (TemplateParam param : templateNode.getAllParams()) {
       Expression paramProvider =
-          getParam(paramsVar, ijVar, param, defaultParamInitializers.get(param));
+          getParam(
+              paramsVar,
+              ijVar,
+              param,
+              /* defaultValue=*/ param.hasDefault()
+                  ? getDefaultValueVarRef(param, constantCompiler)
+                  : null);
       assignments.add(paramFields.get(param.name()).putInstanceField(thisVar, paramProvider));
     }
     Statement constructorBody =
@@ -436,46 +409,52 @@ final class TemplateCompiler {
     }
   }
 
-  private final class TemplateVariables implements TemplateParameterLookup {
+  private final class TemplateVariables extends AbstractTemplateParameterLookup {
     private final TemplateVariableManager variableSet;
     private final Expression thisRef;
     private final RenderContextExpression renderContext;
-    private final ImmutableMap<TemplateStateVar, SoyExpression> stateVars;
 
     TemplateVariables(
         TemplateVariableManager variableSet,
         Expression thisRef,
-        ImmutableMap<TemplateStateVar, SoyExpression> stateVars,
         RenderContextExpression renderContext) {
       this.variableSet = variableSet;
       this.thisRef = thisRef;
       this.renderContext = renderContext;
-      this.stateVars = stateVars;
     }
 
     @Override
-    public Expression getParam(TemplateParam param) {
-      return paramFields.get(param.name()).accessor(thisRef);
+    FieldRef getParamField(TemplateParam param) {
+      return paramFields.get(param.name());
+    }
+
+    // allocate these lazily since they are only needed in certain cases (ij is needed for all
+    // calls, but not every template has a call, params is needed for data="all" style calls, but
+    // not all templates have those)
+    @Override
+    FieldRef getParamsRecordField() {
+      if (paramsField == null) {
+        paramsField = fields.addFinalField(PARAMS_FIELD, BytecodeUtils.SOY_RECORD_TYPE).asNonNull();
+      }
+      return paramsField;
     }
 
     @Override
-    public SoyExpression getState(TemplateStateVar stateVar) {
-      return stateVars.get(stateVar);
+    FieldRef getIjRecordField() {
+      if (ijField == null) {
+        ijField = fields.addFinalField(IJ_FIELD, BytecodeUtils.SOY_RECORD_TYPE).asNonNull();
+      }
+      return ijField;
     }
 
     @Override
     public Expression getLocal(LocalVar local) {
-      return variableSet.getVariable(local.name()).local();
+      return variableSet.getVariable(local.name());
     }
 
     @Override
     public Expression getLocal(SyntheticVarName varName) {
-      return variableSet.getVariable(varName).local();
-    }
-
-    @Override
-    public JbcSrcPluginContext getPluginContext() {
-      return renderContext;
+      return variableSet.getVariable(varName);
     }
 
     @Override
@@ -484,13 +463,8 @@ final class TemplateCompiler {
     }
 
     @Override
-    public Expression getParamsRecord() {
-      return paramsField.accessor(thisRef);
-    }
-
-    @Override
-    public Expression getIjRecord() {
-      return ijField.accessor(thisRef);
+    Expression getCompiledTemplate() {
+      return thisRef;
     }
   }
 }

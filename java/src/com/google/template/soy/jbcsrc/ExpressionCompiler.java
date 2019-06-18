@@ -25,9 +25,6 @@ import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.firstNonNu
 import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.logicalNot;
 import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.ternary;
 
-import com.google.common.base.Optional;
-import com.google.common.base.Supplier;
-import com.google.common.base.Suppliers;
 import com.google.common.collect.Iterables;
 import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.data.SoyLegacyObjectMap;
@@ -36,9 +33,11 @@ import com.google.template.soy.data.SoyProtoValue;
 import com.google.template.soy.data.SoyRecord;
 import com.google.template.soy.data.internal.RuntimeMapTypeTracker;
 import com.google.template.soy.error.ErrorReporter;
+import com.google.template.soy.exprtree.AbstractReturningExprNodeVisitor;
 import com.google.template.soy.exprtree.BooleanNode;
 import com.google.template.soy.exprtree.DataAccessNode;
 import com.google.template.soy.exprtree.ExprNode;
+import com.google.template.soy.exprtree.ExprNode.OperatorNode;
 import com.google.template.soy.exprtree.ExprNode.ParentExprNode;
 import com.google.template.soy.exprtree.ExprNode.PrimitiveNode;
 import com.google.template.soy.exprtree.ExprRootNode;
@@ -83,12 +82,13 @@ import com.google.template.soy.jbcsrc.restricted.MethodRef;
 import com.google.template.soy.jbcsrc.restricted.SoyExpression;
 import com.google.template.soy.jbcsrc.restricted.SoyRuntimeType;
 import com.google.template.soy.jbcsrc.shared.LegacyFunctionAdapter;
+import com.google.template.soy.plugin.java.internal.PluginAnalyzer;
 import com.google.template.soy.plugin.java.restricted.SoyJavaSourceFunction;
+import com.google.template.soy.shared.restricted.SoyPureFunction;
 import com.google.template.soy.soytree.ForNonemptyNode;
 import com.google.template.soy.soytree.SoyNode.LocalVarNode;
 import com.google.template.soy.soytree.defn.LocalVar;
 import com.google.template.soy.soytree.defn.TemplateParam;
-import com.google.template.soy.soytree.defn.TemplateStateVar;
 import com.google.template.soy.types.ListType;
 import com.google.template.soy.types.SoyProtoType;
 import com.google.template.soy.types.SoyType.Kind;
@@ -96,6 +96,7 @@ import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.SoyTypes;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import javax.annotation.Nullable;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.Opcodes;
@@ -124,16 +125,13 @@ final class ExpressionCompiler {
 
     private BasicExpressionCompiler(
         TemplateParameterLookup parameters,
-        TemplateVariableManager varManager,
+        LocalVariableManager varManager,
+        FieldManager fields,
         ErrorReporter reporter,
         SoyTypeRegistry registry) {
       this.compilerVisitor =
           new CompilerVisitor(
-              parameters,
-              varManager,
-              Suppliers.ofInstance(BasicDetacher.INSTANCE),
-              reporter,
-              registry);
+              parameters, varManager, fields, BasicDetacher.INSTANCE, reporter, registry);
     }
 
     private BasicExpressionCompiler(CompilerVisitor visitor) {
@@ -164,19 +162,25 @@ final class ExpressionCompiler {
   static ExpressionCompiler create(
       ExpressionDetacher.Factory detacherFactory,
       TemplateParameterLookup parameters,
-      TemplateVariableManager varManager,
+      LocalVariableManager varManager,
+      FieldManager fields,
       ErrorReporter reporter,
       SoyTypeRegistry registry) {
-    return new ExpressionCompiler(detacherFactory, parameters, varManager, reporter, registry);
+    return new ExpressionCompiler(
+        detacherFactory, checkNotNull(parameters), varManager, fields, reporter, registry);
   }
 
   static BasicExpressionCompiler createConstantCompiler(
-      TemplateVariableManager varManager, ErrorReporter reporter, SoyTypeRegistry registry) {
+      LocalVariableManager varManager,
+      FieldManager fields,
+      ErrorReporter reporter,
+      SoyTypeRegistry registry) {
     return new BasicExpressionCompiler(
         new CompilerVisitor(
             /* parameters= */ null,
             varManager,
-            Suppliers.ofInstance(ExpressionDetacher.NullDetatcher.INSTANCE),
+            fields,
+            ExpressionDetacher.NullDetatcher.INSTANCE,
             reporter,
             registry));
   }
@@ -189,27 +193,40 @@ final class ExpressionCompiler {
    */
   static BasicExpressionCompiler createBasicCompiler(
       TemplateParameterLookup parameters,
-      TemplateVariableManager varManager,
+      LocalVariableManager varManager,
+      FieldManager fields,
       ErrorReporter reporter,
       SoyTypeRegistry registry) {
-    return new BasicExpressionCompiler(parameters, varManager, reporter, registry);
+    return new BasicExpressionCompiler(
+        checkNotNull(parameters), varManager, fields, reporter, registry);
+  }
+
+  /**
+   * Returns {@code true} if the value can be compiled to a constant expression in a static
+   * initializere.
+   */
+  static boolean canCompileToConstant(ExprNode expr) {
+    return CanCompileToConstantVisitor.INSTANCE.exec(expr);
   }
 
   @Nullable private final TemplateParameterLookup parameters;
-  private final TemplateVariableManager varManager;
+  private final LocalVariableManager varManager;
+  private final FieldManager fields;
   private final ExpressionDetacher.Factory detacherFactory;
   private final ErrorReporter reporter;
   private final SoyTypeRegistry registry;
 
   private ExpressionCompiler(
       ExpressionDetacher.Factory detacherFactory,
-      TemplateParameterLookup parameters,
-      TemplateVariableManager varManager,
+      @Nullable TemplateParameterLookup parameters,
+      LocalVariableManager varManager,
+      FieldManager fields,
       ErrorReporter reporter,
       SoyTypeRegistry registry) {
     this.detacherFactory = detacherFactory;
     this.parameters = parameters;
-    this.varManager = varManager;
+    this.varManager = checkNotNull(varManager);
+    this.fields = checkNotNull(fields);
     this.reporter = reporter;
     this.registry = registry;
   }
@@ -245,14 +262,10 @@ final class ExpressionCompiler {
   Optional<SoyExpression> compileWithNoDetaches(ExprNode node) {
     checkNotNull(node);
     if (RequiresDetachVisitor.INSTANCE.exec(node)) {
-      return Optional.absent();
+      return Optional.empty();
     }
-    Supplier<ExpressionDetacher> throwingSupplier =
-        () -> {
-          throw new AssertionError();
-        };
     return Optional.of(
-        new CompilerVisitor(parameters, varManager, throwingSupplier, reporter, registry)
+        new CompilerVisitor(parameters, varManager, fields, /* detacher=*/ null, reporter, registry)
             .exec(node));
   }
 
@@ -265,31 +278,34 @@ final class ExpressionCompiler {
         new CompilerVisitor(
             parameters,
             varManager,
-            // Use a lazy supplier to allocate the expression detacher on demand.  Allocating the
-            // detacher eagerly creates detach points so we want to delay until definitely
-            // necessary.
-            Suppliers.memoize(() -> detacherFactory.createExpressionDetacher(reattachPoint)),
+            fields,
+            detacherFactory.createExpressionDetacher(reattachPoint),
             reporter,
             registry));
   }
 
   private static final class CompilerVisitor
       extends EnhancedAbstractExprNodeVisitor<SoyExpression> {
-    final Supplier<? extends ExpressionDetacher> detacher;
-    final TemplateParameterLookup parameters;
-    final TemplateVariableManager varManager;
+    // is null when we are generating code with no detaches.
+    @Nullable final ExpressionDetacher detacher;
+    // is null when this is a 'constant' compiler
+    @Nullable final TemplateParameterLookup parameters;
+    final LocalVariableManager varManager;
+    final FieldManager fields;
     final ErrorReporter reporter;
     final SoyTypeRegistry registry;
 
     CompilerVisitor(
-        TemplateParameterLookup parameters,
-        TemplateVariableManager varManager,
-        Supplier<? extends ExpressionDetacher> detacher,
+        @Nullable TemplateParameterLookup parameters,
+        LocalVariableManager varManager,
+        FieldManager fields,
+        ExpressionDetacher detacher,
         ErrorReporter reporter,
         SoyTypeRegistry registry) {
       this.detacher = detacher;
       this.parameters = parameters;
       this.varManager = varManager;
+      this.fields = fields;
       this.reporter = reporter;
       this.registry = registry;
     }
@@ -318,7 +334,7 @@ final class ExpressionCompiler {
 
     @Override
     protected final SoyExpression visitStringNode(StringNode node) {
-      return SoyExpression.forString(constant(node.getValue(), varManager));
+      return SoyExpression.forString(constant(node.getValue(), fields));
     }
 
     @Override
@@ -334,11 +350,6 @@ final class ExpressionCompiler {
     @Override
     protected final SoyExpression visitGlobalNode(GlobalNode node) {
       return visit(node.getValue());
-    }
-
-    @Override
-    final SoyExpression visitStateNode(VarRefNode node, TemplateStateVar state) {
-      return parameters.getState(state);
     }
 
     // Collection literals
@@ -746,7 +757,7 @@ final class ExpressionCompiler {
         return SoyExpression.forInt(expression);
       } else {
         // otherwise it must be a SoyValueProvider, resolve and cast
-        expression = detacher.get().resolveSoyValueProvider(expression);
+        expression = detacher.resolveSoyValueProvider(expression);
         return SoyExpression.forSoyValue(
             varRef.getType(),
             expression.checkedCast(SoyRuntimeType.getBoxedType(varRef.getType()).runtimeType()));
@@ -765,7 +776,7 @@ final class ExpressionCompiler {
       // _not_ the first one. This would be super awesome and would save bytecode/branches/states
       // and technically be useful for all varrefs. For the time being we do the naive thing and
       // just assume that the jit can handle all the dead branches effectively.
-      Expression paramExpr = detacher.get().resolveSoyValueProvider(parameters.getParam(param));
+      Expression paramExpr = detacher.resolveSoyValueProvider(parameters.getParam(param));
       // This inserts a CHECKCAST instruction (aka runtime type checking).  However, it is limited
       // since we do not have good checking for unions (or nullability)
       // TODO(lukes): Where/how should we implement type checking.  For the time being type errors
@@ -781,7 +792,7 @@ final class ExpressionCompiler {
     @Override
     SoyExpression visitLetNodeVar(VarRefNode varRef, LocalVar local) {
       Expression expression = parameters.getLocal(local);
-      expression = detacher.get().resolveSoyValueProvider(expression);
+      expression = detacher.resolveSoyValueProvider(expression);
       return SoyExpression.forSoyValue(
           varRef.getType(),
           expression.checkedCast(SoyRuntimeType.getBoxedType(varRef.getType()).runtimeType()));
@@ -998,7 +1009,7 @@ final class ExpressionCompiler {
             .computeForJavaSource(args);
       }
 
-      // Functions that are not a SoyJbcSrcFunction nor a SoyJavaSourceFunction
+      // Functions that are not a SoyJavaSourceFunction
       // are registered with a LegacyFunctionAdapter by SoySauceImpl.
       Expression legacyFunctionRuntimeExpr =
           parameters
@@ -1133,7 +1144,6 @@ final class ExpressionCompiler {
         return SoyExpression.forSoyValue(
             node.getType(),
             detacher
-                .get()
                 .resolveSoyValueProvider(fieldProvider)
                 .checkedCast(SoyRuntimeType.getBoxedType(node.getType()).runtimeType()));
       }
@@ -1161,12 +1171,115 @@ final class ExpressionCompiler {
         }
         Expression soyValue =
             detacher
-                .get()
                 .resolveSoyValueProvider(soyValueProvider)
                 // Just like javac, we insert cast operations when removing from a collection.
                 .checkedCast(SoyRuntimeType.getBoxedType(node.getType()).runtimeType());
         return SoyExpression.forSoyValue(node.getType(), soyValue);
       }
+    }
+  }
+
+  private static final class CanCompileToConstantVisitor
+      extends AbstractReturningExprNodeVisitor<Boolean> {
+    static final CanCompileToConstantVisitor INSTANCE = new CanCompileToConstantVisitor();
+
+    @Override
+    protected Boolean visitExprRootNode(ExprRootNode node) {
+      return areAllChildrenConstant(node);
+    }
+
+    @Override
+    protected Boolean visitVarRefNode(VarRefNode node) {
+      // no variable references are allowed in constant context.
+      return false;
+    }
+
+    @Override
+    protected Boolean visitPrimitiveNode(PrimitiveNode node) {
+      // primitives are fine
+      return true;
+    }
+
+    @Override
+    protected Boolean visitVeLiteralNode(VeLiteralNode node) {
+      // this is essentially a primitive
+      return true;
+    }
+
+    @Override
+    protected Boolean visitGlobalNode(GlobalNode node) {
+      // this is essentially a primitive
+      return true;
+    }
+
+    // collection literals are fine if their contents are
+    @Override
+    protected Boolean visitListLiteralNode(ListLiteralNode node) {
+      return areAllChildrenConstant(node);
+    }
+
+    @Override
+    protected Boolean visitRecordLiteralNode(RecordLiteralNode node) {
+      return areAllChildrenConstant(node);
+    }
+
+    @Override
+    protected Boolean visitMapLiteralNode(MapLiteralNode node) {
+      return areAllChildrenConstant(node);
+    }
+
+    @Override
+    protected Boolean visitProtoInitNode(ProtoInitNode node) {
+      return areAllChildrenConstant(node);
+    }
+
+    // shouldn't really happen, but is fine if the children are
+    @Override
+    protected Boolean visitDataAccessNode(DataAccessNode node) {
+      // data access is fine if the child expressions are.
+      return areAllChildrenConstant(node);
+    }
+
+    @Override
+    protected Boolean visitOperatorNode(OperatorNode node) {
+      return areAllChildrenConstant(node);
+    }
+
+    @Override
+    protected Boolean visitFunctionNode(FunctionNode node) {
+      if (!areAllChildrenConstant(node)) {
+        return false;
+      }
+      if (!node.getSoyFunction().getClass().isAnnotationPresent(SoyPureFunction.class)) {
+        return false;
+      }
+      // We can evaluate the function if
+      // all the parameters are constants and we have an implementation that doesn't depend on the
+      // render context.
+      if (node.getSoyFunction() instanceof SoyJavaSourceFunction) {
+        try {
+          PluginAnalyzer.PluginMetadata metadata =
+              PluginAnalyzer.analyze((SoyJavaSourceFunction) node.getSoyFunction());
+          // the plugin can be generated as a constant expression if it doesn't access the context
+          // or require an instance function.
+          return metadata.pluginInstances().isEmpty() && !metadata.accessesContext();
+        } catch (Throwable ignored) {
+          // sort of lame but this just means that we will report the error when we try to generate
+          // actual code.
+          return false;
+        }
+      }
+      // legacy functions are not OK.
+      return false;
+    }
+
+    private boolean areAllChildrenConstant(ParentExprNode node) {
+      for (ExprNode child : node.getChildren()) {
+        if (!visit(child)) {
+          return false;
+        }
+      }
+      return true;
     }
   }
 
@@ -1196,11 +1309,6 @@ final class ExpressionCompiler {
     @Override
     protected Boolean visitDataAccessNode(DataAccessNode node) {
       return true;
-    }
-
-    @Override
-    Boolean visitStateNode(VarRefNode node, TemplateStateVar state) {
-      return false;
     }
 
     @Override

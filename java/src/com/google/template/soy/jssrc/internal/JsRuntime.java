@@ -88,9 +88,6 @@ public final class JsRuntime {
   public static final Expression GOOG_SOY_DATA_SANITIZED_CONTENT =
       GoogRequire.create("goog.soy.data.SanitizedContent").reference();
 
-  public static final Expression GOOG_SOY_DATA_UNSANITIZED_TEXT =
-      GoogRequire.create("goog.soy.data.UnsanitizedText").reference();
-
   public static final Expression GOOG_STRING_UNESCAPE_ENTITIES =
       GOOG_STRING.dotAccess("unescapeEntities");
 
@@ -119,9 +116,6 @@ public final class JsRuntime {
       SOY.dotAccess("$$debugSoyTemplateInfo");
 
   public static final Expression SOY_MAP_POPULATE = SOY_MAP.dotAccess("$$populateMap");
-
-  public static final Expression SOY_MAP_MAYBE_COERCE_KEY_TO_STRING =
-      SOY_MAP.dotAccess("$$maybeCoerceKeyToString");
 
   public static final Expression SOY_MAP_IS_SOY_MAP = SOY_MAP.dotAccess("$$isSoyMap");
 

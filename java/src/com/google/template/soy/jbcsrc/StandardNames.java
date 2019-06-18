@@ -20,12 +20,12 @@ package com.google.template.soy.jbcsrc;
 final class StandardNames {
   static final String PARAMS_FIELD = "$params";
   static final String IJ_FIELD = "$ij";
+  static final String COMPILED_TEMPLATE = "$template";
   static final String STATE_FIELD = "$state";
   static final String RENDER_CONTEXT_FIELD = "$renderContext";
   static final String CURRENT_CALLEE_FIELD = "$currentCallee";
   static final String CURRENT_RENDEREE_FIELD = "$currentRenderee";
   static final String CURRENT_APPENDABLE_FIELD = "$currentAppendable";
-  static final String TEMP_BUFFER_FIELD = "$tmpBuffer";
 
   static final String FACTORY_CLASS = "Factory";
 

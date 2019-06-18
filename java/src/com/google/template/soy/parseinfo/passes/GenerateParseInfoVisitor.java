@@ -19,7 +19,6 @@ package com.google.template.soy.parseinfo.passes;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.CaseFormat;
 import com.google.common.base.Joiner;
-import com.google.common.base.Optional;
 import com.google.common.base.Splitter;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableMap;
@@ -42,7 +41,7 @@ import com.google.template.soy.internal.proto.ProtoUtils;
 import com.google.template.soy.parseinfo.SoyFileInfo.CssTagsPrefixPresence;
 import com.google.template.soy.passes.IndirectParamsCalculator;
 import com.google.template.soy.passes.IndirectParamsCalculator.IndirectParamsInfo;
-import com.google.template.soy.plugin.java.internal.PluginInstanceFinder;
+import com.google.template.soy.plugin.java.internal.PluginAnalyzer;
 import com.google.template.soy.plugin.java.restricted.SoyJavaSourceFunction;
 import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.soytree.AbstractSoyNodeVisitor;
@@ -50,13 +49,13 @@ import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
-import com.google.template.soy.soytree.TemplateBasicNode;
 import com.google.template.soy.soytree.TemplateDelegateNode;
 import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateMetadata.Parameter;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.Visibility;
+import com.google.template.soy.soytree.defn.TemplateHeaderVarDefn;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.types.AbstractMapType;
 import com.google.template.soy.types.ListType;
@@ -73,6 +72,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.SortedMap;
 import java.util.SortedSet;
@@ -299,7 +299,7 @@ public final class GenerateParseInfoVisitor
     String javaClassName = soyFileToJavaClassNameMap.get(node);
 
     // Collect the following:
-    // + all the public basic templates (non-private, non-delegate) in a map from the
+    // + all the public basic/element templates (non-private, non-delegate) in a map from the
     //   upper-underscore template name to the template's node,
     // + all the param keys from all templates (including private),
     // + for each param key, the list of templates that list it directly.
@@ -311,17 +311,17 @@ public final class GenerateParseInfoVisitor
     SortedSet<String> protoTypes = Sets.newTreeSet();
     Map<String, String> pluginInstances = new TreeMap<>();
     for (TemplateNode template : node.getChildren()) {
-      if (template.getVisibility() == Visibility.PUBLIC && template instanceof TemplateBasicNode) {
+      if (template.getVisibility() == Visibility.PUBLIC
+          && template.getKind() != SoyNode.Kind.TEMPLATE_DELEGATE_NODE) {
         publicBasicTemplateMap.put(
             convertToUpperUnderscore(template.getPartialTemplateName().substring(1)), template);
       }
-      for (TemplateParam param : template.getAllParams()) {
-        if (!param.isInjected()) {
-          allParamKeys.add(param.name());
-          paramKeyToTemplatesMultimap.put(param.name(), template);
-        }
-        SoyType paramType = param.type();
-        findProtoTypesRecurse(paramType, protoTypes);
+      for (TemplateParam param : template.getParams()) {
+        allParamKeys.add(param.name());
+        paramKeyToTemplatesMultimap.put(param.name(), template);
+      }
+      for (TemplateHeaderVarDefn varDefn : template.getHeaderParams()) {
+        findProtoTypesRecurse(varDefn.type(), protoTypes);
       }
       // TODO(b/77597955): Scan all expressions, to pick up types from function return values and
       // anything else that may have a type now or in the future.
@@ -359,8 +359,9 @@ public final class GenerateParseInfoVisitor
         if (fnNode.getSoyFunction() instanceof SoyJavaSourceFunction
             && !pluginInstances.containsKey(fnNode.getFunctionName())) {
           Set<Class<?>> instances =
-              PluginInstanceFinder.find(
-                  (SoyJavaSourceFunction) fnNode.getSoyFunction(), fnNode.numChildren());
+              PluginAnalyzer.analyze(
+                      (SoyJavaSourceFunction) fnNode.getSoyFunction(), fnNode.numChildren())
+                  .pluginInstances();
           if (!instances.isEmpty()) {
             // We guarantee there's either 0 or 1 instances in the plugin because we already
             // passed through PluginResolver, which checked this.
@@ -599,7 +600,7 @@ public final class GenerateParseInfoVisitor
     // ------ *SoyTemplateInfo class start. ------
     ilb.appendLine();
     ilb.appendLine();
-    appendJavadoc(ilb, Optional.fromNullable(node.getSoyDocDesc()).or(""), true, false);
+    appendJavadoc(ilb, Optional.ofNullable(node.getSoyDocDesc()).orElse(""), true, false);
     ilb.appendLine(
         "public static final class ", templateInfoClassName, " extends SoyTemplateInfo {");
     ilb.increaseIndent();

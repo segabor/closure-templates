@@ -412,7 +412,6 @@ goog.exportPath_ = function(name, opt_object, opt_objectToExportTo) {
   }
 };
 goog.define = function(name, defaultValue) {
-  goog.exportPath_(name, defaultValue);
   return defaultValue;
 };
 goog.FEATURESET_YEAR = 2012;
@@ -1855,14 +1854,20 @@ goog.labs.userAgent.browser.matchOpera_ = function() {
 goog.labs.userAgent.browser.matchIE_ = function() {
   return goog.labs.userAgent.util.matchUserAgent("Trident") || goog.labs.userAgent.util.matchUserAgent("MSIE");
 };
-goog.labs.userAgent.browser.matchEdge_ = function() {
+goog.labs.userAgent.browser.matchEdgeHtml_ = function() {
   return goog.labs.userAgent.util.matchUserAgent("Edge");
+};
+goog.labs.userAgent.browser.matchEdgeChromium_ = function() {
+  return goog.labs.userAgent.util.matchUserAgent("Edg/");
+};
+goog.labs.userAgent.browser.matchOperaChromium_ = function() {
+  return goog.labs.userAgent.util.matchUserAgent("OPR");
 };
 goog.labs.userAgent.browser.matchFirefox_ = function() {
   return goog.labs.userAgent.util.matchUserAgent("Firefox") || goog.labs.userAgent.util.matchUserAgent("FxiOS");
 };
 goog.labs.userAgent.browser.matchSafari_ = function() {
-  return goog.labs.userAgent.util.matchUserAgent("Safari") && !(goog.labs.userAgent.browser.matchChrome_() || goog.labs.userAgent.browser.matchCoast_() || goog.labs.userAgent.browser.matchOpera_() || goog.labs.userAgent.browser.matchEdge_() || goog.labs.userAgent.browser.matchFirefox_() || goog.labs.userAgent.browser.isSilk() || goog.labs.userAgent.util.matchUserAgent("Android"));
+  return goog.labs.userAgent.util.matchUserAgent("Safari") && !(goog.labs.userAgent.browser.matchChrome_() || goog.labs.userAgent.browser.matchCoast_() || goog.labs.userAgent.browser.matchOpera_() || goog.labs.userAgent.browser.matchEdgeHtml_() || goog.labs.userAgent.browser.matchEdgeChromium_() || goog.labs.userAgent.browser.matchOperaChromium_() || goog.labs.userAgent.browser.matchFirefox_() || goog.labs.userAgent.browser.isSilk() || goog.labs.userAgent.util.matchUserAgent("Android"));
 };
 goog.labs.userAgent.browser.matchCoast_ = function() {
   return goog.labs.userAgent.util.matchUserAgent("Coast");
@@ -1871,14 +1876,16 @@ goog.labs.userAgent.browser.matchIosWebview_ = function() {
   return (goog.labs.userAgent.util.matchUserAgent("iPad") || goog.labs.userAgent.util.matchUserAgent("iPhone")) && !goog.labs.userAgent.browser.matchSafari_() && !goog.labs.userAgent.browser.matchChrome_() && !goog.labs.userAgent.browser.matchCoast_() && !goog.labs.userAgent.browser.matchFirefox_() && goog.labs.userAgent.util.matchUserAgent("AppleWebKit");
 };
 goog.labs.userAgent.browser.matchChrome_ = function() {
-  return (goog.labs.userAgent.util.matchUserAgent("Chrome") || goog.labs.userAgent.util.matchUserAgent("CriOS")) && !goog.labs.userAgent.browser.matchEdge_();
+  return (goog.labs.userAgent.util.matchUserAgent("Chrome") || goog.labs.userAgent.util.matchUserAgent("CriOS")) && !goog.labs.userAgent.browser.matchEdgeHtml_();
 };
 goog.labs.userAgent.browser.matchAndroidBrowser_ = function() {
   return goog.labs.userAgent.util.matchUserAgent("Android") && !(goog.labs.userAgent.browser.isChrome() || goog.labs.userAgent.browser.isFirefox() || goog.labs.userAgent.browser.isOpera() || goog.labs.userAgent.browser.isSilk());
 };
 goog.labs.userAgent.browser.isOpera = goog.labs.userAgent.browser.matchOpera_;
 goog.labs.userAgent.browser.isIE = goog.labs.userAgent.browser.matchIE_;
-goog.labs.userAgent.browser.isEdge = goog.labs.userAgent.browser.matchEdge_;
+goog.labs.userAgent.browser.isEdge = goog.labs.userAgent.browser.matchEdgeHtml_;
+goog.labs.userAgent.browser.isEdgeChromium = goog.labs.userAgent.browser.matchEdgeChromium_;
+goog.labs.userAgent.browser.isOperaChromium = goog.labs.userAgent.browser.matchOperaChromium_;
 goog.labs.userAgent.browser.isFirefox = goog.labs.userAgent.browser.matchFirefox_;
 goog.labs.userAgent.browser.isSafari = goog.labs.userAgent.browser.matchSafari_;
 goog.labs.userAgent.browser.isCoast = goog.labs.userAgent.browser.matchCoast_;
@@ -1907,6 +1914,9 @@ goog.labs.userAgent.browser.getVersion = function() {
   }
   if (goog.labs.userAgent.browser.isEdge()) {
     return lookUpValueWithKeys(["Edge"]);
+  }
+  if (goog.labs.userAgent.browser.isEdgeChromium()) {
+    return lookUpValueWithKeys(["Edg"]);
   }
   if (goog.labs.userAgent.browser.isChrome()) {
     return lookUpValueWithKeys(["Chrome", "CriOS"]);
@@ -2700,6 +2710,10 @@ goog.html.SafeUrl.fromSipUrl = function(sipUrl) {
 goog.html.SafeUrl.fromFacebookMessengerUrl = function(facebookMessengerUrl) {
   goog.string.internal.caseInsensitiveStartsWith(facebookMessengerUrl, "fb-messenger://share") || (facebookMessengerUrl = goog.html.SafeUrl.INNOCUOUS_STRING);
   return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(facebookMessengerUrl);
+};
+goog.html.SafeUrl.fromWhatsAppUrl = function(whatsAppUrl) {
+  goog.string.internal.caseInsensitiveStartsWith(whatsAppUrl, "whatsapp://send") || (whatsAppUrl = goog.html.SafeUrl.INNOCUOUS_STRING);
+  return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(whatsAppUrl);
 };
 goog.html.SafeUrl.fromSmsUrl = function(smsUrl) {
   goog.string.internal.caseInsensitiveStartsWith(smsUrl, "sms:") && goog.html.SafeUrl.isSmsUrlBodyValid_(smsUrl) || (smsUrl = goog.html.SafeUrl.INNOCUOUS_STRING);
@@ -4004,8 +4018,7 @@ goog.userAgent.isDocumentModeOrHigher = function(documentMode) {
 };
 goog.userAgent.isDocumentMode = goog.userAgent.isDocumentModeOrHigher;
 var JSCompiler_inline_result$jscomp$6;
-var doc$jscomp$inline_11 = goog.global.document;
-JSCompiler_inline_result$jscomp$6 = doc$jscomp$inline_11 && goog.userAgent.IE ? goog.userAgent.getDocumentMode_() || ("CSS1Compat" == doc$jscomp$inline_11.compatMode ? parseInt(goog.userAgent.VERSION, 10) : 5) : void 0;
+JSCompiler_inline_result$jscomp$6 = goog.global.document && goog.userAgent.IE ? goog.userAgent.getDocumentMode_() : void 0;
 goog.userAgent.DOCUMENT_MODE = JSCompiler_inline_result$jscomp$6;
 goog.debug.LOGGING_ENABLED = goog.DEBUG;
 goog.debug.FORCE_SLOPPY_STACKS = !1;
@@ -6034,7 +6047,7 @@ goog.Uri.QueryData.prototype.extend = function(var_args) {
 };
 goog.soy = {};
 goog.soy.data = {};
-goog.soy.data.SanitizedContentKind = {HTML:goog.DEBUG ? {sanitizedContentKindHtml:!0} : {}, JS:goog.DEBUG ? {sanitizedContentJsChars:!0} : {}, URI:goog.DEBUG ? {sanitizedContentUri:!0} : {}, TRUSTED_RESOURCE_URI:goog.DEBUG ? {sanitizedContentTrustedResourceUri:!0} : {}, ATTRIBUTES:goog.DEBUG ? {sanitizedContentHtmlAttribute:!0} : {}, STYLE:goog.DEBUG ? {sanitizedContentStyle:!0} : {}, CSS:goog.DEBUG ? {sanitizedContentCss:!0} : {}, TEXT:goog.DEBUG ? {sanitizedContentKindText:!0} : {}};
+goog.soy.data.SanitizedContentKind = {HTML:goog.DEBUG ? {sanitizedContentKindHtml:!0} : {}, JS:goog.DEBUG ? {sanitizedContentJsChars:!0} : {}, URI:goog.DEBUG ? {sanitizedContentUri:!0} : {}, TRUSTED_RESOURCE_URI:goog.DEBUG ? {sanitizedContentTrustedResourceUri:!0} : {}, ATTRIBUTES:goog.DEBUG ? {sanitizedContentHtmlAttribute:!0} : {}, STYLE:goog.DEBUG ? {sanitizedContentStyle:!0} : {}, CSS:goog.DEBUG ? {sanitizedContentCss:!0} : {}};
 goog.soy.data.SanitizedContent = function() {
   throw Error("Do not instantiate directly");
 };
@@ -6042,19 +6055,13 @@ goog.soy.data.SanitizedContent.prototype.contentDir = null;
 goog.soy.data.SanitizedContent.prototype.toString = function() {
   return this.content;
 };
-goog.soy.data.UnsanitizedText = function(content) {
-  this.content = String(content);
-  this.contentDir = null;
-};
-goog.inherits(goog.soy.data.UnsanitizedText, goog.soy.data.SanitizedContent);
-goog.soy.data.UnsanitizedText.prototype.contentKind = goog.soy.data.SanitizedContentKind.TEXT;
 goog.soy.data.SanitizedHtml = function() {
   goog.soy.data.SanitizedContent.call(this);
 };
 goog.inherits(goog.soy.data.SanitizedHtml, goog.soy.data.SanitizedContent);
 goog.soy.data.SanitizedHtml.prototype.contentKind = goog.soy.data.SanitizedContentKind.HTML;
 goog.soy.data.SanitizedHtml.isCompatibleWith = function(value) {
-  return goog.isString(value) || value instanceof goog.soy.data.SanitizedHtml || value instanceof goog.soy.data.UnsanitizedText || value instanceof goog.html.SafeHtml;
+  return goog.isString(value) || value instanceof goog.soy.data.SanitizedHtml || value instanceof goog.html.SafeHtml;
 };
 goog.soy.data.SanitizedHtml.isCompatibleWithStrict = function(value) {
   return value instanceof goog.soy.data.SanitizedHtml || value instanceof goog.html.SafeHtml;
@@ -6066,7 +6073,7 @@ goog.inherits(goog.soy.data.SanitizedJs, goog.soy.data.SanitizedContent);
 goog.soy.data.SanitizedJs.prototype.contentKind = goog.soy.data.SanitizedContentKind.JS;
 goog.soy.data.SanitizedJs.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
 goog.soy.data.SanitizedJs.isCompatibleWith = function(value) {
-  return goog.isString(value) || value instanceof goog.soy.data.SanitizedJs || value instanceof goog.soy.data.UnsanitizedText || value instanceof goog.html.SafeScript;
+  return goog.isString(value) || value instanceof goog.soy.data.SanitizedJs || value instanceof goog.html.SafeScript;
 };
 goog.soy.data.SanitizedJs.isCompatibleWithStrict = function(value) {
   return value instanceof goog.soy.data.SanitizedJs || value instanceof goog.html.SafeHtml;
@@ -6078,7 +6085,7 @@ goog.inherits(goog.soy.data.SanitizedUri, goog.soy.data.SanitizedContent);
 goog.soy.data.SanitizedUri.prototype.contentKind = goog.soy.data.SanitizedContentKind.URI;
 goog.soy.data.SanitizedUri.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
 goog.soy.data.SanitizedUri.isCompatibleWith = function(value) {
-  return goog.isString(value) || value instanceof goog.soy.data.SanitizedUri || value instanceof goog.soy.data.UnsanitizedText || value instanceof goog.html.SafeUrl || value instanceof goog.html.TrustedResourceUrl || value instanceof goog.Uri;
+  return goog.isString(value) || value instanceof goog.soy.data.SanitizedUri || value instanceof goog.html.SafeUrl || value instanceof goog.html.TrustedResourceUrl || value instanceof goog.Uri;
 };
 goog.soy.data.SanitizedUri.isCompatibleWithStrict = function(value) {
   return value instanceof goog.soy.data.SanitizedUri || value instanceof goog.html.SafeUrl || value instanceof goog.html.TrustedResourceUrl || value instanceof goog.Uri;
@@ -6090,7 +6097,7 @@ goog.inherits(goog.soy.data.SanitizedTrustedResourceUri, goog.soy.data.Sanitized
 goog.soy.data.SanitizedTrustedResourceUri.prototype.contentKind = goog.soy.data.SanitizedContentKind.TRUSTED_RESOURCE_URI;
 goog.soy.data.SanitizedTrustedResourceUri.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
 goog.soy.data.SanitizedTrustedResourceUri.isCompatibleWith = function(value) {
-  return goog.isString(value) || value instanceof goog.soy.data.SanitizedTrustedResourceUri || value instanceof goog.soy.data.UnsanitizedText || value instanceof goog.html.TrustedResourceUrl;
+  return goog.isString(value) || value instanceof goog.soy.data.SanitizedTrustedResourceUri || value instanceof goog.html.TrustedResourceUrl;
 };
 goog.soy.data.SanitizedTrustedResourceUri.isCompatibleWithStrict = function(value) {
   return value instanceof goog.soy.data.SanitizedTrustedResourceUri || value instanceof goog.html.TrustedResourceUrl;
@@ -6102,7 +6109,7 @@ goog.inherits(goog.soy.data.SanitizedHtmlAttribute, goog.soy.data.SanitizedConte
 goog.soy.data.SanitizedHtmlAttribute.prototype.contentKind = goog.soy.data.SanitizedContentKind.ATTRIBUTES;
 goog.soy.data.SanitizedHtmlAttribute.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
 goog.soy.data.SanitizedHtmlAttribute.isCompatibleWith = function(value) {
-  return goog.isString(value) || value instanceof goog.soy.data.SanitizedHtmlAttribute || value instanceof goog.soy.data.UnsanitizedText;
+  return goog.isString(value) || value instanceof goog.soy.data.SanitizedHtmlAttribute;
 };
 goog.soy.data.SanitizedHtmlAttribute.isCompatibleWithStrict = function(value) {
   return value instanceof goog.soy.data.SanitizedHtmlAttribute;
@@ -6114,7 +6121,7 @@ goog.inherits(goog.soy.data.SanitizedCss, goog.soy.data.SanitizedContent);
 goog.soy.data.SanitizedCss.prototype.contentKind = goog.soy.data.SanitizedContentKind.CSS;
 goog.soy.data.SanitizedCss.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
 goog.soy.data.SanitizedCss.isCompatibleWith = function(value) {
-  return goog.isString(value) || value instanceof goog.soy.data.SanitizedCss || value instanceof goog.soy.data.UnsanitizedText || value instanceof goog.html.SafeStyle || value instanceof goog.html.SafeStyleSheet;
+  return goog.isString(value) || value instanceof goog.soy.data.SanitizedCss || value instanceof goog.html.SafeStyle || value instanceof goog.html.SafeStyleSheet;
 };
 goog.soy.data.SanitizedCss.isCompatibleWithStrict = function(value) {
   return value instanceof goog.soy.data.SanitizedCss || value instanceof goog.html.SafeStyle || value instanceof goog.html.SafeStyleSheet;
@@ -6143,9 +6150,6 @@ soy.checks.isTrustedResourceURI = function(value) {
 soy.checks.isURI = function(value) {
   return soy.checks.isContentKind_(value, goog.soy.data.SanitizedContentKind.URI, goog.soy.data.SanitizedUri);
 };
-soy.checks.isText = function(value) {
-  return soy.checks.isContentKind_(value, goog.soy.data.SanitizedContentKind.TEXT, goog.soy.data.UnsanitizedText);
-};
 soy.map = {};
 var module$contents$soy$map_SoyMap = function() {
 };
@@ -6163,9 +6167,6 @@ soy.map.$$mapToLegacyObjectMap = function(map) {
     obj[(0,goog.asserts.assertString)(k)] = v;
   }
   return obj;
-};
-soy.map.$$maybeCoerceKeyToString = function(key) {
-  return key instanceof goog.soy.data.UnsanitizedText ? key.content : key;
 };
 soy.map.$$populateMap = function(jspbMap, map) {
   for (var $jscomp$iter$1 = $jscomp.makeIterator(map.entries()), $jscomp$key$ = $jscomp$iter$1.next(); !$jscomp$key$.done; $jscomp$key$ = $jscomp$iter$1.next()) {
@@ -6246,9 +6247,6 @@ soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_ = function(ctor) {
     return new InstantiableCtor(String(content));
   };
 };
-soydata.markUnsanitizedText = function(content) {
-  return new goog.soy.data.UnsanitizedText(content);
-};
 soydata.VERY_UNSAFE.ordainSanitizedHtml = soydata.$$makeSanitizedContentFactory_(goog.soy.data.SanitizedHtml);
 soydata.VERY_UNSAFE.ordainSanitizedJs = soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_(goog.soy.data.SanitizedJs);
 soydata.VERY_UNSAFE.ordainSanitizedUri = soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_(goog.soy.data.SanitizedUri);
@@ -6282,9 +6280,7 @@ soy.$$parseInt = function(str) {
   var parsed = parseInt(String(str), 10);
   return isNaN(parsed) ? null : parsed;
 };
-soy.$$equals = function(obj1, obj2) {
-  var valueOne = obj1 instanceof goog.soy.data.UnsanitizedText ? obj1.toString() : obj1;
-  var valueTwo = obj2 instanceof goog.soy.data.UnsanitizedText ? obj2.toString() : obj2;
+soy.$$equals = function(valueOne, valueTwo) {
   return goog.isFunction(valueOne) && goog.isFunction(valueTwo) ? valueOne.contentKind !== valueTwo.contentKind ? !1 : valueOne.toString() === valueTwo.toString() : valueOne instanceof goog.soy.data.SanitizedContent && valueTwo instanceof goog.soy.data.SanitizedContent ? valueOne.contentKind != valueTwo.contentKind ? !1 : valueOne.toString() == valueTwo.toString() : valueOne == valueTwo;
 };
 soy.$$parseFloat = function(str) {
@@ -6358,10 +6354,6 @@ soydata.$$makeSanitizedContentFactoryWithDefaultDirOnlyForInternalBlocks_ = func
     return contentString ? new InstantiableCtor(contentString) : soydata.$$EMPTY_STRING_.VALUE;
   };
 };
-soydata.$$markUnsanitizedTextForInternalBlocks = function(content) {
-  var contentString = String(content);
-  return contentString ? new goog.soy.data.UnsanitizedText(contentString) : soydata.$$EMPTY_STRING_.VALUE;
-};
 soydata.VERY_UNSAFE.$$ordainSanitizedHtmlForInternalBlocks = soydata.$$makeSanitizedContentFactoryForInternalBlocks_(goog.soy.data.SanitizedHtml);
 soydata.VERY_UNSAFE.$$ordainSanitizedJsForInternalBlocks = soydata.$$makeSanitizedContentFactoryWithDefaultDirOnlyForInternalBlocks_(goog.soy.data.SanitizedJs);
 soydata.VERY_UNSAFE.$$ordainSanitizedTrustedResourceUriForInternalBlocks = soydata.$$makeSanitizedContentFactoryWithDefaultDirOnlyForInternalBlocks_(goog.soy.data.SanitizedTrustedResourceUri);
@@ -6386,9 +6378,6 @@ soy.$$cleanHtml = function(value, opt_safeTags) {
 soy.$$htmlToText = function(value) {
   if (null == value) {
     return "";
-  }
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.TEXT)) {
-    return value.toString();
   }
   if (!soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.HTML)) {
     return goog.asserts.assertString(value);
@@ -6647,7 +6636,7 @@ soy.$$bidiSpanWrap = function(bidiGlobalDir, text) {
 };
 soy.$$bidiUnicodeWrap = function(bidiGlobalDir, text) {
   var formatter = soy.$$getBidiFormatterInstance_(bidiGlobalDir), isHtml = soydata.isContentKind_(text, goog.soy.data.SanitizedContentKind.HTML), wrappedText = formatter.unicodeWrapWithKnownDir(soydata.getContentDir(text), text + "", isHtml), wrappedTextDir = formatter.contextDir_;
-  return soydata.isContentKind_(text, goog.soy.data.SanitizedContentKind.TEXT) ? soydata.markUnsanitizedText(wrappedText) : isHtml ? soydata.VERY_UNSAFE.ordainSanitizedHtml(wrappedText, wrappedTextDir) : wrappedText;
+  return isHtml ? soydata.VERY_UNSAFE.ordainSanitizedHtml(wrappedText, wrappedTextDir) : wrappedText;
 };
 soy.asserts.assertType = function(condition, paramName, param, jsDocTypeStr) {
   if (goog.asserts.ENABLE_ASSERTS && !condition) {

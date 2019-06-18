@@ -26,9 +26,8 @@ import com.google.template.soy.basetree.Node;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.soytree.SoyNode.RenderUnitNode;
 import com.google.template.soy.types.SanitizedType;
-import com.google.template.soy.types.SoyType;
-import com.google.template.soy.types.StringType;
 import java.util.List;
+import java.util.Optional;
 import javax.annotation.Nullable;
 
 /**
@@ -48,14 +47,10 @@ public final class LetContentNode extends LetNode implements RenderUnitNode {
       SourceLocation sourceLocation,
       String varName,
       SourceLocation varNameLocation,
-      @Nullable SanitizedContentKind contentKind) {
+      SanitizedContentKind contentKind) {
     LetContentNode node =
         new LetContentNode(id, sourceLocation, varName, varNameLocation, contentKind);
-    SoyType type =
-        (contentKind != null)
-            ? SanitizedType.getTypeForContentKind(contentKind)
-            : StringType.getInstance();
-    node.getVar().setType(type);
+    node.getVar().setType(SanitizedType.getTypeForContentKind(contentKind));
     return node;
   }
 
@@ -63,28 +58,30 @@ public final class LetContentNode extends LetNode implements RenderUnitNode {
   private final MixinParentNode<StandaloneNode> parentMixin;
 
   /** The let node's content kind, or null if no 'kind' attribute was present. */
-  @Nullable private final SanitizedContentKind contentKind;
+  private final SanitizedContentKind contentKind;
 
   public LetContentNode(
       int id,
       SourceLocation location,
       String varName,
       SourceLocation varNameLocation,
-      @Nullable CommandTagAttribute kindAttr,
+      CommandTagAttribute kindAttr,
       ErrorReporter errorReporter) {
     super(id, location, varName, varNameLocation);
     this.parentMixin = new MixinParentNode<>(this);
 
-    if (kindAttr != null && !kindAttr.hasName("kind")) {
+    Optional<SanitizedContentKind> parsedKind = Optional.empty();
+    if (!kindAttr.hasName("kind")) {
       errorReporter.report(
           kindAttr.getName().location(),
           UNSUPPORTED_ATTRIBUTE_KEY_SINGLE,
           kindAttr.getName().identifier(),
           "let",
           "kind");
-      kindAttr = null;
+    } else {
+      parsedKind = kindAttr.valueAsContentKind(errorReporter);
     }
-    this.contentKind = (kindAttr != null) ? kindAttr.valueAsContentKind(errorReporter) : null;
+    this.contentKind = parsedKind.orElse(SanitizedContentKind.HTML);
   }
 
   private LetContentNode(
@@ -115,7 +112,6 @@ public final class LetContentNode extends LetNode implements RenderUnitNode {
   }
 
   @Override
-  @Nullable
   public SanitizedContentKind getContentKind() {
     return contentKind;
   }

@@ -16,15 +16,14 @@
 
 package com.google.template.soy.jbcsrc;
 
-import static com.google.template.soy.jbcsrc.StandardNames.IJ_FIELD;
-import static com.google.template.soy.jbcsrc.StandardNames.PARAMS_FIELD;
+import static com.google.template.soy.jbcsrc.StandardNames.COMPILED_TEMPLATE;
 import static com.google.template.soy.jbcsrc.StandardNames.RENDER_CONTEXT_FIELD;
 import static com.google.template.soy.jbcsrc.StandardNames.STATE_FIELD;
 import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.LOGGING_ADVISING_APPENDABLE_TYPE;
 import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.NULLARY_INIT;
+import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.SOY_VALUE_PROVIDER_TYPE;
 import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.constant;
 import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.constantSanitizedContentKindAsContentKind;
-import static com.google.template.soy.jbcsrc.restricted.FieldRef.createField;
 import static com.google.template.soy.jbcsrc.restricted.LocalVariable.createLocal;
 import static com.google.template.soy.jbcsrc.restricted.LocalVariable.createThisVar;
 import static com.google.template.soy.jbcsrc.restricted.MethodRef.RENDER_RESULT_DONE;
@@ -33,25 +32,24 @@ import static com.google.template.soy.soytree.SoyTreeUtils.isDescendantOf;
 import static java.util.Arrays.asList;
 
 import com.google.auto.value.AutoValue;
-import com.google.common.base.Optional;
 import com.google.common.collect.Iterables;
 import com.google.template.soy.base.internal.SanitizedContentKind;
-import com.google.template.soy.base.internal.UniqueNameGenerator;
 import com.google.template.soy.data.LoggingAdvisingAppendable;
 import com.google.template.soy.data.SanitizedContent;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
 import com.google.template.soy.data.restricted.StringData;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.ExprNode;
+import com.google.template.soy.exprtree.ExprRootNode;
+import com.google.template.soy.jbcsrc.ExpressionCompiler.BasicExpressionCompiler;
 import com.google.template.soy.jbcsrc.SoyNodeCompiler.CompiledMethodBody;
 import com.google.template.soy.jbcsrc.internal.InnerClasses;
-import com.google.template.soy.jbcsrc.internal.JbcSrcNameGenerators;
 import com.google.template.soy.jbcsrc.internal.SoyClassWriter;
+import com.google.template.soy.jbcsrc.restricted.BytecodeUtils;
 import com.google.template.soy.jbcsrc.restricted.CodeBuilder;
 import com.google.template.soy.jbcsrc.restricted.ConstructorRef;
 import com.google.template.soy.jbcsrc.restricted.Expression;
 import com.google.template.soy.jbcsrc.restricted.FieldRef;
-import com.google.template.soy.jbcsrc.restricted.JbcSrcPluginContext;
 import com.google.template.soy.jbcsrc.restricted.LocalVariable;
 import com.google.template.soy.jbcsrc.restricted.MethodRef;
 import com.google.template.soy.jbcsrc.restricted.SoyExpression;
@@ -70,13 +68,13 @@ import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyNode.RenderUnitNode;
 import com.google.template.soy.soytree.defn.LocalVar;
 import com.google.template.soy.soytree.defn.TemplateParam;
-import com.google.template.soy.soytree.defn.TemplateStateVar;
 import com.google.template.soy.types.SoyTypeRegistry;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
@@ -139,6 +137,21 @@ import org.objectweb.asm.commons.Method;
  * }</pre>
  */
 final class LazyClosureCompiler {
+  @AutoValue
+  abstract static class LazyClosure {
+    static LazyClosure create(String name, Expression soyValueProvider, boolean isTrivial) {
+      soyValueProvider.checkAssignableTo(SOY_VALUE_PROVIDER_TYPE);
+
+      return new AutoValue_LazyClosureCompiler_LazyClosure(name, soyValueProvider, isTrivial);
+    }
+
+    abstract String name();
+
+    abstract Expression soyValueProvider();
+
+    abstract boolean isTrivial();
+  }
+
   // All our lazy closures are package private.  They should only be referenced by their parent
   // classes (or each other)
   private static final int LAZY_CLOSURE_ACCESS = Opcodes.ACC_FINAL;
@@ -170,35 +183,50 @@ final class LazyClosureCompiler {
 
   private final CompiledTemplateRegistry registry;
   private final InnerClasses innerClasses;
-  private final TemplateParameterLookup parentVariableLookup;
+  private final AbstractTemplateParameterLookup parentVariableLookup;
   private final ExpressionToSoyValueProviderCompiler expressionToSoyValueProviderCompiler;
-  private final TemplateVariableManager parentVariables;
+  private final BasicExpressionCompiler parentConstantCompiler;
+  private final FieldManager parentFields;
   private final ErrorReporter reporter;
   private final SoyTypeRegistry typeRegistry;
 
   LazyClosureCompiler(
       CompiledTemplateRegistry registry,
       InnerClasses innerClasses,
-      TemplateParameterLookup parentVariableLookup,
-      TemplateVariableManager parentVariables,
+      AbstractTemplateParameterLookup parentVariableLookup,
+      FieldManager parentFields,
       ExpressionToSoyValueProviderCompiler expressionToSoyValueProviderCompiler,
+      BasicExpressionCompiler parentConstantCompiler,
       ErrorReporter reporter,
       SoyTypeRegistry typeRegistry) {
     this.registry = registry;
     this.innerClasses = innerClasses;
     this.parentVariableLookup = parentVariableLookup;
-    this.parentVariables = parentVariables;
+    this.parentFields = parentFields;
+    this.parentConstantCompiler = parentConstantCompiler;
     this.expressionToSoyValueProviderCompiler = expressionToSoyValueProviderCompiler;
     this.reporter = reporter;
     this.typeRegistry = typeRegistry;
   }
 
-  Expression compileLazyExpression(
-      String namePrefix, SoyNode declaringNode, String varName, ExprNode exprNode) {
+  LazyClosure compileLazyExpression(
+      String namePrefix, SoyNode declaringNode, String varName, ExprRootNode exprNode) {
+    if (ExpressionCompiler.canCompileToConstant(exprNode)) {
+      SoyExpression expression = parentConstantCompiler.compile(exprNode);
+      return LazyClosure.create(
+          varName,
+          parentFields
+              .addStaticField(
+                  getProposedName(namePrefix, varName), expression.boxAsSoyValueProvider())
+              .accessor(),
+          /* isTrivial=*/ true);
+    }
     Optional<Expression> asSoyValueProvider =
         expressionToSoyValueProviderCompiler.compileAvoidingDetaches(exprNode);
     if (asSoyValueProvider.isPresent()) {
-      return asSoyValueProvider.get();
+      Expression svp = asSoyValueProvider.get();
+      return LazyClosure.create(
+          varName, svp, /* isTrivial=*/ exprNode.getRoot().getKind() == ExprNode.Kind.VAR_REF_NODE);
     }
     TypeInfo type =
         innerClasses.registerInnerClassWithGeneratedName(
@@ -216,15 +244,15 @@ final class LazyClosureCompiler {
     innerClasses.registerAsInnerClass(writer, type);
     writer.visitEnd();
     innerClasses.add(writer.toClassData());
-    return expr;
+    return LazyClosure.create(varName, expr, /* isTrivial=*/ false);
   }
 
-  Expression compileLazyContent(String namePrefix, RenderUnitNode renderUnit, String varName) {
+  LazyClosure compileLazyContent(String namePrefix, RenderUnitNode renderUnit, String varName) {
     return compileLazyContent(
         namePrefix, renderUnit, varName, ExtraCodeCompiler.NO_OP, ExtraCodeCompiler.NO_OP);
   }
 
-  Expression compileLazyContent(
+  LazyClosure compileLazyContent(
       String namePrefix,
       RenderUnitNode renderUnit,
       String varName,
@@ -236,9 +264,9 @@ final class LazyClosureCompiler {
     Optional<Expression> asRawText =
         prefix != ExtraCodeCompiler.NO_OP && suffix != ExtraCodeCompiler.NO_OP
             ? asRawTextOnly(proposedName, renderUnit)
-            : Optional.absent();
+            : Optional.empty();
     if (asRawText.isPresent()) {
-      return asRawText.get();
+      return LazyClosure.create(varName, asRawText.get(), /*isTrivial=*/ true);
     }
     TypeInfo type =
         innerClasses.registerInnerClassWithGeneratedName(proposedName, LAZY_CLOSURE_ACCESS);
@@ -255,7 +283,7 @@ final class LazyClosureCompiler {
     innerClasses.registerAsInnerClass(writer, type);
     writer.visitEnd();
     innerClasses.add(writer.toClassData());
-    return expr;
+    return LazyClosure.create(varName, expr, /* isTrivial=*/ false);
   }
 
   /**
@@ -279,20 +307,20 @@ final class LazyClosureCompiler {
         }
         builder.append(((RawTextNode) child).getRawText());
       } else {
-        return Optional.absent();
+        return Optional.empty();
       }
     }
 
+    Expression value = constant(builder == null ? "" : builder.toString(), parentFields);
     SanitizedContentKind kind = renderUnit.getContentKind();
-    Expression value = constant(builder == null ? "" : builder.toString(), parentVariables);
-    if (kind == null) {
+    if (kind == SanitizedContentKind.TEXT) {
       value = MethodRef.STRING_DATA_FOR_VALUE.invoke(value);
     } else {
       value =
           MethodRef.ORDAIN_AS_SAFE.invoke(value, constantSanitizedContentKindAsContentKind(kind));
     }
 
-    FieldRef staticField = parentVariables.addStaticField(name, value);
+    FieldRef staticField = parentFields.addStaticField(name, value);
     return Optional.of(staticField.accessor());
   }
 
@@ -302,7 +330,7 @@ final class LazyClosureCompiler {
 
   /** A simple object to aid in generating code for a single node. */
   private final class CompilationUnit {
-    final UniqueNameGenerator fieldNames = JbcSrcNameGenerators.forFieldNames();
+    final FieldManager fields;
     final TypeInfo type;
     final TypeInfo baseClass;
     final SoyNode node;
@@ -310,6 +338,7 @@ final class LazyClosureCompiler {
 
     CompilationUnit(SoyClassWriter writer, TypeInfo type, TypeInfo baseClass, SoyNode node) {
       this.writer = writer;
+      this.fields = new FieldManager(type);
       this.type = type;
       this.baseClass = baseClass;
       this.node = node;
@@ -320,11 +349,12 @@ final class LazyClosureCompiler {
       final Label end = new Label();
       final LocalVariable thisVar = createThisVar(type, start, end);
       TemplateVariableManager variableSet =
-          new TemplateVariableManager(fieldNames, type, thisVar, DO_RESOLVE);
+          new TemplateVariableManager(fields, thisVar, DO_RESOLVE);
       LazyClosureParameterLookup lookup =
           new LazyClosureParameterLookup(this, parentVariableLookup, variableSet, thisVar);
       SoyExpression compile =
-          ExpressionCompiler.createBasicCompiler(lookup, variableSet, reporter, typeRegistry)
+          ExpressionCompiler.createBasicCompiler(
+                  lookup, variableSet, fields, reporter, typeRegistry)
               .compile(exprNode);
       SoyExpression expression = compile.box();
       final Statement storeExpr = RESOLVED_VALUE.putInstanceField(thisVar, expression);
@@ -339,8 +369,6 @@ final class LazyClosureCompiler {
               adapter.mark(end);
             }
           };
-      variableSet.defineStaticFields(writer);
-      variableSet.defineFields(writer);
       Expression constructExpr =
           generateConstructor(
               new Statement() {
@@ -353,14 +381,14 @@ final class LazyClosureCompiler {
               lookup.getCapturedFields());
 
       doResolveImpl.writeMethod(Opcodes.ACC_PROTECTED, DO_RESOLVE, writer);
+      fields.defineFields(writer);
+      fields.defineStaticInitializer(writer);
       return constructExpr;
     }
 
     Expression compileRenderable(
         RenderUnitNode renderUnit, ExtraCodeCompiler prefix, ExtraCodeCompiler suffix) {
-      FieldRef stateField = createField(type, STATE_FIELD, Type.INT_TYPE);
-      stateField.defineField(writer);
-      fieldNames.claimName(STATE_FIELD);
+      FieldRef stateField = fields.addField(STATE_FIELD, Type.INT_TYPE);
 
       final Label start = new Label();
       final Label end = new Label();
@@ -368,9 +396,14 @@ final class LazyClosureCompiler {
       final LocalVariable appendableVar =
           createLocal("appendable", 1, LOGGING_ADVISING_APPENDABLE_TYPE, start, end)
               .asNonNullable();
-
+      BasicExpressionCompiler constantCompiler =
+          ExpressionCompiler.createConstantCompiler(
+              new SimpleLocalVariableManager(BytecodeUtils.CLASS_INIT, /* isStatic=*/ true),
+              fields,
+              reporter,
+              typeRegistry);
       final TemplateVariableManager variableSet =
-          new TemplateVariableManager(fieldNames, type, thisVar, DO_RENDER);
+          new TemplateVariableManager(fields, thisVar, DO_RENDER);
       LazyClosureParameterLookup lookup =
           new LazyClosureParameterLookup(this, parentVariableLookup, variableSet, thisVar);
       SoyNodeCompiler soyNodeCompiler =
@@ -382,6 +415,8 @@ final class LazyClosureCompiler {
               AppendableExpression.forLocal(appendableVar),
               variableSet,
               lookup,
+              fields,
+              constantCompiler,
               reporter,
               typeRegistry);
       CompiledMethodBody compileChildren = soyNodeCompiler.compile(renderUnit, prefix, suffix);
@@ -404,8 +439,6 @@ final class LazyClosureCompiler {
           };
       SanitizedContentKind kind = renderUnit.getContentKind();
       final Expression contentKind = constantSanitizedContentKindAsContentKind(kind);
-      variableSet.defineStaticFields(writer);
-      variableSet.defineFields(writer);
       Statement superClassContstructor =
           new Statement() {
             @Override
@@ -418,7 +451,9 @@ final class LazyClosureCompiler {
       Expression constructExpr =
           generateConstructor(superClassContstructor, lookup.getCapturedFields());
 
+      fields.defineFields(writer);
       fullMethodBody.writeMethod(Opcodes.ACC_PROTECTED, DO_RENDER, writer);
+      fields.defineStaticInitializer(writer);
       return constructExpr;
     }
 
@@ -441,7 +476,6 @@ final class LazyClosureCompiler {
       int index = 1; // start at 1 since 'this' occupied slot 0
       for (ParentCapture capture : captures) {
         FieldRef field = capture.field();
-        field.defineField(writer);
         LocalVariable var = createLocal(field.name(), index, field.type(), start, end);
         assignments.add(field.putInstanceField(thisVar, var));
         argExpressions.add(capture.parentExpression());
@@ -485,8 +519,7 @@ final class LazyClosureCompiler {
    */
   @AutoValue
   abstract static class ParentCapture {
-    static ParentCapture create(TypeInfo owner, String name, Expression parentExpression) {
-      FieldRef captureField = FieldRef.createFinalField(owner, name, parentExpression.resultType());
+    static ParentCapture create(FieldRef captureField, Expression parentExpression) {
       if (parentExpression.isNonNullable()) {
         captureField = captureField.asNonNull();
       }
@@ -515,25 +548,23 @@ final class LazyClosureCompiler {
    *       necessary.
    * </ul>
    */
-  private static final class LazyClosureParameterLookup implements TemplateParameterLookup {
+  private static final class LazyClosureParameterLookup extends AbstractTemplateParameterLookup {
     private final CompilationUnit params;
-    private final TemplateParameterLookup parentParameterLookup;
+    private final AbstractTemplateParameterLookup parentParameterLookup;
     private final TemplateVariableManager variableSet;
     private final Expression thisVar;
 
     // These fields track all the parent captures that we need to generate.
     // NOTE: TemplateParam and LocalVar have identity semantics.  But the AST is guaranteed to not
     // have multiple copies.
-    private final Map<TemplateParam, ParentCapture> paramFields = new LinkedHashMap<>();
     private final Map<LocalVar, ParentCapture> localFields = new LinkedHashMap<>();
     private final Map<SyntheticVarName, ParentCapture> syntheticFields = new LinkedHashMap<>();
     private ParentCapture renderContextCapture;
-    private ParentCapture paramsCapture;
-    private ParentCapture ijCapture;
+    private ParentCapture templateCapture;
 
     LazyClosureParameterLookup(
         CompilationUnit params,
-        TemplateParameterLookup parentParameterLookup,
+        AbstractTemplateParameterLookup parentParameterLookup,
         TemplateVariableManager variableSet,
         Expression thisVar) {
       this.params = params;
@@ -543,38 +574,23 @@ final class LazyClosureCompiler {
     }
 
     @Override
-    public Expression getParam(TemplateParam param) {
-      // All params are packed into fields
-      ParentCapture capturedField = paramFields.get(param);
-      if (capturedField == null) {
-        String name = param.name();
-        params.fieldNames.claimName(name);
-        capturedField =
-            ParentCapture.create(params.type, name, parentParameterLookup.getParam(param));
-        paramFields.put(param, capturedField);
-      }
-      return capturedField.field().accessor(thisVar);
-    }
-
-    @Override
-    public SoyExpression getState(TemplateStateVar stateVar) {
-      // We can always just access the parent directly instead of capturing because these are simple
-      // expressions or static field references.
-      return parentParameterLookup.getState(stateVar);
+    public FieldRef getParamField(TemplateParam param) {
+      return parentParameterLookup.getParamField(param);
     }
 
     @Override
     public Expression getLocal(LocalVar local) {
       if (isDescendantOf(local.declaringNode(), params.node)) {
         // in this case, we just delegate to VariableSet
-        return variableSet.getVariable(local.name()).local();
+        return variableSet.getVariable(local.name());
       }
 
       ParentCapture capturedField = localFields.get(local);
       if (capturedField == null) {
-        String name = params.fieldNames.generateName(local.name());
-        capturedField =
-            ParentCapture.create(params.type, name, parentParameterLookup.getLocal(local));
+        Expression expression = parentParameterLookup.getLocal(local);
+        FieldRef field =
+            params.fields.addGeneratedFinalField(local.name(), expression.resultType());
+        capturedField = ParentCapture.create(field, expression);
         localFields.put(local, capturedField);
       }
       return capturedField.field().accessor(thisVar);
@@ -584,14 +600,15 @@ final class LazyClosureCompiler {
     public Expression getLocal(SyntheticVarName varName) {
       if (isDescendantOf(varName.declaringNode(), params.node)) {
         // in this case, we just delegate to VariableSet
-        return variableSet.getVariable(varName).local();
+        return variableSet.getVariable(varName);
       }
 
       ParentCapture capturedField = syntheticFields.get(varName);
       if (capturedField == null) {
-        String name = params.fieldNames.generateName(varName.name());
-        capturedField =
-            ParentCapture.create(params.type, name, parentParameterLookup.getLocal(varName));
+        Expression expression = parentParameterLookup.getLocal(varName);
+        FieldRef field =
+            params.fields.addGeneratedFinalField(varName.name(), expression.resultType());
+        capturedField = ParentCapture.create(field, expression);
         syntheticFields.put(varName, capturedField);
       }
       return capturedField.field().accessor(thisVar);
@@ -599,70 +616,43 @@ final class LazyClosureCompiler {
 
     Iterable<ParentCapture> getCapturedFields() {
       return Iterables.concat(
-          Iterables.filter(
-              asList(paramsCapture, ijCapture, renderContextCapture), Objects::nonNull),
-          paramFields.values(),
+          Iterables.filter(asList(renderContextCapture, templateCapture), Objects::nonNull),
           localFields.values(),
           syntheticFields.values());
     }
 
     @Override
-    public JbcSrcPluginContext getPluginContext() {
-      // return a lazy delegate.  Most plugins never even need the context, but accessing
-      // getRenderContext() will copy the field into the inner class as a side effect.  using a lazy
-      // delegate we can avoid that in the common case.
-      return new JbcSrcPluginContext() {
-        RenderContextExpression delegate;
-
-        RenderContextExpression getDelegate() {
-          if (delegate == null) {
-            delegate = getRenderContext();
-          }
-          return delegate;
-        }
-
-        @Override
-        public Expression getBidiGlobalDir() {
-          return getDelegate().getBidiGlobalDir();
-        }
-
-        @Override
-        public Expression getULocale() {
-          return getDelegate().getULocale();
-        }
-      };
-    }
-
-    @Override
     public RenderContextExpression getRenderContext() {
       if (renderContextCapture == null) {
-        params.fieldNames.claimName(RENDER_CONTEXT_FIELD);
         renderContextCapture =
             ParentCapture.create(
-                params.type, RENDER_CONTEXT_FIELD, parentParameterLookup.getRenderContext());
+                params.fields.addFinalField(
+                    RENDER_CONTEXT_FIELD, BytecodeUtils.RENDER_CONTEXT_TYPE),
+                parentParameterLookup.getRenderContext());
       }
       return new RenderContextExpression(renderContextCapture.field().accessor(thisVar));
     }
 
     @Override
-    public Expression getParamsRecord() {
-      if (paramsCapture == null) {
-        params.fieldNames.claimName(PARAMS_FIELD);
-        paramsCapture =
+    Expression getCompiledTemplate() {
+      if (templateCapture == null) {
+        Expression compiledTemplate = parentParameterLookup.getCompiledTemplate();
+        templateCapture =
             ParentCapture.create(
-                params.type, PARAMS_FIELD, parentParameterLookup.getParamsRecord());
+                params.fields.addFinalField(COMPILED_TEMPLATE, compiledTemplate.resultType()),
+                compiledTemplate);
       }
-      return paramsCapture.field().accessor(thisVar);
+      return templateCapture.field().accessor(thisVar);
     }
 
     @Override
-    public Expression getIjRecord() {
-      if (ijCapture == null) {
-        params.fieldNames.claimName(IJ_FIELD);
-        ijCapture =
-            ParentCapture.create(params.type, IJ_FIELD, parentParameterLookup.getIjRecord());
-      }
-      return ijCapture.field().accessor(thisVar);
+    FieldRef getParamsRecordField() {
+      return parentParameterLookup.getParamsRecordField();
+    }
+
+    @Override
+    FieldRef getIjRecordField() {
+      return parentParameterLookup.getIjRecordField();
     }
   }
 }

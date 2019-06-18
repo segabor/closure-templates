@@ -10,6 +10,7 @@ import {IdomFunctionMembers} from 'goog:soydata';  // from //javascript/template
 import * as incrementaldom from 'incrementaldom';  // from //third_party/javascript/incremental_dom:incrementaldom
 
 import {IncrementalDomRenderer} from './api_idom';
+import {isTaggedForSkip} from './global';
 
 /** Function that executes Idom instructions */
 export type PatchFunction = (a?: {}) => void;
@@ -23,8 +24,21 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}> {
   private node: HTMLElement|null = null;
   private skipHandler:
       ((prev: TInterface, next: TInterface) => boolean)|null = null;
+  private syncState = true;
 
   constructor(protected data: TData, protected ijData?: IjData) {}
+
+  /**
+   * State variables that are derived from parameters will continue to be
+   * derived until this method is called.
+   */
+  setSyncState(syncState: boolean) {
+    this.syncState = syncState;
+  }
+
+  protected shouldSyncState() {
+    return this.syncState;
+  }
 
   /**
    * Patches the current dom node.
@@ -55,6 +69,7 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}> {
     this.node = node;
     // tslint:disable-next-line:no-any
     (node as any).__soy = this;
+    return isTaggedForSkip(node);
   }
 
   setSkipHandler(skipHandler: (prev: TInterface, next: TInterface) => boolean) {

@@ -1233,7 +1233,7 @@ public final class TemplateParserTest {
 
     // Test error case.
     TemplateSubject.assertThatTemplateContent("{let $alpha /}{/let}")
-        .causesError("parse error at '/}': expected }, identifier, or ':'")
+        .causesError("parse error at '/}': expected identifier or ':'")
         .at(1, 13);
 
     // Test error case.
@@ -1897,7 +1897,7 @@ public final class TemplateParserTest {
    * @return The decl infos and parse tree nodes created.
    */
   private static TemplateNode parseTemplateContent(String input, ErrorReporter errorReporter) {
-    String soyFile = SharedTestUtils.buildTestSoyFileContent(ImmutableList.of(), input);
+    String soyFile = SharedTestUtils.buildTestSoyFileContent(input);
 
     SoyFileSetNode fileSet =
         SoyFileSetParserBuilder.forFileContents(soyFile)

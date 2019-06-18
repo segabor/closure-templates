@@ -17,6 +17,7 @@
 package com.google.template.soy.jbcsrc.runtime;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
 
 import com.google.common.base.Function;
 import com.google.common.collect.HashMultimap;
@@ -55,7 +56,7 @@ import com.google.template.soy.msgs.restricted.SoyMsgPluralPart;
 import com.google.template.soy.msgs.restricted.SoyMsgPluralRemainderPart;
 import com.google.template.soy.msgs.restricted.SoyMsgRawTextPart;
 import com.google.template.soy.msgs.restricted.SoyMsgSelectPart;
-import com.google.template.soy.shared.internal.ShortCircuitable;
+import com.google.template.soy.shared.internal.ShortCircuitables;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.ibm.icu.util.ULocale;
 import java.io.Closeable;
@@ -240,31 +241,14 @@ public final class JbcSrcRuntime {
    */
   public static CompiledTemplate applyEscapers(
       CompiledTemplate delegate, ImmutableList<SoyJavaPrintDirective> directives) {
+    checkState(!directives.isEmpty());
     ContentKind kind = delegate.kind();
-    if (canSkipEscaping(directives, kind)) {
+    directives = ShortCircuitables.filterDirectivesForKind(kind, directives);
+    if (directives.isEmpty()) {
+      // everything was filtered, common for for delcalls from compatible contexts (html -> html)
       return delegate;
     }
     return new EscapedCompiledTemplate(delegate, directives, kind);
-  }
-
-  /**
-   * Identifies some cases where the combination of directives and content kind mean we can skip
-   * applying the escapers. This is an opportunistic optimization, it is possible that we will fail
-   * to skip escaping in some cases where we could and that is OK. However, there should never be a
-   * case where we skip escaping and but the escapers would actually modify the input.
-   */
-  private static boolean canSkipEscaping(
-      ImmutableList<SoyJavaPrintDirective> directives, @Nullable ContentKind kind) {
-    if (kind == null) {
-      return false;
-    }
-    for (SoyJavaPrintDirective directive : directives) {
-      if (!(directive instanceof ShortCircuitable)
-          || !((ShortCircuitable) directive).isNoopForKind(kind)) {
-        return false;
-      }
-    }
-    return true;
   }
 
   public static SoyValueProvider getSoyListItem(List<SoyValueProvider> list, long index) {
@@ -349,9 +333,9 @@ public final class JbcSrcRuntime {
         ImmutableList<SoyMsgPart> msgParts,
         @Nullable ULocale locale,
         int numPlaceholders) {
-      // using a null content kind which will cause our base class to box the value in a StringData
+      // using a TEXT content kind which will cause our base class to box the value in a StringData
       // object
-      super(/* contentKind= */ null);
+      super(ContentKind.TEXT);
       this.msgId = msgId;
       this.msgParts = msgParts;
       this.locale = locale;
@@ -680,19 +664,17 @@ public final class JbcSrcRuntime {
   private static final class EscapedCompiledTemplate implements CompiledTemplate {
     private final CompiledTemplate delegate;
     private final ImmutableList<SoyJavaPrintDirective> directives;
-    @Nullable private final ContentKind kind;
+    private final ContentKind kind;
 
     // Note: render() may be called multiple times as part of a render operation that detaches
     // halfway through.  So we need to store the buffer in a field, but we never need to reset it.
     private final LoggingAdvisingAppendable buffer = LoggingAdvisingAppendable.buffering();
 
     EscapedCompiledTemplate(
-        CompiledTemplate delegate,
-        List<SoyJavaPrintDirective> directives,
-        @Nullable ContentKind kind) {
-      this.delegate = delegate;
+        CompiledTemplate delegate, List<SoyJavaPrintDirective> directives, ContentKind kind) {
+      this.delegate = checkNotNull(delegate);
       this.directives = ImmutableList.copyOf(directives);
-      this.kind = kind;
+      this.kind = checkNotNull(kind);
     }
 
     @Override
@@ -701,7 +683,7 @@ public final class JbcSrcRuntime {
       RenderResult result = delegate.render(buffer, context);
       if (result.isDone()) {
         SoyValue resultData =
-            kind == null
+            kind == ContentKind.TEXT
                 ? StringData.forValue(buffer.toString())
                 : UnsafeSanitizedContentOrdainer.ordainAsSafe(buffer.toString(), kind);
         for (SoyJavaPrintDirective directive : directives) {
@@ -713,7 +695,6 @@ public final class JbcSrcRuntime {
     }
 
     @Override
-    @Nullable
     public ContentKind kind() {
       return kind;
     }

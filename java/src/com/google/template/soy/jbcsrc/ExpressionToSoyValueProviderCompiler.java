@@ -18,7 +18,6 @@ package com.google.template.soy.jbcsrc;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 
-import com.google.common.base.Optional;
 import com.google.template.soy.data.SoyValueProvider;
 import com.google.template.soy.exprtree.DataAccessNode;
 import com.google.template.soy.exprtree.ExprNode;
@@ -34,7 +33,7 @@ import com.google.template.soy.jbcsrc.restricted.FieldRef;
 import com.google.template.soy.jbcsrc.restricted.SoyExpression;
 import com.google.template.soy.soytree.defn.LocalVar;
 import com.google.template.soy.soytree.defn.TemplateParam;
-import com.google.template.soy.soytree.defn.TemplateStateVar;
+import java.util.Optional;
 import javax.annotation.Nullable;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.Type;
@@ -114,7 +113,8 @@ final class ExpressionToSoyValueProviderCompiler {
    */
   Optional<Expression> compileAvoidingDetaches(ExprNode node) {
     checkNotNull(node);
-    return new CompilerVisitor(variables, varManager, exprCompiler, null).exec(node);
+    return new CompilerVisitor(variables, varManager, exprCompiler, /*detachingExprCompiler=*/ null)
+        .exec(node);
   }
 
   private static final class CompilerVisitor
@@ -170,7 +170,7 @@ final class ExpressionToSoyValueProviderCompiler {
         // anything here.
         Optional<Expression> right = visit(node.getRightChild());
         if (!right.isPresent()) {
-          return Optional.absent();
+          return Optional.empty();
         }
         Expression left =
             detachingExprCompiler
@@ -191,7 +191,7 @@ final class ExpressionToSoyValueProviderCompiler {
         // we could also support cases where only one branch is compilable to an SVP, but i doubt
         // that would be that important.
         if (!trueBranch.isPresent() || !falseBranch.isPresent()) {
-          return Optional.absent();
+          return Optional.empty();
         }
         Expression condition = detachingExprCompiler.compile(node.getChild(0)).coerceToBoolean();
         return Optional.of(BytecodeUtils.ternary(condition, trueBranch.get(), falseBranch.get()));
@@ -207,7 +207,7 @@ final class ExpressionToSoyValueProviderCompiler {
         if (allowsBoxing()) {
           return Optional.of(SoyExpression.forInt(loopVar).box());
         }
-        return Optional.absent();
+        return Optional.empty();
       } else {
         return Optional.of(loopVar);
       }
@@ -216,15 +216,6 @@ final class ExpressionToSoyValueProviderCompiler {
     @Override
     Optional<Expression> visitParam(VarRefNode varRef, TemplateParam param) {
       return Optional.of(variables.getParam(param));
-    }
-
-    @Override
-    Optional<Expression> visitStateNode(VarRefNode node, TemplateStateVar state) {
-      SoyExpression expression = variables.getState(state);
-      if (allowsBoxing()) {
-        return Optional.of(expression.boxAsSoyValueProvider());
-      }
-      return Optional.absent();
     }
 
     @Override
@@ -247,7 +238,7 @@ final class ExpressionToSoyValueProviderCompiler {
           return Optional.of(compileWithNoDetaches.get().boxAsSoyValueProvider());
         }
       }
-      return Optional.absent();
+      return Optional.empty();
     }
   }
 }

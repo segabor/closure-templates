@@ -214,7 +214,6 @@ goog.define = function(name, defaultValue) {
       value = defines[name];
     }
   }
-  goog.exportPath_(name, value);
   return value;
 };
 
@@ -2320,6 +2319,7 @@ if (!COMPILED) {
  *        be added.
  *     all other properties are added to the prototype.
  * @return {!Function} The class constructor.
+ * @deprecated Use ES6 class syntax instead.
  */
 goog.defineClass = function(superClass, def) {
   // TODO(johnlenz): consider making the superClass an optional parameter.
@@ -7832,11 +7832,30 @@ goog.labs.userAgent.browser.matchIE_ = function() {
 
 
 /**
- * @return {boolean} Whether the user's browser is Edge.
+ * @return {boolean} Whether the user's browser is Edge. This refers to EdgeHTML
+ * based Edge.
  * @private
  */
-goog.labs.userAgent.browser.matchEdge_ = function() {
+goog.labs.userAgent.browser.matchEdgeHtml_ = function() {
   return goog.labs.userAgent.util.matchUserAgent('Edge');
+};
+
+
+/**
+ * @return {boolean} Whether the user's browser is Chromium based Edge.
+ * @private
+ */
+goog.labs.userAgent.browser.matchEdgeChromium_ = function() {
+  return goog.labs.userAgent.util.matchUserAgent('Edg/');
+};
+
+
+/**
+ * @return {boolean} Whether the user's browser is Chromium based Opera.
+ * @private
+ */
+goog.labs.userAgent.browser.matchOperaChromium_ = function() {
+  return goog.labs.userAgent.util.matchUserAgent('OPR');
 };
 
 
@@ -7859,7 +7878,9 @@ goog.labs.userAgent.browser.matchSafari_ = function() {
       !(goog.labs.userAgent.browser.matchChrome_() ||
         goog.labs.userAgent.browser.matchCoast_() ||
         goog.labs.userAgent.browser.matchOpera_() ||
-        goog.labs.userAgent.browser.matchEdge_() ||
+        goog.labs.userAgent.browser.matchEdgeHtml_() ||
+        goog.labs.userAgent.browser.matchEdgeChromium_() ||
+        goog.labs.userAgent.browser.matchOperaChromium_() ||
         goog.labs.userAgent.browser.matchFirefox_() ||
         goog.labs.userAgent.browser.isSilk() ||
         goog.labs.userAgent.util.matchUserAgent('Android'));
@@ -7894,13 +7915,14 @@ goog.labs.userAgent.browser.matchIosWebview_ = function() {
 
 
 /**
- * @return {boolean} Whether the user's browser is Chrome.
+ * @return {boolean} Whether the user's browser is any Chromium browser. This
+ * returns true for Chrome, Opera 15+, and Edge Chromium.
  * @private
  */
 goog.labs.userAgent.browser.matchChrome_ = function() {
   return (goog.labs.userAgent.util.matchUserAgent('Chrome') ||
           goog.labs.userAgent.util.matchUserAgent('CriOS')) &&
-      !goog.labs.userAgent.browser.matchEdge_();
+      !goog.labs.userAgent.browser.matchEdgeHtml_();
 };
 
 
@@ -7932,10 +7954,22 @@ goog.labs.userAgent.browser.isIE = goog.labs.userAgent.browser.matchIE_;
 
 
 /**
- * @return {boolean} Whether the user's browser is Edge.
+ * @return {boolean} Whether the user's browser is EdgeHTML based Edge.
  */
-goog.labs.userAgent.browser.isEdge = goog.labs.userAgent.browser.matchEdge_;
+goog.labs.userAgent.browser.isEdge = goog.labs.userAgent.browser.matchEdgeHtml_;
 
+
+/**
+ * @return {boolean} Whether the user's browser is Chromium based Edge.
+ */
+goog.labs.userAgent.browser.isEdgeChromium =
+    goog.labs.userAgent.browser.matchEdgeChromium_;
+
+/**
+ * @return {boolean} Whether the user's browser is Chromium based Opera.
+ */
+goog.labs.userAgent.browser.isOperaChromium =
+    goog.labs.userAgent.browser.matchOperaChromium_;
 
 /**
  * @return {boolean} Whether the user's browser is Firefox.
@@ -7965,7 +7999,8 @@ goog.labs.userAgent.browser.isIosWebview =
 
 
 /**
- * @return {boolean} Whether the user's browser is Chrome.
+ * @return {boolean} Whether the user's browser is any Chromium based browser (
+ * Chrome, Blink-based Opera (15+) and Edge Chromium).
  */
 goog.labs.userAgent.browser.isChrome = goog.labs.userAgent.browser.matchChrome_;
 
@@ -8037,6 +8072,11 @@ goog.labs.userAgent.browser.getVersion = function() {
   // Check Edge before Chrome since it has Chrome in the string.
   if (goog.labs.userAgent.browser.isEdge()) {
     return lookUpValueWithKeys(['Edge']);
+  }
+
+  // Check Chromium Edge before Chrome since it has Chrome in the string.
+  if (goog.labs.userAgent.browser.isEdgeChromium()) {
+    return lookUpValueWithKeys(['Edg']);
   }
 
   if (goog.labs.userAgent.browser.isChrome()) {
@@ -12192,6 +12232,21 @@ goog.html.SafeUrl.fromFacebookMessengerUrl = function(facebookMessengerUrl) {
       facebookMessengerUrl);
 };
 
+/**
+ * Creates a SafeUrl wrapping a whatsapp://send URL.
+ *
+ * @param {string} whatsAppUrl A WhatsApp URL.
+ * @return {!goog.html.SafeUrl} A matching safe URL, or {@link INNOCUOUS_STRING}
+ *     wrapped as a SafeUrl if it does not pass.
+ */
+goog.html.SafeUrl.fromWhatsAppUrl = function(whatsAppUrl) {
+  if (!goog.string.internal.caseInsensitiveStartsWith(
+          whatsAppUrl, 'whatsapp://send')) {
+    whatsAppUrl = goog.html.SafeUrl.INNOCUOUS_STRING;
+  }
+  return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(
+      whatsAppUrl);
+};
 
 /**
  * Creates a SafeUrl wrapping a sms: URL.
@@ -17067,7 +17122,7 @@ goog.labs.userAgent.engine.isTrident = function() {
 
 
 /**
- * @return {boolean} Whether the rendering engine is Edge.
+ * @return {boolean} Whether the rendering engine is EdgeHTML.
  */
 goog.labs.userAgent.engine.isEdge = function() {
   return goog.labs.userAgent.util.matchUserAgent('Edge');
@@ -17075,7 +17130,8 @@ goog.labs.userAgent.engine.isEdge = function() {
 
 
 /**
- * @return {boolean} Whether the rendering engine is WebKit.
+ * @return {boolean} Whether the rendering engine is WebKit. This will return
+ * true for Chrome, Blink-based Opera (15+), Edge Chromium and Safari.
  */
 goog.labs.userAgent.engine.isWebKit = function() {
   return goog.labs.userAgent.util.matchUserAgentIgnoreCase('WebKit') &&
@@ -17543,7 +17599,8 @@ goog.userAgent.ASSUME_IE = goog.define('goog.userAgent.ASSUME_IE', false);
 
 
 /**
- * @define {boolean} Whether we know at compile-time that the browser is EDGE.
+ * @define {boolean} Whether we know at compile-time that the browser is EDGE,
+ * referring to EdgeHTML based Edge.
  */
 goog.userAgent.ASSUME_EDGE = goog.define('goog.userAgent.ASSUME_EDGE', false);
 
@@ -17570,7 +17627,8 @@ goog.userAgent.ASSUME_MOBILE_WEBKIT =
 
 
 /**
- * @define {boolean} Whether we know at compile-time that the browser is OPERA.
+ * @define {boolean} Whether we know at compile-time that the browser is OPERA,
+ * referring to Presto-based Opera.
  */
 goog.userAgent.ASSUME_OPERA = goog.define('goog.userAgent.ASSUME_OPERA', false);
 
@@ -17626,7 +17684,7 @@ goog.userAgent.getNavigator = function() {
 
 
 /**
- * Whether the user agent is Opera.
+ * Whether the user agent is Presto-based Opera.
  * @type {boolean}
  */
 goog.userAgent.OPERA = goog.userAgent.BROWSER_KNOWN_ ?
@@ -17644,7 +17702,7 @@ goog.userAgent.IE = goog.userAgent.BROWSER_KNOWN_ ?
 
 
 /**
- * Whether the user agent is Microsoft Edge.
+ * Whether the user agent is Microsoft Edge (EdgeHTML based).
  * @type {boolean}
  */
 goog.userAgent.EDGE = goog.userAgent.BROWSER_KNOWN_ ?
@@ -17653,7 +17711,7 @@ goog.userAgent.EDGE = goog.userAgent.BROWSER_KNOWN_ ?
 
 
 /**
- * Whether the user agent is MS Internet Explorer or MS Edge.
+ * Whether the user agent is MS Internet Explorer or MS Edge (EdgeHTML based).
  * @type {boolean}
  */
 goog.userAgent.EDGE_OR_IE = goog.userAgent.EDGE || goog.userAgent.IE;
@@ -17671,7 +17729,7 @@ goog.userAgent.GECKO = goog.userAgent.BROWSER_KNOWN_ ?
 
 /**
  * Whether the user agent is WebKit. WebKit is the rendering engine that
- * Safari, Android and others use.
+ * Safari, Edge Chromium, Opera Chromium, Android and others use.
  * @type {boolean}
  */
 goog.userAgent.WEBKIT = goog.userAgent.BROWSER_KNOWN_ ?
@@ -17927,6 +17985,7 @@ goog.userAgent.IOS = goog.userAgent.PLATFORM_KNOWN_ ?
 
 /**
  * Whether the user agent is running on KaiOS.
+ * @type {boolean}
  */
 goog.userAgent.KAIOS = goog.userAgent.PLATFORM_KNOWN_ ?
     goog.userAgent.ASSUME_KAIOS :
@@ -17934,6 +17993,7 @@ goog.userAgent.KAIOS = goog.userAgent.PLATFORM_KNOWN_ ?
 
 /**
  * Whether the user agent is running on Go2Phone.
+ * @type {boolean}
  */
 goog.userAgent.GO2PHONE = goog.userAgent.PLATFORM_KNOWN_ ?
     goog.userAgent.ASSUME_GO2PHONE :
@@ -18112,18 +18172,19 @@ goog.userAgent.isDocumentMode = goog.userAgent.isDocumentModeOrHigher;
  * CSS1Compat property to see if we are in standards mode. If we are in
  * standards mode, treat the browser version as the document mode. Otherwise,
  * IE is emulating version 5.
+ *
+ * NOTE(2019/05/31): Support for IE < 7 is long gone, so this is now simplified.
+ * It returns document.documentMode for IE and undefined for everything else.
+ *
  * @type {number|undefined}
  * @const
  */
 goog.userAgent.DOCUMENT_MODE = (function() {
   var doc = goog.global['document'];
-  var mode = goog.userAgent.getDocumentMode_();
   if (!doc || !goog.userAgent.IE) {
     return undefined;
   }
-  return mode || (doc['compatMode'] == 'CSS1Compat' ?
-                      parseInt(goog.userAgent.VERSION, 10) :
-                      5);
+  return goog.userAgent.getDocumentMode_();
 })();
 
 //javascript/closure/debug/debug.js
@@ -25972,7 +26033,6 @@ goog.provide('goog.soy.data.SanitizedHtmlAttribute');
 goog.provide('goog.soy.data.SanitizedJs');
 goog.provide('goog.soy.data.SanitizedTrustedResourceUri');
 goog.provide('goog.soy.data.SanitizedUri');
-goog.provide('goog.soy.data.UnsanitizedText');
 
 goog.require('goog.Uri');
 goog.require('goog.asserts');
@@ -26035,17 +26095,9 @@ goog.soy.data.SanitizedContentKind = {
   STYLE: goog.DEBUG ? {sanitizedContentStyle: true} : {},
 
   /** A CSS3 style sheet (list of rules). */
-  CSS: goog.DEBUG ? {sanitizedContentCss: true} : {},
+  CSS: goog.DEBUG ? {sanitizedContentCss: true} : {}
 
-  /**
-   * Unsanitized plain-text content.
-   *
-   * This is effectively the "null" entry of this enum, and is sometimes used
-   * to explicitly mark content that should never be used unescaped. Since any
-   * string is safe to use as text, being of ContentKind.TEXT makes no
-   * guarantees about its safety in any other context such as HTML.
-   */
-  TEXT: goog.DEBUG ? {sanitizedContentKindText: true} : {}
+  // TEXT doesn't produce SanitizedContent anymore, use renderText.
 };
 
 
@@ -26104,17 +26156,13 @@ goog.soy.data.SanitizedContent.prototype.toString = function() {
 
 
 /**
- * Converts sanitized content of kind TEXT or HTML into SafeHtml. HTML content
- * is converted without modification, while text content is HTML-escaped.
+ * Converts sanitized content of kind HTML into SafeHtml
  * @return {!goog.html.SafeHtml}
- * @throws {Error} when the content kind is not TEXT or HTML.
+ * @throws {!Error} when the content kind is not HTML.
  */
 goog.soy.data.SanitizedContent.prototype.toSafeHtml = function() {
-  if (this.contentKind === goog.soy.data.SanitizedContentKind.TEXT) {
-    return goog.html.SafeHtml.htmlEscape(this.toString());
-  }
   if (this.contentKind !== goog.soy.data.SanitizedContentKind.HTML) {
-    throw new Error('Sanitized content was not of kind TEXT or HTML.');
+    throw new Error('Sanitized content was not of kind HTML.');
   }
   return goog.html.uncheckedconversions
       .safeHtmlFromStringKnownToSatisfyTypeContract(
@@ -26141,34 +26189,6 @@ goog.soy.data.SanitizedContent.prototype.toSafeUrl = function() {
               'SafeHtml-contract-compliant value.'),
           this.toString());
 };
-
-
-/**
- * Unsanitized plain text string.
- *
- * While all strings are effectively safe to use as a plain text, there are no
- * guarantees about safety in any other context such as HTML. This is
- * sometimes used to mark that should never be used unescaped.
- *
- * @param {*} content Plain text with no guarantees.
- * @param {?goog.i18n.bidi.Dir=} contentDir ignored
- * @extends {goog.soy.data.SanitizedContent}
- * @constructor
- */
-goog.soy.data.UnsanitizedText = function(content, contentDir) {
-  // Not calling the superclass constructor which just throws an exception.
-
-  /** @override */
-  this.content = String(content);
-  this.contentDir = null;
-};
-goog.inherits(goog.soy.data.UnsanitizedText, goog.soy.data.SanitizedContent);
-
-
-/** @override */
-goog.soy.data.UnsanitizedText.prototype.contentKind =
-    goog.soy.data.SanitizedContentKind.TEXT;
-
 
 
 /**
@@ -26202,14 +26222,13 @@ goog.soy.data.SanitizedHtml.prototype.contentKind =
  */
 goog.soy.data.SanitizedHtml.isCompatibleWith = function(value) {
   return goog.isString(value) || value instanceof goog.soy.data.SanitizedHtml ||
-      value instanceof goog.soy.data.UnsanitizedText ||
       value instanceof goog.html.SafeHtml;
 };
 
 
 /**
  * Checks if the value could be used as the Soy type {html}.
- * Strict: disallows strings or UnsanitizedText.
+ * Strict: disallows strings.
  * @param {*} value
  * @return {boolean}
  */
@@ -26250,13 +26269,12 @@ goog.soy.data.SanitizedJs.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
  */
 goog.soy.data.SanitizedJs.isCompatibleWith = function(value) {
   return goog.isString(value) || value instanceof goog.soy.data.SanitizedJs ||
-      value instanceof goog.soy.data.UnsanitizedText ||
       value instanceof goog.html.SafeScript;
 };
 
 /**
  * Checks if the value could be used as the Soy type {js}.
- * Strict: disallows strings or UnsanitizedText.
+ * Strict: disallows strings.
  * @param {*} value
  * @return {boolean}
  */
@@ -26296,7 +26314,6 @@ goog.soy.data.SanitizedUri.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
  */
 goog.soy.data.SanitizedUri.isCompatibleWith = function(value) {
   return goog.isString(value) || value instanceof goog.soy.data.SanitizedUri ||
-      value instanceof goog.soy.data.UnsanitizedText ||
       value instanceof goog.html.SafeUrl ||
       value instanceof goog.html.TrustedResourceUrl ||
       value instanceof goog.Uri;
@@ -26305,7 +26322,7 @@ goog.soy.data.SanitizedUri.isCompatibleWith = function(value) {
 
 /**
  * Checks if the value could be used as the Soy type {uri}.
- * Strict: disallows strings or UnsanitizedText.
+ * Strict: disallows strings.
  * @param {*} value
  * @return {boolean}
  */
@@ -26368,14 +26385,13 @@ goog.soy.data.SanitizedTrustedResourceUri.prototype.toTrustedResourceUrl =
 goog.soy.data.SanitizedTrustedResourceUri.isCompatibleWith = function(value) {
   return goog.isString(value) ||
       value instanceof goog.soy.data.SanitizedTrustedResourceUri ||
-      value instanceof goog.soy.data.UnsanitizedText ||
       value instanceof goog.html.TrustedResourceUrl;
 };
 
 
 /**
  * Checks if the value could be used as the Soy type {trusted_resource_uri}.
- * Strict: disallows strings or UnsanitizedText.
+ * Strict: disallows strings.
  * @param {*} value
  * @return {boolean}
  */
@@ -26420,14 +26436,13 @@ goog.soy.data.SanitizedHtmlAttribute.prototype.contentDir =
  */
 goog.soy.data.SanitizedHtmlAttribute.isCompatibleWith = function(value) {
   return goog.isString(value) ||
-      value instanceof goog.soy.data.SanitizedHtmlAttribute ||
-      value instanceof goog.soy.data.UnsanitizedText;
+      value instanceof goog.soy.data.SanitizedHtmlAttribute;
 };
 
 
 /**
  * Checks if the value could be used as the Soy type {attribute}.
- * Strict: disallows strings or UnsanitizedText.
+ * Strict: disallows strings.
  * @param {*} value
  * @return {boolean}
  */
@@ -26468,7 +26483,6 @@ goog.soy.data.SanitizedCss.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
  */
 goog.soy.data.SanitizedCss.isCompatibleWith = function(value) {
   return goog.isString(value) || value instanceof goog.soy.data.SanitizedCss ||
-      value instanceof goog.soy.data.UnsanitizedText ||
       value instanceof goog.html.SafeStyle ||
       value instanceof goog.html.SafeStyleSheet;
 };
@@ -26476,7 +26490,7 @@ goog.soy.data.SanitizedCss.isCompatibleWith = function(value) {
 
 /**
  * Checks if the value could be used as the Soy type {css}.
- * Strict: disallows strings or UnsanitizedText.
+ * Strict: disallows strings.
  * @param {*} value
  * @return {boolean}
  */
@@ -26522,7 +26536,6 @@ goog.require('goog.soy.data.SanitizedHtmlAttribute');
 goog.require('goog.soy.data.SanitizedJs');
 goog.require('goog.soy.data.SanitizedTrustedResourceUri');
 goog.require('goog.soy.data.SanitizedUri');
-goog.require('goog.soy.data.UnsanitizedText');
 
 /**
  * Checks whether a given value is of a given content kind.
@@ -26601,16 +26614,6 @@ soy.checks.isURI = function(value) {
       goog.soy.data.SanitizedUri);
 };
 
-/**
- * @param {?} value
- * @return {boolean}
- */
-soy.checks.isText = function(value) {
-  return soy.checks.isContentKind_(
-      value, goog.soy.data.SanitizedContentKind.TEXT,
-      goog.soy.data.UnsanitizedText);
-};
-
 //javascript/template/soy/soyutils_map.js
 goog.loadModule(function(exports) {'use strict';/*
  * Copyright 2017 Google Inc.
@@ -26635,7 +26638,6 @@ goog.loadModule(function(exports) {'use strict';/*
 goog.module('soy.map');
 goog.module.declareLegacyNamespace();
 
-const UnsanitizedText = goog.require('goog.soy.data.UnsanitizedText');
 const {assertString} = goog.require('goog.asserts');
 const {shuffle} = goog.require('goog.array');
 
@@ -26743,18 +26745,6 @@ function $$populateMap(jspbMap, map) {
 }
 
 /**
- * SoyMaps, like ES6 Maps and proto maps, allow non-string values as map keys.
- * But UnsanitizedText keys still need to be coerced to strings so that
- * instances with identical textual content are considered identical for map
- * lookups.
- * @param {?} key The key that is being inserted into or looked up in the map.
- * @return {?} The key, coerced to a string if it is an UnsanitizedText object.
- */
-function $$maybeCoerceKeyToString(key) {
-  return key instanceof UnsanitizedText ? key.getContent() : key;
-}
-
-/**
  * Determines if the argument matches the soy.map.Map interface.
  * @param {?} map The object to check.
  * @return {boolean} True if it is a soy.map.Map, false otherwise.
@@ -26767,7 +26757,6 @@ function $$isSoyMap(map) {
 
 exports = {
   $$mapToLegacyObjectMap,
-  $$maybeCoerceKeyToString,
   $$populateMap,
   $$getMapKeys,
   $$isSoyMap,
@@ -26893,7 +26882,6 @@ goog.require('goog.soy.data.SanitizedHtmlAttribute');
 goog.require('goog.soy.data.SanitizedJs');
 goog.require('goog.soy.data.SanitizedTrustedResourceUri');
 goog.require('goog.soy.data.SanitizedUri');
-goog.require('goog.soy.data.UnsanitizedText');
 goog.require('goog.string');
 goog.require('goog.string.Const');
 goog.require('soy.checks');
@@ -27111,22 +27099,9 @@ soydata.$$makeSanitizedContentFactoryWithDefaultDirOnly_ = function(ctor) {
 
 
 // -----------------------------------------------------------------------------
-// Sanitized content ordainers. Please use these with extreme caution (with the
-// exception of markUnsanitizedText). A good recommendation is to limit usage
-// of these to just a handful of files in your source tree where usages can be
-// carefully audited.
-
-
-/**
- * Marks content as UnsanitizedText. This serves no purpose anymore.
- *
- * @param {?} content Text.
- * @param {?goog.i18n.bidi.Dir=} contentDir ignored
- * @return {!goog.soy.data.UnsanitizedText}
- */
-soydata.markUnsanitizedText = function(content, contentDir) {
-  return new goog.soy.data.UnsanitizedText(content);
-};
+// Sanitized content ordainers. Please use these with extreme caution. A good
+// recommendation is to limit usage of these to just a handful of files in your
+// source tree where usages can be carefully audited.
 
 
 /**
@@ -27303,7 +27278,7 @@ soy.$$checkNotNull = function(val) {
 /**
  * Parses the given string into a base 10 integer. Returns null if parse is
  * unsuccessful.
- * @param {?string|!goog.soy.data.UnsanitizedText} str The string to parse
+ * @param {?string} str The string to parse
  * @return {?number} The string parsed as a base 10 integer, or null if
  * unsuccessful
  */
@@ -27315,38 +27290,14 @@ soy.$$parseInt = function(str) {
 /**
  * When equals comparison cannot be expressed using JS runtime semantics for ==,
  * bail out to a runtime function. In practice, this only means comparisons
- * of boolean and number are valid for equals, and everything else needs this
- * function. Even "strings" have to go through this since in some cases they
- * are just strings and in some cases they are UnsanitizedText. In addition,
- * some sanitized content may be functions or objects that need to be coerced
- * to a string.
- * @param {?} obj1
- * @param {?} obj2
+ * of boolean, string and number are valid for equals, and everything else needs
+ * this function. Some sanitized content may be functions or objects that need
+ * to be coerced to a string.
+ * @param {?} valueOne
+ * @param {?} valueTwo
  * @return {boolean}
  */
-soy.$$equals = function(obj1, obj2) {
-  /** @type {?} */
-  var valueOne;
-  /** @type {?} */
-  var valueTwo;
-
-  /**
-   * Convert text to string since that's what it really is. Or just keep it the
-   * same
-   * @param {?} obj
-   * @return {?}
-   */
-  function unsanitizedTextOrObject(obj) {
-    if (obj instanceof goog.soy.data.UnsanitizedText) {
-      return obj.toString();
-    } else {
-      return obj;
-    }
-  }
-
-  valueOne = unsanitizedTextOrObject(obj1);
-  valueTwo = unsanitizedTextOrObject(obj2);
-
+soy.$$equals = function(valueOne, valueTwo) {
   // Incremental DOM functions have to be coerced to a string. At runtime
   // they are tagged with a type for ATTR or HTML. They both need to be
   // the same to be considered structurally equal. Beware, as this is a
@@ -27378,7 +27329,7 @@ soy.$$equals = function(obj1, obj2) {
 
 /**
  * Parses the given string into a float. Returns null if parse is unsuccessful.
- * @param {?string|!goog.soy.data.UnsanitizedText} str The string to parse
+ * @param {?string} str The string to parse
  * @return {?number} The string parsed as a float, or null if unsuccessful.
  */
 soy.$$parseFloat = function(str) {
@@ -27510,10 +27461,9 @@ soy.$$registerDelegateFn = function(
  * true, then returns an implementation that is equivalent to an empty template
  * (i.e. rendered output would be empty string).
  *
- * @param {string|!goog.soy.data.UnsanitizedText} delTemplateId The
- *     delegate template id.
- * @param {string|!goog.soy.data.UnsanitizedText} delTemplateVariant
- *     The delegate template variant (can be empty string).
+ * @param {string} delTemplateId The delegate template id.
+ * @param {string} delTemplateVariant The delegate template variant (can be
+ *     empty string).
  * @param {boolean} allowsEmptyDefault Whether to default to the empty template
  *     function if there's no active implementation.
  * @return {!Function} The retrieved implementation function.
@@ -27669,22 +27619,6 @@ soydata.$$makeSanitizedContentFactoryWithDefaultDirOnlyForInternalBlocks_ =
 
 
 /**
- * Creates kind="text" block contents (internal use only).
- *
- * @param {?} content Text.
- * @return {!goog.soy.data.UnsanitizedText|!soydata.$$EMPTY_STRING_} Wrapped
- *     result.
- */
-soydata.$$markUnsanitizedTextForInternalBlocks = function(content) {
-  var contentString = String(content);
-  if (!contentString) {
-    return soydata.$$EMPTY_STRING_.VALUE;
-  }
-  return new goog.soy.data.UnsanitizedText(contentString);
-};
-
-
-/**
  * Creates kind="html" block contents (internal use only).
  *
  * @param {?} content Text.
@@ -27810,17 +27744,13 @@ soy.$$cleanHtml = function(value, opt_safeTags) {
  * converting entities.
  *
  * The last two parameters are idom functions.
- * @param {(string|?goog.soy.data.SanitizedHtml|?goog.soy.data.UnsanitizedText|
- *     !soydata.IdomFunction|!Function|null|undefined)}
- *     value
+ * @param {string|?goog.soy.data.SanitizedHtml|?soydata.IdomFunction|?Function|
+ *     undefined} value
  * @return {string}
  */
 soy.$$htmlToText = function(value) {
   if (value == null) {
     return '';
-  }
-  if (soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.TEXT)) {
-    return value.toString();
   }
   if (!soydata.isContentKind_(value, goog.soy.data.SanitizedContentKind.HTML)) {
     return goog.asserts.assertString(value);
@@ -28847,8 +28777,7 @@ soy.$$bidiSpanWrap = function(bidiGlobalDir, text) {
  *     if rtl, 0 if unknown.
  * @param {?} text The string to be wrapped. Can be other types, but the value
  *     will be coerced to a string.
- * @return {!goog.soy.data.UnsanitizedText|!goog.soy.data.SanitizedHtml|string}
- *     The wrapped string.
+ * @return {!goog.soy.data.SanitizedHtml|string} The wrapped string.
  */
 soy.$$bidiUnicodeWrap = function(bidiGlobalDir, text) {
   var formatter = soy.$$getBidiFormatterInstance_(bidiGlobalDir);
@@ -28865,22 +28794,17 @@ soy.$$bidiUnicodeWrap = function(bidiGlobalDir, text) {
   // information - a bidi wrapping directive - has already been run.
   var wrappedTextDir = formatter.getContextDir();
 
-  // Unicode-wrapping UnsanitizedText gives UnsanitizedText.
-  // Unicode-wrapping safe HTML or JS string data gives valid, safe HTML or JS
-  // string data.
+  // Unicode-wrapping safe HTML string data gives valid, safe HTML string data.
   // ATTENTION: Do these need to be ...ForInternalBlocks()?
-  if (soydata.isContentKind_(text, goog.soy.data.SanitizedContentKind.TEXT)) {
-    return soydata.markUnsanitizedText(wrappedText);
-  }
   if (isHtml) {
     return soydata.VERY_UNSAFE.ordainSanitizedHtml(wrappedText, wrappedTextDir);
   }
 
   // Unicode-wrapping does not conform to the syntax of the other types of
-  // content. For lack of anything better to do, we we do not declare a content
+  // content. For lack of anything better to do, we do not declare a content
   // kind at all by falling through to the non-SanitizedContent case below.
   // TODO(user): Consider throwing a runtime error on receipt of
-  // SanitizedContent other than TEXT, HTML, or JS_STR_CHARS.
+  // SanitizedContent other than HTML.
 
   // The input was not SanitizedContent, so our output isn't SanitizedContent
   // either.

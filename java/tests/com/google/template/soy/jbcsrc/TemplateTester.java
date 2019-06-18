@@ -22,7 +22,6 @@ import static com.google.common.truth.Fact.simpleFact;
 import static com.google.template.soy.data.SoyValueConverter.EMPTY_DICT;
 
 import com.google.common.base.Joiner;
-import com.google.common.base.Optional;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.collect.ImmutableMap;
@@ -72,6 +71,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Predicate;
 import javax.annotation.CheckReturnValue;
 
@@ -147,7 +147,7 @@ public final class TemplateTester {
     return (SoyRecord) SoyValueConverter.INSTANCE.convert(params);
   }
 
-  static final class CompiledTemplateSubject extends Subject<CompiledTemplateSubject, String> {
+  static final class CompiledTemplateSubject extends Subject {
     private final String actual;
     private final List<SoyFunction> soyFunctions = new ArrayList<>();
     private final List<SoySourceFunction> soySourceFunctions = new ArrayList<>();
@@ -407,8 +407,7 @@ public final class TemplateTester {
       check("thrownException()").about(UnexpectedFailureSubject::new).that(cause).doFail(message);
     }
 
-    private static final class UnexpectedFailureSubject
-        extends Subject<UnexpectedFailureSubject, Throwable> {
+    private static final class UnexpectedFailureSubject extends Subject {
       UnexpectedFailureSubject(FailureMetadata metadata, Throwable actual) {
         super(metadata, actual);
       }

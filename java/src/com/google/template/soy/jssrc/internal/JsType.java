@@ -28,14 +28,12 @@ import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_IS_NUMBER;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_IS_OBJECT;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_IS_STRING;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_SOY_DATA_SANITIZED_CONTENT;
-import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_SOY_DATA_UNSANITIZED_TEXT;
 import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_ASSERTS_ASSERT_TYPE;
 import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_MAP_IS_SOY_MAP;
 import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_VELOG;
 import static com.google.template.soy.jssrc.internal.JsRuntime.sanitizedContentType;
 
 import com.google.common.base.Joiner;
-import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -64,6 +62,7 @@ import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import javax.annotation.Nullable;
 
@@ -133,28 +132,8 @@ public final class JsType {
   private static final JsType NUMBER_TYPE =
       builder().addType("number").setPredicate(GOOG_IS_NUMBER).build();
 
-  /**
-   * The correct JsType for the soy {@code string} type is {@link #STRING_OR_UNSANITIZED_TEXT},
-   * since the Soy runtime explicitly annotates some strings as being unsanitized. This type exists
-   * for the rare situations where the UnsanitizedText union is not useful, such as in map keys.
-   */
   private static final JsType STRING_TYPE =
       builder().addType("string").setPredicate(GOOG_IS_STRING).build();
-
-  // TODO(lukes): does idom need a custom one that excludes sanitized content?
-  private static final JsType STRING_OR_UNSANITIZED_TEXT =
-      builder()
-          // TODO(lukes): should this contain unsanitized text?
-          .addType("string")
-          .addType("!goog.soy.data.UnsanitizedText")
-          .addRequire(GoogRequire.create("goog.soy.data.UnsanitizedText"))
-          .setPredicate(
-              (value, codeGenerator) ->
-                  Optional.of(
-                      GOOG_IS_STRING
-                          .call(value)
-                          .or(value.instanceOf(GOOG_SOY_DATA_UNSANITIZED_TEXT), codeGenerator)))
-          .build();
 
   private static final JsType RAW_ARRAY_TYPE =
       builder().addType("!Array").setPredicate(GOOG_IS_ARRAY).build();
@@ -301,7 +280,7 @@ public final class JsType {
         return NUMBER_TYPE;
 
       case STRING:
-        return STRING_OR_UNSANITIZED_TEXT;
+        return STRING_TYPE;
 
       case ATTRIBUTES:
         if (isIncrementalDom) {
@@ -449,7 +428,7 @@ public final class JsType {
                       Optional<Expression> typeAssertion =
                           memberType.getTypeAssertion(value, codeGenerator);
                       if (!typeAssertion.isPresent()) {
-                        return Optional.absent();
+                        return Optional.empty();
                       }
                       if (result == null) {
                         result = typeAssertion.get();
@@ -473,7 +452,7 @@ public final class JsType {
 
   /** Can generate code chunks which validate the 'type' of a given code chunk. */
   private interface TypePredicate {
-    TypePredicate NO_OP = (value, codeGenerator) -> Optional.absent();
+    TypePredicate NO_OP = (value, codeGenerator) -> Optional.empty();
 
     /**
      * Returns a code chunk that evaluates to {@code true} if the given chunk matches the predicate
@@ -536,7 +515,7 @@ public final class JsType {
       Expression value, String valueName, Generator codeGenerator) {
     Optional<Expression> typeAssertion = getTypeAssertion(value, codeGenerator);
     if (!typeAssertion.isPresent()) {
-      return Optional.absent();
+      return Optional.empty();
     }
 
     return Optional.of(
@@ -560,6 +539,9 @@ public final class JsType {
   }
 
   private static JsType createSanitized(final SanitizedContentKind kind, boolean isStrict) {
+    if (kind == SanitizedContentKind.TEXT) {
+      return STRING_TYPE;
+    }
     String type = NodeContentKinds.toJsSanitizedContentCtorName(kind);
     // NOTE: we don't add goog.requires for all these alias types.  This is 'ok' since we never
     // invoke a method on them directly (instead they just get passed around and eventually get
@@ -576,8 +558,18 @@ public final class JsType {
       // sanitized type is specified - it just means that the text will
       // be escaped.
       builder.addType("string");
-      builder.addType("!goog.soy.data.UnsanitizedText");
-      builder.addRequire(GoogRequire.create("goog.soy.data.UnsanitizedText"));
+    } else {
+      builder.addType("!soydata.$$EMPTY_STRING_");
+      builder.addType("!" + type);
+      builder.addRequire(GoogRequire.create(type));
+      if (!isStrict) {
+        // All the sanitized types have an .isCompatibleWith method for testing for allowed types
+        // NOTE: this actually allows 'string' to be passed, which is inconsistent with other
+        // backends.
+        // We allow string or unsanitized type to be passed where a sanitized type is specified - it
+        // just means that the text will be escaped.
+        builder.addType("string");
+      }
     }
     // add extra alternate types
     // TODO(lukes): instead of accepting alternates we should probably just coerce to sanitized

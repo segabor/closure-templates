@@ -300,10 +300,10 @@ public class BytecodeCompilerTest {
   public void testCallBasicNode() throws IOException {
     CompiledTemplates templates =
         TemplateTester.compileFile(
-            "{namespace ns}",
+            "{namespace ns requirecss=\"ns.foo\"}",
             "",
             "/** */",
-            "{template .callerDataAll}",
+            "{template .callerDataAll requirecss=\"ns.bar\"}",
             "  {@param foo : string}",
             "  {call .callee data=\"all\" /}",
             "{/template}",
@@ -373,6 +373,20 @@ public class BytecodeCompilerTest {
     assertThat(getTemplateMetadata(templates, "ns.callerParamsAndData").callees())
         .asList()
         .containsExactly("ns.callee");
+  }
+
+  @Test
+  public void testRequireCss() throws IOException {
+    CompiledTemplates templates =
+        TemplateTester.compileFile(
+            "{namespace ns requirecss=\"ns.foo\"}",
+            "",
+            "/** */",
+            "{template .requireCss requirecss=\"ns.bar\"}",
+            "{/template}",
+            "");
+    TemplateMetadata metadata = getTemplateMetadata(templates, "ns.requireCss");
+    assertThat(metadata.requiredCssNames()).asList().containsExactly("ns.foo", "ns.bar");
   }
 
   @Test
@@ -460,6 +474,12 @@ public class BytecodeCompilerTest {
             "  {/if}",
             "{/for}")
         .rendersAs(Joiner.on('\n').join("first!", "1-0", "2-1", "3-2", "4-3", "5-4", "last!"));
+  }
+
+  @Test
+  public void testForLoop_rangeOverConstant() {
+    assertThatTemplateBody("{let $len: 10/}{for $i in range($len)}{$i}{/for}")
+        .rendersAs("0123456789");
   }
 
   @Test

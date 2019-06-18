@@ -17,8 +17,6 @@
 package com.google.template.soy.parsepasses.contextautoesc;
 
 import com.google.auto.value.AutoValue;
-import com.google.common.base.MoreObjects;
-import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.template.soy.base.internal.SanitizedContentKind;
@@ -59,6 +57,7 @@ import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateNode;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Chooses appropriate escaping modes for <code>{print}</code> commands and derives templates as
@@ -111,8 +110,7 @@ final class InferenceEngine {
    * @throws SoyAutoescapeException if they mismatch.
    */
   private static void checkBlockEndContext(RenderUnitNode node, Context endContext) {
-    if (!endContext.isValidEndContextForContentKind(
-        MoreObjects.firstNonNull(node.getContentKind(), SanitizedContentKind.HTML))) {
+    if (!endContext.isValidEndContextForContentKind(node.getContentKind())) {
       String msg =
           String.format(
               "A block of kind=\"%s\" cannot end in context %s. Likely cause is %s.",

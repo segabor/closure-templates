@@ -19,7 +19,6 @@ package com.google.template.soy;
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Optional;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
@@ -86,6 +85,7 @@ import java.net.URL;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.logging.Logger;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -624,7 +624,14 @@ public final class SoyFileSet {
     //    doesn't help anything
     // 2. it potentially removes metadata from the tree by precalculating expressions. For example,
     //    trivial print nodes are evaluated, which can remove globals from the tree, but the
-    ParseResult result = parse(passManagerBuilder().allowUnknownGlobals().optimize(false));
+    ParseResult result =
+        parse(
+            passManagerBuilder()
+                .allowUnknownGlobals()
+                .optimize(false)
+                // Don't desugar, this is a bit of a waste of time and it destroys type information
+                // about @state parameters
+                .desugarHtmlAndStateNodes(false));
     throwIfErrorsPresent();
 
     SoyFileSetNode soyTree = result.fileSet();
@@ -701,6 +708,7 @@ public final class SoyFileSet {
                 passManagerBuilder()
                     .allowUnknownGlobals()
                     .allowV1Expression()
+                    .desugarHtmlAndStateNodes(false)
                     .setTypeRegistry(SoyTypeRegistry.DEFAULT_UNKNOWN)
                     // TODO(lukes): consider changing this to pass a null resolver instead of the
                     // ALLOW_UNDEFINED mode
@@ -903,7 +911,10 @@ public final class SoyFileSet {
     // and constants. For consistency/reusability of templates it would be nice to not allow that
     // but the cat is out of the bag.
     PassManager.Builder builder =
-        passManagerBuilder().allowUnknownGlobals().allowV1Expression().desugarHtmlNodes(false);
+        passManagerBuilder()
+            .allowUnknownGlobals()
+            .allowV1Expression()
+            .desugarHtmlAndStateNodes(false);
     ParseResult result = parse(builder);
     throwIfErrorsPresent();
     TemplateRegistry registry = result.registry();
@@ -928,7 +939,7 @@ public final class SoyFileSet {
   public List<String> compileToIncrementalDomSrc(SoyIncrementalDomSrcOptions jsSrcOptions) {
     resetErrorReporter();
     // For incremental dom backend, we don't desugar HTML nodes since it requires HTML context.
-    ParseResult result = parse(passManagerBuilder().desugarHtmlNodes(false));
+    ParseResult result = parse(passManagerBuilder().desugarHtmlAndStateNodes(false));
     throwIfErrorsPresent();
     List<String> generatedSrcs =
         new IncrementalDomSrcMain(scopedData.enterable(), typeRegistry)

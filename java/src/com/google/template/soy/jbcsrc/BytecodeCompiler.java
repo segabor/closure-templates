@@ -19,7 +19,6 @@ package com.google.template.soy.jbcsrc;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 import com.google.common.base.Joiner;
-import com.google.common.base.Optional;
 import com.google.common.base.Stopwatch;
 import com.google.common.base.Throwables;
 import com.google.common.collect.ImmutableMap;
@@ -44,6 +43,7 @@ import com.google.template.soy.types.SoyTypeRegistry;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.logging.Level;
@@ -85,7 +85,7 @@ public final class BytecodeCompiler {
     final Stopwatch stopwatch = Stopwatch.createStarted();
     ErrorReporter.Checkpoint checkpoint = reporter.checkpoint();
     if (reporter.errorsSince(checkpoint)) {
-      return Optional.absent();
+      return Optional.empty();
     }
     CompiledTemplateRegistry compilerRegistry = new CompiledTemplateRegistry(registry);
     if (developmentMode) {
@@ -95,7 +95,7 @@ public final class BytecodeCompiler {
               new CompilingClassLoader(
                   compilerRegistry, fileSet, filePathsToSuppliers, typeRegistry));
       if (reporter.errorsSince(checkpoint)) {
-        return Optional.absent();
+        return Optional.empty();
       }
       // TODO(lukes): consider spawning a thread to load all the generated classes in the background
       return Optional.of(templates);
@@ -127,12 +127,13 @@ public final class BytecodeCompiler {
               public List<ClassData> getResult() {
                 logger.log(
                     Level.FINE,
-                    "Compilation took {0}\n"
-                        + "     templates: {1}\n"
-                        + "       classes: {2}\n"
-                        + "         bytes: {3}\n"
-                        + "        fields: {4}\n"
-                        + "  detachStates: {5}",
+                    "\n"
+                        + "Compilation took: {0}\n"
+                        + "       templates: {1}\n"
+                        + "         classes: {2}\n"
+                        + "           bytes: {3}\n"
+                        + "          fields: {4}\n"
+                        + "    detachStates: {5}",
                     new Object[] {
                       stopwatch.toString(),
                       registry.getAllTemplates().size(),
@@ -145,7 +146,7 @@ public final class BytecodeCompiler {
               }
             });
     if (reporter.errorsSince(checkpoint)) {
-      return Optional.absent();
+      return Optional.empty();
     }
     CompiledTemplates templates =
         new CompiledTemplates(

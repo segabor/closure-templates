@@ -18,7 +18,6 @@ package com.google.template.soy.sharedpasses.render;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
-import com.google.common.base.Optional;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -85,7 +84,6 @@ import com.google.template.soy.soytree.SwitchNode;
 import com.google.template.soy.soytree.TemplateDelegateNode;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.VeLogNode;
-import com.google.template.soy.soytree.defn.LoopVar;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.types.SoyType.Kind;
 import java.io.Flushable;
@@ -93,6 +91,7 @@ import java.io.IOException;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Predicate;
 import javax.annotation.Nullable;
 
@@ -450,10 +449,7 @@ public class RenderVisitor extends AbstractSoyNodeVisitor<Void> {
   }
 
   private void executeForeachBody(ForNonemptyNode child, int i, SoyValueProvider value, int size) {
-    LoopVar var = child.getVar();
-    env.bind(var, value);
-    env.bindCurrentIndex(var, i);
-    env.bindIsLast(var, size - 1 == i);
+    env.bindLoopPosition(child.getVar(), value, i, size - 1 == i);
     visitChildren(child);
   }
 
@@ -569,7 +565,7 @@ public class RenderVisitor extends AbstractSoyNodeVisitor<Void> {
       }
       ContentKind calleeKind = fromSanitizedContentKind(callee.getContentKind());
       SoyValue resultData =
-          calleeKind != null
+          calleeKind != ContentKind.TEXT
               ? UnsafeSanitizedContentOrdainer.ordainAsSafe(calleeBuilder.toString(), calleeKind)
               : StringData.forValue(calleeBuilder.toString());
       for (SoyPrintDirective directive : node.getEscapingDirectives()) {
@@ -755,11 +751,9 @@ public class RenderVisitor extends AbstractSoyNodeVisitor<Void> {
   }
 
   private static ContentKind fromSanitizedContentKind(SanitizedContentKind kind) {
-    if (kind == null) {
-      return null;
-    }
     return ContentKind.valueOf(kind.name());
   }
+
   /**
    * Private helper to evaluate an expression. Always use this helper instead of using evalVisitor
    * directly, because this helper creates and throws a RenderException if there's an error.
@@ -906,7 +900,7 @@ public class RenderVisitor extends AbstractSoyNodeVisitor<Void> {
       final TemplateNode node, final TemplateParam param, @Nullable SoyValueProvider paramValue) {
     Kind kind = param.type().getKind();
     if (kind == Kind.ANY || kind == Kind.UNKNOWN) {
-      // Nothing to check.  ANY and UKNOWN match all types.
+      // Nothing to check.  ANY and UNKNOWN match all types.
       return;
     }
     if (paramValue == null) {

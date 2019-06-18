@@ -56,6 +56,7 @@ public abstract class TemplateMetadata {
             .setStrictHtml(template.isStrictHtml())
             .setDelPackageName(template.getDelPackageName())
             .setVisibility(template.getVisibility())
+            .setRequiredCssNames(ImmutableList.copyOf(template.getRequiredCssNamespaces()))
             .setParameters(Parameter.directParametersFromTemplate(template))
             .setDataAllCallSituations(DataAllCallSituation.fromTemplate(template));
     switch (template.getKind()) {
@@ -285,7 +286,6 @@ public abstract class TemplateMetadata {
   @Nullable
   public abstract String getDelTemplateVariant();
 
-  @Nullable
   public abstract SanitizedContentKind getContentKind();
 
   public abstract boolean isStrictHtml();
@@ -295,18 +295,11 @@ public abstract class TemplateMetadata {
   @Nullable
   public abstract String getDelPackageName();
 
-  /**
-   * The actual parsed template. Will only be non-null for templates with {@link #getSoyFileKind} of
-   * {@link SoyFileKind#SRC}
-   *
-   * <p>TODO(user): eliminate this method. If someone clones the tree this will pin a copy of an
-   * old node.
-   */
-  @Nullable
-  public abstract TemplateNode getTemplateNode();
-
   /** The Parameters defined directly on the template. Includes {@code $ij} parameters. */
   public abstract ImmutableList<Parameter> getParameters();
+
+  /** The css namespaces required by the template */
+  public abstract ImmutableList<String> getRequiredCssNames();
 
   /**
    * The unique template calls that are performed by this template.
@@ -322,6 +315,8 @@ public abstract class TemplateMetadata {
   public abstract static class Builder {
     public abstract Builder setSoyFileKind(SoyFileKind location);
 
+    public abstract Builder setRequiredCssNames(ImmutableList<String> requiredCssNames);
+
     public abstract Builder setSourceLocation(SourceLocation location);
 
     public abstract Builder setTemplateKind(Kind kind);
@@ -332,9 +327,7 @@ public abstract class TemplateMetadata {
 
     public abstract Builder setDelTemplateVariant(String delTemplateVariant);
 
-    public abstract Builder setContentKind(@Nullable SanitizedContentKind contentKind);
-
-    public abstract Builder setTemplateNode(@Nullable TemplateNode template);
+    public abstract Builder setContentKind(SanitizedContentKind contentKind);
 
     public abstract Builder setStrictHtml(boolean strictHtml);
 

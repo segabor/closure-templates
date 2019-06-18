@@ -23,7 +23,6 @@ import com.google.template.soy.soytree.SoyNode.ExprHolderNode;
 import com.google.template.soy.soytree.SoyNode.Kind;
 import com.google.template.soy.soytree.TemplateNode.SoyFileHeaderInfo;
 import com.google.template.soy.soytree.defn.TemplateHeaderVarDefn;
-import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.soytree.defn.TemplateStateVar;
 import javax.annotation.Nullable;
 
@@ -34,9 +33,6 @@ import javax.annotation.Nullable;
  *
  */
 public final class TemplateElementNode extends TemplateNode implements ExprHolderNode {
-
-  /** The state variables from template header. */
-  private final ImmutableList<TemplateStateVar> stateVars;
 
   /**
    * Main constructor. This is package-private because TemplateElementNode instances should be built
@@ -50,10 +46,8 @@ public final class TemplateElementNode extends TemplateNode implements ExprHolde
   TemplateElementNode(
       TemplateElementNodeBuilder nodeBuilder,
       SoyFileHeaderInfo soyFileHeaderInfo,
-      @Nullable ImmutableList<TemplateParam> params,
-      ImmutableList<TemplateStateVar> stateVars) {
+      @Nullable ImmutableList<TemplateHeaderVarDefn> params) {
     super(nodeBuilder, "element", soyFileHeaderInfo, Visibility.PUBLIC, params);
-    this.stateVars = stateVars;
   }
 
   /**
@@ -63,23 +57,17 @@ public final class TemplateElementNode extends TemplateNode implements ExprHolde
    */
   private TemplateElementNode(TemplateElementNode orig, CopyState copyState) {
     super(orig, copyState);
-    this.stateVars = copyState(orig.stateVars, copyState);
-  }
-
-  private static ImmutableList<TemplateStateVar> copyState(
-      ImmutableList<TemplateStateVar> orig, CopyState copyState) {
-    ImmutableList.Builder<TemplateStateVar> newParams = ImmutableList.builder();
-    for (TemplateStateVar prev : orig) {
-      TemplateStateVar next = prev.copy();
-      newParams.add(next);
-      copyState.updateRefs(prev, next);
-    }
-    return newParams.build();
   }
 
   /** Returns the state variables from template header. */
   public ImmutableList<TemplateStateVar> getStateVars() {
-    return stateVars;
+    ImmutableList.Builder<TemplateStateVar> builder = ImmutableList.builder();
+    for (TemplateHeaderVarDefn header : this.getHeaderParams()) {
+      if (header instanceof TemplateStateVar) {
+        builder.add((TemplateStateVar) header);
+      }
+    }
+    return builder.build();
   }
 
   @Override
@@ -95,16 +83,6 @@ public final class TemplateElementNode extends TemplateNode implements ExprHolde
       builder.add(state.defaultValue());
     }
     return builder.build();
-  }
-
-  @Override
-  protected ImmutableList<? extends TemplateHeaderVarDefn> getHeaderParamsForSourceString() {
-    // Header.
-    // Gather up all the @params declared in the template header (not in the SoyDoc).
-    return new ImmutableList.Builder<TemplateHeaderVarDefn>()
-        .addAll(super.getHeaderParamsForSourceString())
-        .addAll(stateVars)
-        .build();
   }
 
   @Override
