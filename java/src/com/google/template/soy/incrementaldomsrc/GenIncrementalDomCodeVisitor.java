@@ -111,7 +111,6 @@ import com.google.template.soy.soytree.MsgPlaceholderNode;
 import com.google.template.soy.soytree.PrintNode;
 import com.google.template.soy.soytree.RawTextNode;
 import com.google.template.soy.soytree.SoyNode;
-import com.google.template.soy.soytree.SoyNode.Kind;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
 import com.google.template.soy.soytree.SoyNode.RenderUnitNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
@@ -325,8 +324,8 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
     } else {
       jsDocBuilder.addParam("opt_data", "!" + alias + ".Params");
     }
-    jsDocBuilder.addGoogRequire(GoogRequire.createTypeRequire("soy"));
-    jsDocBuilder.addParam("opt_ijData", "!soy.IjData=");
+    jsDocBuilder.addGoogRequire(GoogRequire.createTypeRequire("goog.soy"));
+    jsDocBuilder.addParam("opt_ijData", "?goog.soy.IjData=");
 
     String returnType = getTemplateReturnType(node);
     jsDocBuilder.addParameterizedAnnotation("return", returnType);
@@ -455,7 +454,6 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
       String soyElementClassName, String soyElementAccessorName, TemplateElementNode node) {
 
     String paramsType = node.getParams().isEmpty() ? "null" : "!" + alias + ".Params";
-    String optIjDataType = "!soy.IjData=";
 
     ImmutableList.Builder<MethodDeclaration> stateMethods = ImmutableList.builder();
     for (TemplateStateVar stateVar : node.getStateVars()) {
@@ -492,7 +490,8 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
             "constructor",
             JsDoc.builder()
                 .addParam("opt_data", paramsType)
-                .addParam("opt_ijData", optIjDataType)
+                .addGoogRequire(GoogRequire.createTypeRequire("goog.soy"))
+                .addParam("opt_ijData", "!goog.soy.IjData=")
                 .build(),
             ctorBody);
 
@@ -1037,16 +1036,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
       openTagExpr = INCREMENTAL_DOM_ELEMENT_OPEN_END.call();
     }
 
-    VeLogNode velogNode =
-        (VeLogNode) template.firstChildThatMatches(n -> n.getKind() == Kind.VE_LOG_NODE);
-    boolean isFirstHtmlOpenTagNode =
-        velogNode != null
-            ? node.equals(
-                velogNode.firstChildThatMatches(n -> n.getKind() == Kind.HTML_OPEN_TAG_NODE))
-            : node.equals(
-                template.firstChildThatMatches(n -> n.getKind() == Kind.HTML_OPEN_TAG_NODE));
-
-    if (template instanceof TemplateElementNode && isFirstHtmlOpenTagNode) {
+    if (node.isElementRoot()) {
       // Append code to stash the template object in this node.
       getJsCodeBuilder()
           .append(

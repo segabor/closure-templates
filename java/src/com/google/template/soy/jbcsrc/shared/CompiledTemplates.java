@@ -18,14 +18,17 @@ package com.google.template.soy.jbcsrc.shared;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSortedSet;
+import com.google.common.collect.Sets;
 import com.google.errorprone.annotations.Immutable;
 import com.google.errorprone.annotations.concurrent.LazyInit;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
 import com.google.template.soy.jbcsrc.shared.TemplateMetadata.DelTemplateMetadata;
 import com.google.template.soy.shared.internal.DelTemplateSelector;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -122,6 +125,24 @@ public final class CompiledTemplates {
     return transitiveIjParams;
   }
 
+  /**
+   * Returns the transitive closure of all the css namespaces that might be used by this template.
+   */
+  public ImmutableList<String> getAllRequiredCssNamespaces(
+      String templateName,
+      Predicate<String> enabledDelpackages,
+      boolean collectCssFromDelvariants) {
+    TemplateData templateData = getTemplateData(templateName);
+    Set<TemplateData> all = Sets.newLinkedHashSet();
+    collectTransitiveCallees(templateData, all, enabledDelpackages, collectCssFromDelvariants);
+    LinkedHashSet<String> requiredNamespaces = Sets.newLinkedHashSet();
+    for (TemplateData callee : all) {
+      requiredNamespaces.addAll(callee.requiredCssNamespaces);
+    }
+    ImmutableList<String> allRequiredCssNamespaces = ImmutableList.copyOf(requiredNamespaces);
+    return allRequiredCssNamespaces;
+  }
+
   /** Returns an active delegate for the given name, variant and active package selector. */
   @Nullable
   CompiledTemplate.Factory selectDelTemplate(
@@ -180,6 +201,38 @@ public final class CompiledTemplates {
     }
   }
 
+  /** Adds all transitively called templates to {@code visited} */
+  private void collectTransitiveCallees(
+      TemplateData templateData,
+      Set<TemplateData> visited,
+      Predicate<String> enabledDelpackages,
+      boolean collectCssFromDelvariants) {
+    if (visited.contains(templateData)) {
+      return; // avoids chasing recursive cycles
+    }
+
+    // TODO(tomnguyen) It may be important to collect css in lexical order instead of
+    // separating templates and deltemplates.
+    for (String callee : templateData.callees) {
+      collectTransitiveCallees(
+          getTemplateData(callee), visited, enabledDelpackages, collectCssFromDelvariants);
+    }
+    for (String delCallee : templateData.delCallees) {
+      selector.delTemplateNameToValues().get(delCallee).stream()
+          .map(tmpl -> tmpl.variant)
+          .filter(variant -> collectCssFromDelvariants || variant.isEmpty())
+          .distinct()
+          .forEach(
+              variant ->
+                  collectTransitiveCallees(
+                      selector.selectTemplate(delCallee, variant, enabledDelpackages),
+                      visited,
+                      enabledDelpackages,
+                      collectCssFromDelvariants));
+    }
+    visited.add(templateData);
+  }
+
   /** This is mostly a copy of the {@link TemplateMetadata} annotation. */
   @Immutable
   private static final class TemplateData {
@@ -190,6 +243,7 @@ public final class CompiledTemplates {
     final ImmutableSet<String> callees;
     final ImmutableSet<String> delCallees;
     final ImmutableSet<String> injectedParams;
+    final ImmutableSet<String> requiredCssNamespaces;
 
     // If this is a deltemplate then delTemplateName will be present
     final Optional<String> delTemplateName;
@@ -233,6 +287,7 @@ public final class CompiledTemplates {
       this.callees = ImmutableSet.copyOf(annotation.callees());
       this.delCallees = ImmutableSet.copyOf(annotation.delCallees());
       this.injectedParams = ImmutableSet.copyOf(annotation.injectedParams());
+      this.requiredCssNamespaces = ImmutableSet.copyOf(annotation.requiredCssNames());
       DelTemplateMetadata deltemplateMetadata = annotation.deltemplateMetadata();
       variant = deltemplateMetadata.variant();
       if (!deltemplateMetadata.name().isEmpty()) {

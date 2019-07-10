@@ -60,16 +60,8 @@ goog.require('goog.soy.data.SanitizedUri');
 goog.require('goog.string');
 goog.require('goog.string.Const');
 goog.require('soy.checks');
+goog.requireType('goog.soy');
 
-
-/**
- * A structural interface for injected data.
- *
- * <p>Generated code contributes optional properties.
- *
- * @record
- */
-soy.IjData = function() {};
 
 // -----------------------------------------------------------------------------
 // soydata: Defines typed strings, e.g. an HTML string `"a<b>c"` is

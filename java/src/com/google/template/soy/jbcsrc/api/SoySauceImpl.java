@@ -24,6 +24,7 @@ import com.google.common.base.Ascii;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.base.Throwables;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSortedSet;
 import com.google.errorprone.annotations.concurrent.GuardedBy;
@@ -97,6 +98,15 @@ public final class SoySauceImpl implements SoySauce {
   }
 
   @Override
+  public ImmutableList<String> getAllRequiredCssNamespaces(
+      String templateName,
+      Predicate<String> enabledDelpackages,
+      boolean collectCssFromDelvariants) {
+    return templates.getAllRequiredCssNamespaces(
+        templateName, enabledDelpackages, collectCssFromDelvariants);
+  }
+
+  @Override
   public RendererImpl renderTemplate(String template) {
     CompiledTemplate.Factory factory = templates.getTemplateFactory(template);
     return new RendererImpl(template, factory, templates.getTemplateContentKind(template));
@@ -117,6 +127,7 @@ public final class SoySauceImpl implements SoySauce {
 
     private SoyRecord data = SoyValueConverter.EMPTY_DICT;
     private SoyRecord ij = SoyValueConverter.EMPTY_DICT;
+    // TODO(b/129547159): Clean up this variable.
     private ContentKind expectedContentKind = ContentKind.HTML;
     private Map<String, Supplier<Object>> perRenderPluginInstances = null;
 
@@ -183,6 +194,7 @@ public final class SoySauceImpl implements SoySauce {
     }
 
     @Override
+    @Deprecated
     public Renderer setExpectedContentKind(ContentKind expectedContentKind) {
       checkNotNull(expectedContentKind);
       this.expectedContentKind = expectedContentKind;
@@ -190,14 +202,78 @@ public final class SoySauceImpl implements SoySauce {
     }
 
     @Override
-    public WriteContinuation render(AdvisingAppendable out) throws IOException {
-      enforceContentKind();
+    public WriteContinuation renderHtml(AdvisingAppendable out) throws IOException {
+      enforceContentKind(ContentKind.HTML);
       return startRender(OutputAppendable.create(out, logger));
     }
 
     @Override
-    public Continuation<String> render() {
-      enforceContentKind();
+    public Continuation<SanitizedContent> renderHtml() {
+      return renderSanitizedContent(ContentKind.HTML);
+    }
+
+    @Override
+    public WriteContinuation renderJs(AdvisingAppendable out) throws IOException {
+      enforceContentKind(ContentKind.JS);
+      return startRender(OutputAppendable.create(out, logger));
+    }
+
+    @Override
+    public Continuation<SanitizedContent> renderJs() {
+      return renderSanitizedContent(ContentKind.JS);
+    }
+
+    @Override
+    public WriteContinuation renderUri(AdvisingAppendable out) throws IOException {
+      enforceContentKind(ContentKind.URI);
+      return startRender(OutputAppendable.create(out, logger));
+    }
+
+    @Override
+    public Continuation<SanitizedContent> renderUri() {
+      return renderSanitizedContent(ContentKind.URI);
+    }
+
+    @Override
+    public WriteContinuation renderTrustedResourceUri(AdvisingAppendable out) throws IOException {
+      enforceContentKind(ContentKind.TRUSTED_RESOURCE_URI);
+      return startRender(OutputAppendable.create(out, logger));
+    }
+
+    @Override
+    public Continuation<SanitizedContent> renderTrustedResourceUri() {
+      return renderSanitizedContent(ContentKind.TRUSTED_RESOURCE_URI);
+    }
+
+    @Override
+    public WriteContinuation renderAttributes(AdvisingAppendable out) throws IOException {
+      enforceContentKind(ContentKind.ATTRIBUTES);
+      return startRender(OutputAppendable.create(out, logger));
+    }
+
+    @Override
+    public Continuation<SanitizedContent> renderAttributes() {
+      return renderSanitizedContent(ContentKind.ATTRIBUTES);
+    }
+
+    @Override
+    public WriteContinuation renderCss(AdvisingAppendable out) throws IOException {
+      enforceContentKind(ContentKind.CSS);
+      return startRender(OutputAppendable.create(out, logger));
+    }
+
+    @Override
+    public Continuation<SanitizedContent> renderCss() {
+      return renderSanitizedContent(ContentKind.CSS);
+    }
+
+    @Override
+    public WriteContinuation renderText(AdvisingAppendable out) throws IOException {
+      return startRender(OutputAppendable.create(out, logger));
+    }
+
+    @Override
+    public Continuation<String> renderText() {
       StringBuilder sb = new StringBuilder();
       OutputAppendable buf = OutputAppendable.create(sb, logger);
       try {
@@ -208,13 +284,35 @@ public final class SoySauceImpl implements SoySauce {
     }
 
     @Override
+    @Deprecated
+    public WriteContinuation render(AdvisingAppendable out) throws IOException {
+      enforceContentKind(expectedContentKind);
+      return startRender(OutputAppendable.create(out, logger));
+    }
+
+    @Override
+    @Deprecated
+    public Continuation<String> render() {
+      enforceContentKind(expectedContentKind);
+      return renderText();
+    }
+
+    @Override
+    @Deprecated
     public Continuation<SanitizedContent> renderStrict() {
-      enforceContentKind();
+      return renderSanitizedContent(expectedContentKind);
       // TODO(b/129547159): prevent calling renderStrict with ContentKind.TEXT
+    }
+
+    /**
+     * Renders sanitized content, enforcing that the content matches the given {@link ContentKind}.
+     */
+    private Continuation<SanitizedContent> renderSanitizedContent(ContentKind contentKind) {
+      enforceContentKind(contentKind);
       StringBuilder sb = new StringBuilder();
       OutputAppendable buf = OutputAppendable.create(sb, logger);
       try {
-        return Continuations.strictContinuation(startRender(buf), sb, expectedContentKind);
+        return Continuations.strictContinuation(startRender(buf), sb, contentKind);
       } catch (IOException e) {
         throw new AssertionError("impossible", e);
       }
@@ -240,8 +338,8 @@ public final class SoySauceImpl implements SoySauce {
       return doRender(template, scoper, out, context);
     }
 
-    private void enforceContentKind() {
-      if (expectedContentKind == SanitizedContent.ContentKind.TEXT) {
+    private void enforceContentKind(ContentKind expectedContentKind) {
+      if (expectedContentKind == ContentKind.TEXT) {
         // Allow any template to be called as text.
         return;
       }
