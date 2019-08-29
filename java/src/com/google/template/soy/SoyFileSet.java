@@ -25,6 +25,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
+import com.google.common.collect.Maps;
 import com.google.common.io.ByteSink;
 import com.google.common.io.CharSource;
 import com.google.protobuf.Descriptors.GenericDescriptor;
@@ -42,6 +43,7 @@ import com.google.template.soy.error.SoyErrors;
 import com.google.template.soy.error.SoyInternalCompilerException;
 import com.google.template.soy.incrementaldomsrc.IncrementalDomSrcMain;
 import com.google.template.soy.incrementaldomsrc.SoyIncrementalDomSrcOptions;
+import com.google.template.soy.invocationbuilders.passes.GenInvocationBuildersVisitor;
 import com.google.template.soy.jbcsrc.BytecodeCompiler;
 import com.google.template.soy.jbcsrc.api.SoySauce;
 import com.google.template.soy.jbcsrc.api.SoySauceImpl;
@@ -56,12 +58,13 @@ import com.google.template.soy.msgs.SoyMsgBundleHandler;
 import com.google.template.soy.msgs.SoyMsgBundleHandler.OutputFileOptions;
 import com.google.template.soy.msgs.internal.ExtractMsgsVisitor;
 import com.google.template.soy.parseinfo.passes.GenerateParseInfoVisitor;
+import com.google.template.soy.passes.CheckTemplateHeaderVarsPass;
 import com.google.template.soy.passes.ClearSoyDocStringsVisitor;
 import com.google.template.soy.passes.PassManager;
 import com.google.template.soy.passes.PassManager.PassContinuationRule;
 import com.google.template.soy.passes.PluginResolver;
 import com.google.template.soy.passes.SoyConformancePass;
-import com.google.template.soy.passes.SoyElementPass;
+import com.google.template.soy.plugin.internal.PluginValidator;
 import com.google.template.soy.plugin.restricted.SoySourceFunction;
 import com.google.template.soy.pysrc.SoyPySrcOptions;
 import com.google.template.soy.pysrc.internal.PySrcMain;
@@ -88,6 +91,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Logger;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
@@ -161,6 +165,8 @@ public final class SoyFileSet {
 
     private ValidatedLoggingConfig loggingConfig = ValidatedLoggingConfig.EMPTY;
 
+    private ImmutableList<File> pluginRuntimeJars = ImmutableList.of();
+
     private final ImmutableSet.Builder<SoyFunction> extraSoyFunctions = ImmutableSet.builder();
     private final ImmutableSet.Builder<SoyPrintDirective> extraSoyPrintDirectives =
         ImmutableSet.builder();
@@ -230,7 +236,8 @@ public final class SoyFileSet {
           cache,
           conformanceConfig,
           loggingConfig,
-          warningSink);
+          warningSink,
+          pluginRuntimeJars);
     }
 
     /** Adds one {@link SoySourceFunction} to the functions used by this SoyFileSet. */
@@ -538,6 +545,15 @@ public final class SoyFileSet {
       this.loggingConfig = checkNotNull(parseLoggingConfigs);
       return this;
     }
+
+    /**
+     * Sets the location of the jars containing plugin runtime code, for use validating plugin
+     * MethodRefs.
+     */
+    Builder setPluginRuntimeJars(List<File> pluginRuntimeJars) {
+      this.pluginRuntimeJars = ImmutableList.copyOf(pluginRuntimeJars);
+      return this;
+    }
   }
 
   private final SoyScopedData scopedData;
@@ -553,6 +569,7 @@ public final class SoyFileSet {
 
   private final ValidatedConformanceConfig conformanceConfig;
   private final ValidatedLoggingConfig loggingConfig;
+  private final ImmutableList<File> pluginRuntimeJars;
 
   private final ImmutableMap<String, SoyFunction> soyFunctionMap;
   private final ImmutableMap<String, SoyPrintDirective> printDirectives;
@@ -575,11 +592,9 @@ public final class SoyFileSet {
       @Nullable SoyAstCache cache,
       ValidatedConformanceConfig conformanceConfig,
       ValidatedLoggingConfig loggingConfig,
-      @Nullable Appendable warningSink) {
+      @Nullable Appendable warningSink,
+      ImmutableList<File> pluginRuntimeJars) {
     this.scopedData = apiCallScopeProvider;
-
-    Preconditions.checkArgument(
-        !soyFileSuppliers.isEmpty(), "Must have non-zero number of input Soy files.");
     this.typeRegistry = typeRegistry;
     this.soyFileSuppliers = soyFileSuppliers;
     this.compilationUnits = compilationUnits;
@@ -591,6 +606,7 @@ public final class SoyFileSet {
     this.conformanceConfig = checkNotNull(conformanceConfig);
     this.loggingConfig = checkNotNull(loggingConfig);
     this.warningSink = warningSink;
+    this.pluginRuntimeJars = pluginRuntimeJars;
   }
 
   /** Returns the list of suppliers for the input Soy files. For testing use only! */
@@ -635,6 +651,25 @@ public final class SoyFileSet {
   }
 
   /**
+   * Generates Java classes containing template invocation builders for setting param values. There
+   * will be one Java file per Soy file.
+   *
+   * @param javaPackage The Java package for the generated classes.
+   * @return A list of generated files to write (of the form "<*>FooSoyTemplates.java").
+   * @throws SoyCompilationException If compilation fails.
+   */
+  ImmutableList<GeneratedFile> generateInvocationBuilders(String javaPackage) {
+    return entryPoint(
+        () -> {
+          SoyFileSetNode soyTree = parseForGenJava().fileSet();
+          throwIfErrorsPresent();
+
+          // Generate template invocation builders for the soy tree.
+          return new GenInvocationBuildersVisitor(javaPackage).exec(soyTree);
+        });
+  }
+
+  /**
    * Generates Java classes containing parse info (param names, template names, meta info). There
    * will be one Java class per Soy file.
    *
@@ -647,23 +682,7 @@ public final class SoyFileSet {
   ImmutableList<GeneratedFile> generateParseInfo(String javaPackage, String javaClassNameSource) {
     return entryPoint(
         () -> {
-          // TODO(lukes): see if we can enforce that globals are provided at compile time here.
-          // given that types have to be, this should be possible.  Currently it is disabled for
-          // backwards compatibility
-          // N.B. we do not run the optimizer here for 2 reasons:
-          // 1. it would just waste time, since we are not running code generation the optimization
-          //    work doesn't help anything
-          // 2. it potentially removes metadata from the tree by precalculating expressions. For
-          //     example, trivial print nodes are evaluated, which can remove globals from the tree,
-          //     but the
-          ParseResult result =
-              parse(
-                  passManagerBuilder()
-                      .allowUnknownGlobals()
-                      .optimize(false)
-                      // Don't desugar, this is a bit of a waste of time and it destroys type
-                      // information about @state parameters
-                      .desugarHtmlAndStateNodes(false));
+          ParseResult result = parseForGenJava();
           throwIfErrorsPresent();
 
           SoyFileSetNode soyTree = result.fileSet();
@@ -673,6 +692,27 @@ public final class SoyFileSet {
           return new GenerateParseInfoVisitor(
                   javaPackage, javaClassNameSource, registry, typeRegistry)
               .exec(soyTree);
+        });
+  }
+
+  /** Validates any user SoySourceFunction plugins. */
+  void validateUserPlugins() {
+    entryPointVoid(
+        () -> {
+          // First resolve all the plugins to ensure they're well-formed (no bad names, etc.).
+          new PluginResolver(
+              PluginResolver.Mode.REQUIRE_DEFINITIONS,
+              getSoyPrintDirectives(),
+              getSoyFunctions(),
+              getSoySourceFunctions(),
+              errorReporter);
+          // Then validate the user-specified source functions.
+          Set<String> internalFunctionNames = InternalPlugins.internalFunctionMap().keySet();
+          new PluginValidator(errorReporter, typeRegistry, pluginRuntimeJars)
+              .validate(
+                  Maps.filterKeys(
+                      getSoySourceFunctions(), name -> !internalFunctionNames.contains(name)));
+          throwIfErrorsPresent();
         });
   }
 
@@ -1041,10 +1081,9 @@ public final class SoyFileSet {
                     // TODO(lukes): remove this in favor of allowUnknownJsGlobals
                     .allowUnknownGlobals()
                     .allowUnknownJsGlobals()
-                    // SoyElement pass adds additional information to TemplateNodes for
-                    // serialization into headers.
+                    // Only run passes that not cross template checking.
                     .addPassContinuationRule(
-                        SoyElementPass.class, PassContinuationRule.STOP_AFTER_PASS)
+                        CheckTemplateHeaderVarsPass.class, PassContinuationRule.STOP_BEFORE_PASS)
                     .allowV1Expression(),
                 typeRegistry));
   }
@@ -1059,6 +1098,29 @@ public final class SoyFileSet {
 
   ImmutableMap<String, SoySourceFunction> getSoySourceFunctions() {
     return soySourceFunctionMap;
+  }
+
+  /**
+   * Parses the file set with the options we need for writing generated java *SoyInfo and invocation
+   * builders.
+   */
+  private ParseResult parseForGenJava() {
+    // TODO(lukes): see if we can enforce that globals are provided at compile time here.
+    // given that types have to be, this should be possible.  Currently it is disabled for
+    // backwards compatibility
+    // N.B. we do not run the optimizer here for 2 reasons:
+    // 1. it would just waste time, since we are not running code generation the optimization
+    //    work doesn't help anything
+    // 2. it potentially removes metadata from the tree by precalculating expressions. For
+    //     example, trivial print nodes are evaluated, which can remove globals from the tree,
+    //     but the
+    return parse(
+        passManagerBuilder()
+            .allowUnknownGlobals()
+            .optimize(false)
+            // Don't desugar, this is a bit of a waste of time and it destroys type
+            // information about @state parameters
+            .desugarHtmlAndStateNodes(false));
   }
 
   // Parse the current file set.

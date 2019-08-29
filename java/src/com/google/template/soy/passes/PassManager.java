@@ -293,10 +293,6 @@ public final class PassManager {
       addPass(
           new ResolveTemplateParamTypesPass(registry, errorReporter, disableAllTypeChecking),
           singleFilePassesBuilder);
-      addPass(
-          new DesugarSkipNodesPass(
-              options.getExperimentalFeatures().contains("skipNode"), errorReporter),
-          singleFilePassesBuilder);
       addPass(new BasicHtmlValidationPass(errorReporter), singleFilePassesBuilder);
       // Needs to run after HtmlRewritePass since it produces the HtmlTagNodes that we use
       // to create placeholders.
@@ -342,8 +338,6 @@ public final class PassManager {
             new ResolveExpressionTypesPass(registry, errorReporter, loggingConfig),
             singleFilePassesBuilder);
         addPass(new VeLogRewritePass(), singleFilePassesBuilder);
-        // needs to run after both resolve types and htmlrewrite pass
-        addPass(new VeLogValidationPass(errorReporter, registry), singleFilePassesBuilder);
       }
       addPass(new ResolvePackageRelativeCssNamesPass(errorReporter), singleFilePassesBuilder);
       if (!allowUnknownGlobals) {
@@ -357,6 +351,7 @@ public final class PassManager {
           singleFilePassesBuilder);
       // Needs to run after HtmlRewritePass.
       addPass(new KeyCommandPass(errorReporter, disableAllTypeChecking), singleFilePassesBuilder);
+      addPass(new ValidateSkipNodesPass(errorReporter), singleFilePassesBuilder);
 
       // Fileset passes run on all sources files and have access to a partial template registry so
       // they can examine information about dependencies.
@@ -368,7 +363,10 @@ public final class PassManager {
       // Needs to run after HtmlRewritePass and StrictHtmlValidationPass (for single root
       // validation).
       addPass(new SoyElementPass(errorReporter), templateReturnTypeInferencePasses);
-
+      if (!disableAllTypeChecking) {
+        addPass(
+            new VeLogValidationPass(errorReporter, registry), templateReturnTypeInferencePasses);
+      }
       // Cross template checking passes
 
       // Fileset passes run on all sources files and have access to a template registry so they can
