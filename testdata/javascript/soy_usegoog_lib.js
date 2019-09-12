@@ -520,7 +520,6 @@ goog.module = function(name) {
  * @suppress {missingProvide}
  */
 goog.module.get = function(name) {
-
   return goog.module.getInternal_(name);
 };
 
@@ -1782,8 +1781,16 @@ goog.partial = function(fn, var_args) {
  * Copies all the members of a source object to a target object. This method
  * does not work on all browsers for all objects that contain keys such as
  * toString or hasOwnProperty. Use goog.object.extend for this purpose.
+ *
+ * NOTE: Some have advocated for the use of goog.mixin to setup classes
+ * with multiple inheritence (traits, mixins, etc).  However, as it simply
+ * uses "for in", this is not compatible with ES6 classes whose methods are
+ * non-enumerable.  Changing this, would break cases where non-enumerable
+ * properties are not expected.
+ *
  * @param {Object} target Target.
  * @param {Object} source Source.
+ * @deprecated Prefer Object.assign
  */
 goog.mixin = function(target, source) {
   for (var x in source) {
@@ -1801,6 +1808,7 @@ goog.mixin = function(target, source) {
 /**
  * @return {number} An integer value representing the number of milliseconds
  *     between midnight, January 1, 1970 and the current time.
+ * @deprecated Use Date.now
  */
 goog.now = (goog.TRUSTED_SITE && Date.now) || (function() {
              // Unary plus operator converts its operand to a number which in
@@ -7639,6 +7647,7 @@ goog.object.PROTOTYPE_FIELDS_ = [
  *     `var_args`.
  * @param {...(Object|null|undefined)} var_args The objects from which values
  *     will be copied.
+ * @deprecated Prefer Object.assign
  */
 goog.object.extend = function(target, var_args) {
   let key;
@@ -9909,20 +9918,22 @@ goog.string.Const.prototype.getTypedStringValue = function() {
 };
 
 
-/**
- * Returns a debug-string representation of this value.
- *
- * To obtain the actual string value wrapped inside an object of this type,
- * use `goog.string.Const.unwrap`.
- *
- * @see goog.string.Const#unwrap
- * @override
- */
-goog.string.Const.prototype.toString = function() {
-  return 'Const{' +
-      this.stringConstValueWithSecurityContract__googStringSecurityPrivate_ +
-      '}';
-};
+if (goog.DEBUG) {
+  /**
+   * Returns a debug-string representation of this value.
+   *
+   * To obtain the actual string value wrapped inside an object of this type,
+   * use `goog.string.Const.unwrap`.
+   *
+   * @see goog.string.Const#unwrap
+   * @override
+   */
+  goog.string.Const.prototype.toString = function() {
+    return 'Const{' +
+        this.stringConstValueWithSecurityContract__googStringSecurityPrivate_ +
+        '}';
+  };
+}
 
 
 /**
@@ -13695,6 +13706,23 @@ goog.html.SafeHtml = function() {
 
 
 /**
+ * @define {boolean} Whether to strip out error messages or to leave them in.
+ */
+goog.html.SafeHtml.ENABLE_ERROR_MESSAGES =
+    goog.define('goog.html.SafeHtml.ENABLE_ERROR_MESSAGES', goog.DEBUG);
+
+
+/**
+ * Whether the `style` attribute is supported. Set to false to avoid the byte
+ * weight of `goog.html.SafeStyle` where unneeded. An error will be thrown if
+ * the `style` attribute is used.
+ * @define {boolean}
+ */
+goog.html.SafeHtml.SUPPORT_STYLE_ATTRIBUTE =
+    goog.define('goog.html.SafeHtml.SUPPORT_STYLE_ATTRIBUTE', true);
+
+
+/**
  * @override
  * @const
  */
@@ -14010,10 +14038,17 @@ goog.html.SafeHtml.create = function(tagName, opt_attributes, opt_content) {
  */
 goog.html.SafeHtml.verifyTagName = function(tagName) {
   if (!goog.html.SafeHtml.VALID_NAMES_IN_TAG_.test(tagName)) {
-    throw new Error('Invalid tag name <' + tagName + '>.');
+    throw new Error(
+        goog.html.SafeHtml.ENABLE_ERROR_MESSAGES ?
+            'Invalid tag name <' + tagName + '>.' :
+            '');
   }
   if (tagName.toUpperCase() in goog.html.SafeHtml.NOT_ALLOWED_TAG_NAMES_) {
-    throw new Error('Tag name <' + tagName + '> is not allowed for SafeHtml.');
+    throw new Error(
+        goog.html.SafeHtml.ENABLE_ERROR_MESSAGES ?
+
+            'Tag name <' + tagName + '> is not allowed for SafeHtml.' :
+            '');
   }
 };
 
@@ -14099,7 +14134,10 @@ goog.html.SafeHtml.createIframe = function(
 goog.html.SafeHtml.createSandboxIframe = function(
     opt_src, opt_srcdoc, opt_attributes, opt_content) {
   if (!goog.html.SafeHtml.canUseSandboxIframe()) {
-    throw new Error('The browser does not support sandboxed iframes.');
+    throw new Error(
+        goog.html.SafeHtml.ENABLE_ERROR_MESSAGES ?
+            'The browser does not support sandboxed iframes.' :
+            '');
   }
 
   var fixedAttributes = {};
@@ -14180,7 +14218,10 @@ goog.html.SafeHtml.createScript = function(script, opt_attributes) {
     var attrLower = attr.toLowerCase();
     if (attrLower == 'language' || attrLower == 'src' || attrLower == 'text' ||
         attrLower == 'type') {
-      throw new Error('Cannot set "' + attrLower + '" attribute');
+      throw new Error(
+          goog.html.SafeHtml.ENABLE_ERROR_MESSAGES ?
+              'Cannot set "' + attrLower + '" attribute' :
+              '');
     }
   }
 
@@ -14292,12 +14333,20 @@ goog.html.SafeHtml.getAttrNameAndValue_ = function(tagName, name, value) {
   if (value instanceof goog.string.Const) {
     value = goog.string.Const.unwrap(value);
   } else if (name.toLowerCase() == 'style') {
-    value = goog.html.SafeHtml.getStyleValue_(value);
+    if (goog.html.SafeHtml.SUPPORT_STYLE_ATTRIBUTE) {
+      value = goog.html.SafeHtml.getStyleValue_(value);
+    } else {
+      throw new Error(
+          goog.html.SafeHtml.ENABLE_ERROR_MESSAGES ?
+              'Attribute "style" not supported.' :
+              '');
+    }
   } else if (/^on/i.test(name)) {
     // TODO(jakubvrana): Disallow more attributes with a special meaning.
     throw new Error(
-        'Attribute "' + name + '" requires goog.string.Const value, "' + value +
-        '" given.');
+        goog.html.SafeHtml.ENABLE_ERROR_MESSAGES ? 'Attribute "' + name +
+                '" requires goog.string.Const value, "' + value + '" given.' :
+                                                   '');
     // URL attributes handled differently according to tag.
   } else if (name.toLowerCase() in goog.html.SafeHtml.URL_ATTRIBUTES_) {
     if (value instanceof goog.html.TrustedResourceUrl) {
@@ -14308,9 +14357,11 @@ goog.html.SafeHtml.getAttrNameAndValue_ = function(tagName, name, value) {
       value = goog.html.SafeUrl.sanitize(value).getTypedStringValue();
     } else {
       throw new Error(
-          'Attribute "' + name + '" on tag "' + tagName +
-          '" requires goog.html.SafeUrl, goog.string.Const, or string,' +
-          ' value "' + value + '" given.');
+          goog.html.SafeHtml.ENABLE_ERROR_MESSAGES ?
+              'Attribute "' + name + '" on tag "' + tagName +
+                  '" requires goog.html.SafeUrl, goog.string.Const, or' +
+                  ' string, value "' + value + '" given.' :
+              '');
     }
   }
 
@@ -14342,8 +14393,10 @@ goog.html.SafeHtml.getAttrNameAndValue_ = function(tagName, name, value) {
 goog.html.SafeHtml.getStyleValue_ = function(value) {
   if (!goog.isObject(value)) {
     throw new Error(
-        'The "style" attribute requires goog.html.SafeStyle or map ' +
-        'of style properties, ' + (typeof value) + ' given: ' + value);
+        goog.html.SafeHtml.ENABLE_ERROR_MESSAGES ?
+            'The "style" attribute requires goog.html.SafeStyle or map ' +
+                'of style properties, ' + (typeof value) + ' given: ' + value :
+            '');
   }
   if (!(value instanceof goog.html.SafeStyle)) {
     // Process the property bag into a style object.
@@ -14549,7 +14602,10 @@ goog.html.SafeHtml.stringifyAttributes = function(tagName, opt_attributes) {
   if (opt_attributes) {
     for (var name in opt_attributes) {
       if (!goog.html.SafeHtml.VALID_NAMES_IN_TAG_.test(name)) {
-        throw new Error('Invalid attribute name "' + name + '".');
+        throw new Error(
+            goog.html.SafeHtml.ENABLE_ERROR_MESSAGES ?
+                'Invalid attribute name "' + name + '".' :
+                '');
       }
       var value = opt_attributes[name];
       if (!goog.isDefAndNotNull(value)) {
@@ -14587,17 +14643,21 @@ goog.html.SafeHtml.combineAttributes = function(
     combinedAttributes[name] = defaultAttributes[name];
   }
 
-  for (name in opt_attributes) {
-    var nameLower = name.toLowerCase();
-    if (nameLower in fixedAttributes) {
-      throw new Error(
-          'Cannot override "' + nameLower + '" attribute, got "' + name +
-          '" with value "' + opt_attributes[name] + '"');
+  if (opt_attributes) {
+    for (name in opt_attributes) {
+      var nameLower = name.toLowerCase();
+      if (nameLower in fixedAttributes) {
+        throw new Error(
+            goog.html.SafeHtml.ENABLE_ERROR_MESSAGES ?
+                'Cannot override "' + nameLower + '" attribute, got "' + name +
+                    '" with value "' + opt_attributes[name] + '"' :
+                '');
+      }
+      if (nameLower in defaultAttributes) {
+        delete combinedAttributes[nameLower];
+      }
+      combinedAttributes[name] = opt_attributes[name];
     }
-    if (nameLower in defaultAttributes) {
-      delete combinedAttributes[nameLower];
-    }
-    combinedAttributes[name] = opt_attributes[name];
   }
 
   return combinedAttributes;
@@ -15073,7 +15133,7 @@ goog.dom.safe.setOuterHtml = function(elem, html) {
  * Safely assigns a URL a form element's action property.
  *
  * If url is of type goog.html.SafeUrl, its value is unwrapped and assigned to
- * anchor's href property.  If url is of type string however, it is first
+ * form's action property.  If url is of type string however, it is first
  * sanitized using goog.html.SafeUrl.sanitize.
  *
  * Example usage:
@@ -15104,7 +15164,7 @@ goog.dom.safe.setFormElementAction = function(form, url) {
  * Safely assigns a URL to a button element's formaction property.
  *
  * If url is of type goog.html.SafeUrl, its value is unwrapped and assigned to
- * anchor's href property.  If url is of type string however, it is first
+ * button's formaction property.  If url is of type string however, it is first
  * sanitized using goog.html.SafeUrl.sanitize.
  *
  * Example usage:
@@ -15134,7 +15194,7 @@ goog.dom.safe.setButtonFormAction = function(button, url) {
  * Safely assigns a URL to an input element's formaction property.
  *
  * If url is of type goog.html.SafeUrl, its value is unwrapped and assigned to
- * anchor's href property.  If url is of type string however, it is first
+ * input's formaction property.  If url is of type string however, it is first
  * sanitized using goog.html.SafeUrl.sanitize.
  *
  * Example usage:
