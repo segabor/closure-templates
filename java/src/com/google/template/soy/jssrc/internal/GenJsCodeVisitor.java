@@ -996,7 +996,10 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
         IfCondNode condNode = (IfCondNode) child;
 
         // Convert predicate.
-        Expression predicate = translateExpr(condNode.getExpr());
+        Expression predicate =
+            getExprTranslator()
+                .maybeCoerceToBoolean(
+                    condNode.getExpr().getType(), translateExpr(condNode.getExpr()), false);
         // Convert body.
         Statement consequent = visitChildrenReturningCodeChunk(condNode);
         // Add if-block to conditional.
@@ -1539,7 +1542,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
             Statement.of(
                 Statement.assign(paramTempVar, staticVarRef),
                 Statement.ifStatement(
-                        Expression.not(JsRuntime.GOOG_IS_DEF.call(paramTempVar)),
+                        paramTempVar.tripleEquals(Expression.LITERAL_UNDEFINED),
                         Statement.assign(paramTempVar, staticVarRef.assign(defaultValue)))
                     .build());
       } else {
@@ -1552,7 +1555,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       }
     }
     return Statement.ifStatement(
-            Expression.not(JsRuntime.GOOG_IS_DEF.call(paramTempVar)), defaultValueAssignment)
+            paramTempVar.tripleEquals(Expression.LITERAL_UNDEFINED), defaultValueAssignment)
         .build();
   }
 

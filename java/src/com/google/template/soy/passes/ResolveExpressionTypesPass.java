@@ -651,11 +651,11 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
         return;
       }
 
-      Map<String, SoyType> fieldTypes = Maps.newHashMapWithExpectedSize(numChildren);
+      List<RecordType.Member> members = new ArrayList<>();
       for (int i = 0; i < numChildren; i++) {
-        fieldTypes.put(node.getKey(i).identifier(), node.getChild(i).getType());
+        members.add(RecordType.memberOf(node.getKey(i).identifier(), node.getChild(i).getType()));
       }
-      node.setType(typeRegistry.getOrCreateRecordType(fieldTypes));
+      node.setType(typeRegistry.getOrCreateRecordType(members));
 
       tryApplySubstitution(node);
     }
@@ -1003,6 +1003,8 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
       } else if (knownFunction instanceof BuiltinFunction) {
         visitBuiltinFunction((BuiltinFunction) knownFunction, node);
       }
+
+
       // Always attempt to visit for internal soy functions, even if we already had a signature.
       visitInternalSoyFunction(knownFunction, node);
       tryApplySubstitution(node);
@@ -1300,12 +1302,12 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
         case RECORD:
           {
             RecordType recordType = (RecordType) baseType;
-            SoyType fieldType = recordType.getFieldType(fieldName);
+            SoyType fieldType = recordType.getMemberType(fieldName);
             if (fieldType != null) {
               return fieldType;
             } else {
               String extraErrorMessage =
-                  SoyErrors.getDidYouMeanMessage(recordType.getFieldNames(), fieldName);
+                  SoyErrors.getDidYouMeanMessage(recordType.getMemberNames(), fieldName);
               errorReporter.report(
                   sourceLocation,
                   UNDEFINED_FIELD_FOR_RECORD_TYPE,

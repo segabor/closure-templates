@@ -110,6 +110,7 @@ goog.global.CLOSURE_DEFINES;
  *
  * @param {?} val Variable to test.
  * @return {boolean} Whether variable is defined.
+ * @deprecated Use `val !== undefined` instead.
  */
 goog.isDef = function(val) {
   // void 0 always evaluates to undefined and hence we do not need to depend on
@@ -121,6 +122,7 @@ goog.isDef = function(val) {
  * Returns true if the specified value is a string.
  * @param {?} val Variable to test.
  * @return {boolean} Whether variable is a string.
+ * @deprecated Use `typeof val === 'string'` instead.
  */
 goog.isString = function(val) {
   return typeof val == 'string';
@@ -131,6 +133,7 @@ goog.isString = function(val) {
  * Returns true if the specified value is a boolean.
  * @param {?} val Variable to test.
  * @return {boolean} Whether variable is boolean.
+ * @deprecated Use `typeof val === 'boolean'` instead.
  */
 goog.isBoolean = function(val) {
   return typeof val == 'boolean';
@@ -141,6 +144,7 @@ goog.isBoolean = function(val) {
  * Returns true if the specified value is a number.
  * @param {?} val Variable to test.
  * @return {boolean} Whether variable is a number.
+ * @deprecated Use `typeof val === 'number'` instead.
  */
 goog.isNumber = function(val) {
   return typeof val == 'number';
@@ -170,7 +174,7 @@ goog.exportPath_ = function(name, opt_object, opt_objectToExportTo) {
   }
 
   for (var part; parts.length && (part = parts.shift());) {
-    if (!parts.length && goog.isDef(opt_object)) {
+    if (!parts.length && opt_object !== undefined) {
       // last part and we have an object; use it
       cur[part] = opt_object;
     } else if (cur[part] && cur[part] !== Object.prototype[part]) {
@@ -479,7 +483,7 @@ goog.VALID_MODULE_RE_ = /^[a-zA-Z_$][a-zA-Z0-9._$]*$/;
  * @return {void}
  */
 goog.module = function(name) {
-  if (!goog.isString(name) || !name ||
+  if (typeof name !== 'string' || !name ||
       name.search(goog.VALID_MODULE_RE_) == -1) {
     throw new Error('Invalid module identifier');
   }
@@ -746,8 +750,7 @@ if (!COMPILED) {
    */
   goog.isProvided_ = function(name) {
     return (name in goog.loadedModules_) ||
-        (!goog.implicitNamespaces_[name] &&
-         goog.isDefAndNotNull(goog.getObjectByName(name)));
+        (!goog.implicitNamespaces_[name] && goog.getObjectByName(name) != null);
   };
 
   /**
@@ -783,7 +786,7 @@ goog.getObjectByName = function(name, opt_obj) {
   var cur = opt_obj || goog.global;
   for (var i = 0; i < parts.length; i++) {
     cur = cur[parts[i]];
-    if (!goog.isDefAndNotNull(cur)) {
+    if (cur == null) {
       return null;
     }
   }
@@ -1177,7 +1180,7 @@ goog.loadModule = function(moduleDef) {
     var exports;
     if (goog.isFunction(moduleDef)) {
       exports = moduleDef.call(undefined, {});
-    } else if (goog.isString(moduleDef)) {
+    } else if (typeof moduleDef === 'string') {
       if (goog.useSafari10Workaround()) {
         moduleDef = goog.workaroundSafari10EvalBug(moduleDef);
       }
@@ -1188,7 +1191,7 @@ goog.loadModule = function(moduleDef) {
     }
 
     var moduleName = goog.moduleLoaderState_.moduleName;
-    if (goog.isString(moduleName) && moduleName) {
+    if (typeof moduleName === 'string' && moduleName) {
       // Don't seal legacy namespaces as they may be used as a parent of
       // another namespace
       if (goog.moduleLoaderState_.declareLegacyNamespace) {
@@ -1457,6 +1460,7 @@ goog.typeOf = function(value) {
  * Returns true if the specified value is null.
  * @param {?} val Variable to test.
  * @return {boolean} Whether variable is null.
+ * @deprecated Use `val === null` instead.
  */
 goog.isNull = function(val) {
   return val === null;
@@ -1467,6 +1471,7 @@ goog.isNull = function(val) {
  * Returns true if the specified value is defined and not null.
  * @param {?} val Variable to test.
  * @return {boolean} Whether variable is defined and not null.
+ * @deprecated Use `val != null` instead.
  */
 goog.isDefAndNotNull = function(val) {
   // Note that undefined == null.
@@ -1552,6 +1557,7 @@ goog.getUid = function(obj) {
   // In Opera window.hasOwnProperty exists but always returns false so we avoid
   // using it. As a consequence the unique ID generated for BaseClass.prototype
   // and SubClass.prototype will be the same.
+  // TODO(b/141512323): UUIDs are broken for ctors with class-side inheritance.
   return obj[goog.UID_PROPERTY_] ||
       (obj[goog.UID_PROPERTY_] = ++goog.uidCounter_);
 };
@@ -1853,7 +1859,7 @@ goog.globalEval = function(script) {
       /** @type {!Document} */
       var doc = goog.global.document;
       var scriptElt =
-          /** @type {!HTMLScriptElement} */ (doc.createElement('SCRIPT'));
+          /** @type {!HTMLScriptElement} */ (doc.createElement('script'));
       scriptElt.type = 'text/javascript';
       scriptElt.defer = false;
       // Note(user): can't use .innerHTML since "t('<test>')" will fail and
@@ -2554,9 +2560,9 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
    * @private
    */
   goog.findBasePath_ = function() {
-    if (goog.isDef(goog.global.CLOSURE_BASE_PATH) &&
+    if (goog.global.CLOSURE_BASE_PATH != undefined &&
         // Anti DOM-clobbering runtime check (b/37736576).
-        goog.isString(goog.global.CLOSURE_BASE_PATH)) {
+        typeof goog.global.CLOSURE_BASE_PATH === 'string') {
       goog.basePath = goog.global.CLOSURE_BASE_PATH;
       return;
     } else if (!goog.inHtmlDocument_()) {
@@ -3966,7 +3972,7 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
       contents = this.transpiler_.transpile(contents, this.getPathName());
     }
 
-    if (!goog.LOAD_MODULE_USING_EVAL || !goog.isDef(goog.global.JSON)) {
+    if (!goog.LOAD_MODULE_USING_EVAL || goog.global.JSON === undefined) {
       return '' +
           'goog.loadModule(function(exports) {' +
           '"use strict";' + contents +
@@ -4568,7 +4574,7 @@ goog.asserts.fail = function(opt_message, var_args) {
  * @closurePrimitive {asserts.matchesReturn}
  */
 goog.asserts.assertNumber = function(value, opt_message, var_args) {
-  if (goog.asserts.ENABLE_ASSERTS && !goog.isNumber(value)) {
+  if (goog.asserts.ENABLE_ASSERTS && typeof value !== 'number') {
     goog.asserts.doAssertFailure_(
         'Expected number but got %s: %s.', [goog.typeOf(value), value],
         opt_message, Array.prototype.slice.call(arguments, 2));
@@ -4587,7 +4593,7 @@ goog.asserts.assertNumber = function(value, opt_message, var_args) {
  * @closurePrimitive {asserts.matchesReturn}
  */
 goog.asserts.assertString = function(value, opt_message, var_args) {
-  if (goog.asserts.ENABLE_ASSERTS && !goog.isString(value)) {
+  if (goog.asserts.ENABLE_ASSERTS && typeof value !== 'string') {
     goog.asserts.doAssertFailure_(
         'Expected string but got %s: %s.', [goog.typeOf(value), value],
         opt_message, Array.prototype.slice.call(arguments, 2));
@@ -4665,7 +4671,7 @@ goog.asserts.assertArray = function(value, opt_message, var_args) {
  * @closurePrimitive {asserts.matchesReturn}
  */
 goog.asserts.assertBoolean = function(value, opt_message, var_args) {
-  if (goog.asserts.ENABLE_ASSERTS && !goog.isBoolean(value)) {
+  if (goog.asserts.ENABLE_ASSERTS && typeof value !== 'boolean') {
     goog.asserts.doAssertFailure_(
         'Expected boolean but got %s: %s.', [goog.typeOf(value), value],
         opt_message, Array.prototype.slice.call(arguments, 2));
@@ -4881,9 +4887,9 @@ goog.array.indexOf = goog.NATIVE_ARRAY_PROTOTYPES &&
           (opt_fromIndex < 0 ? Math.max(0, arr.length + opt_fromIndex) :
                                opt_fromIndex);
 
-      if (goog.isString(arr)) {
+      if (typeof arr === 'string') {
         // Array.prototype.indexOf uses === so only strings should be found.
-        if (!goog.isString(obj) || obj.length != 1) {
+        if (typeof obj !== 'string' || obj.length != 1) {
           return -1;
         }
         return arr.indexOf(obj, fromIndex);
@@ -4926,9 +4932,9 @@ goog.array.lastIndexOf = goog.NATIVE_ARRAY_PROTOTYPES &&
         fromIndex = Math.max(0, arr.length + fromIndex);
       }
 
-      if (goog.isString(arr)) {
+      if (typeof arr === 'string') {
         // Array.prototype.lastIndexOf uses === so only strings should be found.
-        if (!goog.isString(obj) || obj.length != 1) {
+        if (typeof obj !== 'string' || obj.length != 1) {
           return -1;
         }
         return arr.lastIndexOf(obj, fromIndex);
@@ -4962,7 +4968,7 @@ goog.array.forEach = goog.NATIVE_ARRAY_PROTOTYPES &&
     } :
     function(arr, f, opt_obj) {
       var l = arr.length;  // must be fixed during loop... see docs
-      var arr2 = goog.isString(arr) ? arr.split('') : arr;
+      var arr2 = (typeof arr === 'string') ? arr.split('') : arr;
       for (var i = 0; i < l; i++) {
         if (i in arr2) {
           f.call(/** @type {?} */ (opt_obj), arr2[i], i, arr);
@@ -4987,7 +4993,7 @@ goog.array.forEach = goog.NATIVE_ARRAY_PROTOTYPES &&
  */
 goog.array.forEachRight = function(arr, f, opt_obj) {
   var l = arr.length;  // must be fixed during loop... see docs
-  var arr2 = goog.isString(arr) ? arr.split('') : arr;
+  var arr2 = (typeof arr === 'string') ? arr.split('') : arr;
   for (var i = l - 1; i >= 0; --i) {
     if (i in arr2) {
       f.call(/** @type {?} */ (opt_obj), arr2[i], i, arr);
@@ -5026,7 +5032,7 @@ goog.array.filter = goog.NATIVE_ARRAY_PROTOTYPES &&
       var l = arr.length;  // must be fixed during loop... see docs
       var res = [];
       var resLength = 0;
-      var arr2 = goog.isString(arr) ? arr.split('') : arr;
+      var arr2 = (typeof arr === 'string') ? arr.split('') : arr;
       for (var i = 0; i < l; i++) {
         if (i in arr2) {
           var val = arr2[i];  // in case f mutates arr2
@@ -5065,7 +5071,7 @@ goog.array.map = goog.NATIVE_ARRAY_PROTOTYPES &&
     function(arr, f, opt_obj) {
       var l = arr.length;  // must be fixed during loop... see docs
       var res = new Array(l);
-      var arr2 = goog.isString(arr) ? arr.split('') : arr;
+      var arr2 = (typeof arr === 'string') ? arr.split('') : arr;
       for (var i = 0; i < l; i++) {
         if (i in arr2) {
           res[i] = f.call(/** @type {?} */ (opt_obj), arr2[i], i, arr);
@@ -5188,7 +5194,7 @@ goog.array.some = goog.NATIVE_ARRAY_PROTOTYPES &&
     } :
     function(arr, f, opt_obj) {
       var l = arr.length;  // must be fixed during loop... see docs
-      var arr2 = goog.isString(arr) ? arr.split('') : arr;
+      var arr2 = (typeof arr === 'string') ? arr.split('') : arr;
       for (var i = 0; i < l; i++) {
         if (i in arr2 && f.call(/** @type {?} */ (opt_obj), arr2[i], i, arr)) {
           return true;
@@ -5224,7 +5230,7 @@ goog.array.every = goog.NATIVE_ARRAY_PROTOTYPES &&
     } :
     function(arr, f, opt_obj) {
       var l = arr.length;  // must be fixed during loop... see docs
-      var arr2 = goog.isString(arr) ? arr.split('') : arr;
+      var arr2 = (typeof arr === 'string') ? arr.split('') : arr;
       for (var i = 0; i < l; i++) {
         if (i in arr2 && !f.call(/** @type {?} */ (opt_obj), arr2[i], i, arr)) {
           return false;
@@ -5272,7 +5278,7 @@ goog.array.count = function(arr, f, opt_obj) {
  */
 goog.array.find = function(arr, f, opt_obj) {
   var i = goog.array.findIndex(arr, f, opt_obj);
-  return i < 0 ? null : goog.isString(arr) ? arr.charAt(i) : arr[i];
+  return i < 0 ? null : typeof arr === 'string' ? arr.charAt(i) : arr[i];
 };
 
 
@@ -5292,7 +5298,7 @@ goog.array.find = function(arr, f, opt_obj) {
  */
 goog.array.findIndex = function(arr, f, opt_obj) {
   var l = arr.length;  // must be fixed during loop... see docs
-  var arr2 = goog.isString(arr) ? arr.split('') : arr;
+  var arr2 = (typeof arr === 'string') ? arr.split('') : arr;
   for (var i = 0; i < l; i++) {
     if (i in arr2 && f.call(/** @type {?} */ (opt_obj), arr2[i], i, arr)) {
       return i;
@@ -5318,7 +5324,7 @@ goog.array.findIndex = function(arr, f, opt_obj) {
  */
 goog.array.findRight = function(arr, f, opt_obj) {
   var i = goog.array.findIndexRight(arr, f, opt_obj);
-  return i < 0 ? null : goog.isString(arr) ? arr.charAt(i) : arr[i];
+  return i < 0 ? null : typeof arr === 'string' ? arr.charAt(i) : arr[i];
 };
 
 
@@ -5338,7 +5344,7 @@ goog.array.findRight = function(arr, f, opt_obj) {
  */
 goog.array.findIndexRight = function(arr, f, opt_obj) {
   var l = arr.length;  // must be fixed during loop... see docs
-  var arr2 = goog.isString(arr) ? arr.split('') : arr;
+  var arr2 = (typeof arr === 'string') ? arr.split('') : arr;
   for (var i = l - 1; i >= 0; i--) {
     if (i in arr2 && f.call(/** @type {?} */ (opt_obj), arr2[i], i, arr)) {
       return i;
@@ -5849,7 +5855,7 @@ goog.array.binarySearch_ = function(
   var right = arr.length;  // exclusive
   var found;
   while (left < right) {
-    var middle = (left + right) >> 1;
+    var middle = left + ((right - left) >>> 1);
     var compareResult;
     if (isEvaluator) {
       compareResult = compareFn.call(opt_selfObj, arr[middle], middle, arr);
@@ -5868,8 +5874,10 @@ goog.array.binarySearch_ = function(
     }
   }
   // left is the index if found, or the insertion point otherwise.
-  // ~left is a shorthand for -left - 1.
-  return found ? left : ~left;
+  // Avoiding bitwise not operator, as that causes a loss in precision for array
+  // indexes outside the bounds of a 32-bit signed integer.  Array indexes have
+  // a maximum value of 2^32-2 https://tc39.es/ecma262/#array-index
+  return found ? left : -left - 1;
 };
 
 
@@ -6160,7 +6168,7 @@ goog.array.bucket = function(array, sorter, opt_obj) {
   for (var i = 0; i < array.length; i++) {
     var value = array[i];
     var key = sorter.call(/** @type {?} */ (opt_obj), value, i, array);
-    if (goog.isDef(key)) {
+    if (key !== undefined) {
       // Push the value to the right bucket, creating it if necessary.
       var bucket = buckets[key] || (buckets[key] = []);
       bucket.push(value);
@@ -10401,16 +10409,16 @@ goog.fs.url.getUrlObject_ = function() {
 goog.fs.url.findUrlObject_ = function() {
   // This is what the spec says to do
   // http://dev.w3.org/2006/webapi/FileAPI/#dfn-createObjectURL
-  if (goog.isDef(goog.global.URL) &&
-      goog.isDef(goog.global.URL.createObjectURL)) {
+  if (goog.global.URL !== undefined &&
+      goog.global.URL.createObjectURL !== undefined) {
     return /** @type {goog.fs.url.UrlObject_} */ (goog.global.URL);
     // This is what Chrome does (as of 10.0.648.6 dev)
   } else if (
-      goog.isDef(goog.global.webkitURL) &&
-      goog.isDef(goog.global.webkitURL.createObjectURL)) {
+      goog.global.webkitURL !== undefined &&
+      goog.global.webkitURL.createObjectURL !== undefined) {
     return /** @type {goog.fs.url.UrlObject_} */ (goog.global.webkitURL);
     // This is what the spec used to say to do
-  } else if (goog.isDef(goog.global.createObjectURL)) {
+  } else if (goog.global.createObjectURL !== undefined) {
     return /** @type {goog.fs.url.UrlObject_} */ (goog.global);
   } else {
     return null;
@@ -11864,7 +11872,7 @@ goog.html.TrustedResourceUrl.stringifyParams_ = function(
     // Do not modify the field.
     return currentString;
   }
-  if (goog.isString(params)) {
+  if (typeof params === 'string') {
     // Set field to the passed string.
     return params ? prefix + encodeURIComponent(params) : '';
   }
@@ -13174,14 +13182,31 @@ goog.html.SafeStyle.URL_RE_ = new RegExp(
         ')([ \t\n]*\\))',
     'g');
 
+/**
+ * Names of functions allowed in FUNCTIONS_RE_.
+ * @private @const {!Array<string>}
+ */
+goog.html.SafeStyle.ALLOWED_FUNCTIONS_ = [
+  'calc',
+  'cubic-bezier',
+  'fit-content',
+  'hsl',
+  'hsla',
+  'matrix',
+  'minmax',
+  'repeat',
+  'rgb',
+  'rgba',
+  '(rotate|scale|translate)(X|Y|Z|3d)?',
+];
+
 
 /**
  * Regular expression for simple functions.
  * @private @const {!RegExp}
  */
 goog.html.SafeStyle.FUNCTIONS_RE_ = new RegExp(
-    '\\b(hsl|hsla|rgb|rgba|matrix|calc|minmax|fit-content|repeat|' +
-        '(rotate|scale|translate)(X|Y|Z|3d)?)' +
+    '\\b(' + goog.html.SafeStyle.ALLOWED_FUNCTIONS_.join('|') + ')' +
         '\\([-+*/0-9a-z.%\\[\\], ]+\\)',
     'g');
 
@@ -14353,7 +14378,7 @@ goog.html.SafeHtml.getAttrNameAndValue_ = function(tagName, name, value) {
       value = goog.html.TrustedResourceUrl.unwrap(value);
     } else if (value instanceof goog.html.SafeUrl) {
       value = goog.html.SafeUrl.unwrap(value);
-    } else if (goog.isString(value)) {
+    } else if (typeof value === 'string') {
       value = goog.html.SafeUrl.sanitize(value).getTypedStringValue();
     } else {
       throw new Error(
@@ -14375,7 +14400,7 @@ goog.html.SafeHtml.getAttrNameAndValue_ = function(tagName, name, value) {
   }
 
   goog.asserts.assert(
-      goog.isString(value) || goog.isNumber(value),
+      typeof value === 'string' || typeof value === 'number',
       'String or number value expected, got ' + (typeof value) +
           ' with value: ' + value);
   return name + '="' + goog.string.internal.htmlEscape(String(value)) + '"';
@@ -14556,7 +14581,7 @@ goog.html.SafeHtml.createSafeHtmlTagSecurityPrivateDoNotAccessOrElse = function(
   result += goog.html.SafeHtml.stringifyAttributes(tagName, opt_attributes);
 
   var content = opt_content;
-  if (!goog.isDefAndNotNull(content)) {
+  if (content == null) {
     content = [];
   } else if (!goog.isArray(content)) {
     content = [content];
@@ -14608,7 +14633,7 @@ goog.html.SafeHtml.stringifyAttributes = function(tagName, opt_attributes) {
                 '');
       }
       var value = opt_attributes[name];
-      if (!goog.isDefAndNotNull(value)) {
+      if (value == null) {
         continue;
       }
       result +=
@@ -16809,7 +16834,8 @@ goog.string.repeat = (String.prototype.repeat) ? function(string, length) {
  * @return {string} `num` as a string with the given options.
  */
 goog.string.padNumber = function(num, length, opt_precision) {
-  var s = goog.isDef(opt_precision) ? num.toFixed(opt_precision) : String(num);
+  var s =
+      (opt_precision !== undefined) ? num.toFixed(opt_precision) : String(num);
   var index = s.indexOf('.');
   if (index == -1) {
     index = s.length;
@@ -17023,7 +17049,7 @@ goog.string.toSelectorCase = function(str) {
  * @return {string} String value in TitleCase form.
  */
 goog.string.toTitleCase = function(str, opt_delimiters) {
-  var delimiters = goog.isString(opt_delimiters) ?
+  var delimiters = (typeof opt_delimiters === 'string') ?
       goog.string.regExpEscape(opt_delimiters) :
       '\\s';
 
@@ -17080,7 +17106,7 @@ goog.string.parseInt = function(value) {
     value = String(value);
   }
 
-  if (goog.isString(value)) {
+  if (typeof value === 'string') {
     // If the string starts with '0x' or '-0x', parse as hex.
     return /^\s*-?0x/i.test(value) ? parseInt(value, 16) : parseInt(value, 10);
   }
@@ -18485,11 +18511,11 @@ goog.debug.deepExpose = function(obj, opt_showFn) {
 
 
     try {
-      if (!goog.isDef(obj)) {
+      if (obj === undefined) {
         str.push('undefined');
-      } else if (goog.isNull(obj)) {
+      } else if (obj === null) {
         str.push('NULL');
-      } else if (goog.isString(obj)) {
+      } else if (typeof obj === 'string') {
         str.push('"' + indentMultiline(obj) + '"');
       } else if (goog.isFunction(obj)) {
         str.push(indentMultiline(String(obj)));
@@ -18570,7 +18596,7 @@ goog.debug.normalizeErrorObject = function(err) {
   if (err == null) {
     err = 'Unknown Error of type "null/undefined"';
   }
-  if (goog.isString(err)) {
+  if (typeof err === 'string') {
     return {
       'message': err,
       'name': 'Unknown error',
@@ -19527,7 +19553,7 @@ goog.math.log10Floor = function(num) {
  * @return {number} The largest integer less than or equal to `num`.
  */
 goog.math.safeFloor = function(num, opt_epsilon) {
-  goog.asserts.assert(!goog.isDef(opt_epsilon) || opt_epsilon > 0);
+  goog.asserts.assert(opt_epsilon === undefined || opt_epsilon > 0);
   return Math.floor(num + (opt_epsilon || 2e-15));
 };
 
@@ -19541,7 +19567,7 @@ goog.math.safeFloor = function(num, opt_epsilon) {
  * @return {number} The smallest integer greater than or equal to `num`.
  */
 goog.math.safeCeil = function(num, opt_epsilon) {
-  goog.asserts.assert(!goog.isDef(opt_epsilon) || opt_epsilon > 0);
+  goog.asserts.assert(opt_epsilon === undefined || opt_epsilon > 0);
   return Math.ceil(num - (opt_epsilon || 2e-15));
 };
 
@@ -19583,13 +19609,13 @@ goog.math.Coordinate = function(opt_x, opt_y) {
    * X-value
    * @type {number}
    */
-  this.x = goog.isDef(opt_x) ? opt_x : 0;
+  this.x = (opt_x !== undefined) ? opt_x : 0;
 
   /**
    * Y-value
    * @type {number}
    */
-  this.y = goog.isDef(opt_y) ? opt_y : 0;
+  this.y = (opt_y !== undefined) ? opt_y : 0;
 };
 
 
@@ -19769,7 +19795,7 @@ goog.math.Coordinate.prototype.translate = function(tx, opt_ty) {
     this.y += tx.y;
   } else {
     this.x += Number(tx);
-    if (goog.isNumber(opt_ty)) {
+    if (typeof opt_ty === 'number') {
       this.y += opt_ty;
     }
   }
@@ -19786,7 +19812,7 @@ goog.math.Coordinate.prototype.translate = function(tx, opt_ty) {
  * @return {!goog.math.Coordinate} This coordinate after scaling.
  */
 goog.math.Coordinate.prototype.scale = function(sx, opt_sy) {
-  var sy = goog.isNumber(opt_sy) ? opt_sy : sx;
+  var sy = (typeof opt_sy === 'number') ? opt_sy : sx;
   this.x *= sx;
   this.y *= sy;
   return this;
@@ -20013,7 +20039,7 @@ goog.math.Size.prototype.round = function() {
  * @return {!goog.math.Size} This Size object after scaling.
  */
 goog.math.Size.prototype.scale = function(sx, opt_sy) {
-  const sy = goog.isNumber(opt_sy) ? opt_sy : sx;
+  const sy = (typeof opt_sy === 'number') ? opt_sy : sx;
   this.width *= sx;
   this.height *= sy;
   return this;
@@ -20185,7 +20211,7 @@ goog.dom.getElement = function(element) {
  * @private
  */
 goog.dom.getElementHelper_ = function(doc, element) {
-  return goog.isString(element) ? doc.getElementById(element) : element;
+  return typeof element === 'string' ? doc.getElementById(element) : element;
 };
 
 
@@ -20909,10 +20935,10 @@ goog.dom.createDom_ = function(doc, args) {
     tagName = tagNameArr.join('');
   }
 
-  var element = doc.createElement(tagName);
+  var element = goog.dom.createElement_(doc, tagName);
 
   if (attributes) {
-    if (goog.isString(attributes)) {
+    if (typeof attributes === 'string') {
       element.className = attributes;
     } else if (goog.isArray(attributes)) {
       element.className = attributes.join(' ');
@@ -20942,7 +20968,7 @@ goog.dom.append_ = function(doc, parent, args, startIndex) {
     // TODO(user): More coercion, ala MochiKit?
     if (child) {
       parent.appendChild(
-          goog.isString(child) ? doc.createTextNode(child) : child);
+          typeof child === 'string' ? doc.createTextNode(child) : child);
     }
   }
 
@@ -21008,7 +21034,9 @@ goog.dom.createElement = function(name) {
  * @private
  */
 goog.dom.createElement_ = function(doc, name) {
-  return doc.createElement(String(name));
+  name = String(name);
+  if (doc.contentType === 'application/xhtml+xml') name = name.toLowerCase();
+  return doc.createElement(name);
 };
 
 
@@ -21400,7 +21428,7 @@ goog.dom.getChildren = function(element) {
  * @return {Element} The first child node of `node` that is an element.
  */
 goog.dom.getFirstElementChild = function(node) {
-  if (goog.isDef(node.firstElementChild)) {
+  if (node.firstElementChild !== undefined) {
     return /** @type {!Element} */ (node).firstElementChild;
   }
   return goog.dom.getNextElementNode_(node.firstChild, true);
@@ -21413,7 +21441,7 @@ goog.dom.getFirstElementChild = function(node) {
  * @return {Element} The last child node of `node` that is an element.
  */
 goog.dom.getLastElementChild = function(node) {
-  if (goog.isDef(node.lastElementChild)) {
+  if (node.lastElementChild !== undefined) {
     return /** @type {!Element} */ (node).lastElementChild;
   }
   return goog.dom.getNextElementNode_(node.lastChild, false);
@@ -21426,7 +21454,7 @@ goog.dom.getLastElementChild = function(node) {
  * @return {Element} The next sibling of `node` that is an element.
  */
 goog.dom.getNextElementSibling = function(node) {
-  if (goog.isDef(node.nextElementSibling)) {
+  if (node.nextElementSibling !== undefined) {
     return /** @type {!Element} */ (node).nextElementSibling;
   }
   return goog.dom.getNextElementNode_(node.nextSibling, true);
@@ -21440,7 +21468,7 @@ goog.dom.getNextElementSibling = function(node) {
  *     an element.
  */
 goog.dom.getPreviousElementSibling = function(node) {
-  if (goog.isDef(node.previousElementSibling)) {
+  if (node.previousElementSibling !== undefined) {
     return /** @type {!Element} */ (node).previousElementSibling;
   }
   return goog.dom.getNextElementNode_(node.previousSibling, false);
@@ -22117,7 +22145,7 @@ goog.dom.hasSpecifiedTabIndex_ = function(element) {
   // 'tabindex' attributeNode is specified. Otherwise check hasAttribute().
   if (goog.userAgent.IE && !goog.userAgent.isVersionOrHigher('9')) {
     var attrNode = element.getAttributeNode('tabindex');  // Must be lowercase!
-    return goog.isDefAndNotNull(attrNode) && attrNode.specified;
+    return attrNode != null && attrNode.specified;
   } else {
     return element.hasAttribute('tabindex');
   }
@@ -22133,7 +22161,7 @@ goog.dom.hasSpecifiedTabIndex_ = function(element) {
 goog.dom.isTabIndexFocusable_ = function(element) {
   var index = /** @type {!HTMLElement} */ (element).tabIndex;
   // NOTE: IE9 puts tabIndex in 16-bit int, e.g. -2 is 65534.
-  return goog.isNumber(index) && index >= 0 && index < 32768;
+  return typeof (index) === 'number' && index >= 0 && index < 32768;
 };
 
 
@@ -22169,7 +22197,7 @@ goog.dom.hasNonZeroBoundingRect_ = function(element) {
   } else {
     rect = element.getBoundingClientRect();
   }
-  return goog.isDefAndNotNull(rect) && rect.height > 0 && rect.width > 0;
+  return rect != null && rect.height > 0 && rect.width > 0;
 };
 
 
@@ -22396,7 +22424,7 @@ goog.dom.getAncestorByTagNameAndClass = function(
   return /** @type {Element} */ (goog.dom.getAncestor(element, function(node) {
     return (!tagName || node.nodeName == tagName) &&
         (!opt_class ||
-         goog.isString(node.className) &&
+         typeof node.className === 'string' &&
              goog.array.contains(node.className.split(/\s+/), opt_class));
   }, true, opt_maxSearchSteps));
 };
@@ -22488,7 +22516,7 @@ goog.dom.getActiveElement = function(doc) {
  */
 goog.dom.getPixelRatio = function() {
   var win = goog.dom.getWindow();
-  if (goog.isDef(win.devicePixelRatio)) {
+  if (win.devicePixelRatio !== undefined) {
     return win.devicePixelRatio;
   } else if (win.matchMedia) {
     // Should be for IE10 and FF6-17 (this basically clamps to lower)
@@ -23510,7 +23538,7 @@ goog.i18n.uChar.toCharCode = function(ch) {
  * @return {?string} The character corresponding to the given Unicode value.
  */
 goog.i18n.uChar.fromCharCode = function(code) {
-  if (!goog.isDefAndNotNull(code) ||
+  if (code == null ||
       !(code >= 0 && code <= goog.i18n.uChar.CODE_POINT_MAX_VALUE_)) {
     return null;
   }
@@ -23917,16 +23945,16 @@ goog.i18n.GraphemeBreak.inversions_ = null;
 goog.i18n.GraphemeBreak.applyBreakRules_ = function(a, b, extended) {
   var prop = goog.i18n.GraphemeBreak.property;
 
-  var aCode = goog.isString(a) ?
+  var aCode = (typeof a === 'string') ?
       goog.i18n.GraphemeBreak.getCodePoint_(a, a.length - 1) :
       a;
   var bCode =
-      goog.isString(b) ? goog.i18n.GraphemeBreak.getCodePoint_(b, 0) : b;
+      (typeof b === 'string') ? goog.i18n.GraphemeBreak.getCodePoint_(b, 0) : b;
 
   var aProp = goog.i18n.GraphemeBreak.getBreakProp_(aCode);
   var bProp = goog.i18n.GraphemeBreak.getBreakProp_(bCode);
 
-  var isString = goog.isString(a);
+  var isString = (typeof a === 'string');
 
   // GB3.
   if (aProp === prop.CR && bProp === prop.LF) {
@@ -24269,8 +24297,8 @@ goog.i18n.GraphemeBreak.hasGraphemeBreak = function(a, b, opt_extended) {
  *     a and b; False otherwise.
  */
 goog.i18n.GraphemeBreak.hasGraphemeBreakStrings = function(a, b, opt_extended) {
-  goog.asserts.assert(goog.isDef(a), 'First string should be defined.');
-  goog.asserts.assert(goog.isDef(b), 'Second string should be defined.');
+  goog.asserts.assert(a !== undefined, 'First string should be defined.');
+  goog.asserts.assert(b !== undefined, 'Second string should be defined.');
 
   // Break if any of the strings is empty.
   if (a.length === 0 || b.length === 0) {
@@ -24395,7 +24423,7 @@ goog.format.numericValueToString = function(val, opt_decimals) {
 goog.format.numBytesToString = function(
     val, opt_decimals, opt_suffix, opt_useSeparator) {
   var suffix = '';
-  if (!goog.isDef(opt_suffix) || opt_suffix) {
+  if (opt_suffix === undefined || opt_suffix) {
     suffix = 'B';
   }
   return goog.format.numericValueToString_(
@@ -24464,7 +24492,7 @@ goog.format.numericValueToString_ = function(
       separator = ' ';
     }
   }
-  var ex = Math.pow(10, goog.isDef(opt_decimals) ? opt_decimals : 2);
+  var ex = Math.pow(10, opt_decimals !== undefined ? opt_decimals : 2);
   return Math.round(orig_val / scale * ex) / ex + separator + symbol;
 };
 
@@ -37668,7 +37696,7 @@ goog.i18n.NumberFormat.prototype.setShowTrailingZeros = function(
 goog.i18n.NumberFormat.prototype.setBaseFormatting = function(
     baseFormattingNumber) {
   goog.asserts.assert(
-      goog.isNull(baseFormattingNumber) || isFinite(baseFormattingNumber));
+      baseFormattingNumber === null || isFinite(baseFormattingNumber));
   this.baseFormattingNumber_ = baseFormattingNumber;
   return this;
 };
@@ -37953,7 +37981,7 @@ goog.i18n.NumberFormat.prototype.format = function(number) {
   }
 
   var parts = [];
-  var baseFormattingNumber = goog.isNull(this.baseFormattingNumber_) ?
+  var baseFormattingNumber = (this.baseFormattingNumber_ === null) ?
       number :
       this.baseFormattingNumber_;
   var unit = this.getUnitAfterRounding_(baseFormattingNumber, number);
@@ -38755,7 +38783,7 @@ goog.i18n.NumberFormat.prototype.getUnitFor_ = function(base, plurality) {
       goog.i18n.CompactNumberFormatSymbols.COMPACT_DECIMAL_SHORT_PATTERN :
       goog.i18n.CompactNumberFormatSymbols.COMPACT_DECIMAL_LONG_PATTERN;
 
-  if (!goog.isDefAndNotNull(table)) {
+  if (table == null) {
     table = goog.i18n.CompactNumberFormatSymbols.COMPACT_DECIMAL_SHORT_PATTERN;
   }
 
@@ -39715,7 +39743,7 @@ goog.iter.cycle = function(iterable) {
  */
 goog.iter.count = function(opt_start, opt_step) {
   var counter = opt_start || 0;
-  var step = goog.isDef(opt_step) ? opt_step : 1;
+  var step = (opt_step !== undefined) ? opt_step : 1;
   var iter = new goog.iter.Iterator();
 
   iter.next = function() {
@@ -40028,7 +40056,7 @@ goog.iter.starMap = function(iterable, f, opt_obj) {
  */
 goog.iter.tee = function(iterable, opt_num) {
   var iterator = goog.iter.toIterator(iterable);
-  var num = goog.isNumber(opt_num) ? opt_num : 2;
+  var num = (typeof opt_num === 'number') ? opt_num : 2;
   var buffers =
       goog.array.map(goog.array.range(num), function() { return []; });
 
@@ -40149,7 +40177,7 @@ goog.iter.slice = function(iterable, start, opt_end) {
 
   var iterator = goog.iter.consume(iterable, start);
 
-  if (goog.isNumber(opt_end)) {
+  if (typeof opt_end === 'number') {
     goog.asserts.assert(goog.math.isInt(opt_end) && opt_end >= start);
     iterator = goog.iter.limit(iterator, opt_end - start /* limitSize */);
   }
@@ -40193,7 +40221,7 @@ goog.iter.hasDuplicates_ = function(arr) {
  */
 goog.iter.permutations = function(iterable, opt_length) {
   var elements = goog.iter.toArray(iterable);
-  var length = goog.isNumber(opt_length) ? opt_length : elements.length;
+  var length = (typeof opt_length === 'number') ? opt_length : elements.length;
 
   var sets = goog.array.repeat(elements, length);
   var product = goog.iter.product.apply(undefined, sets);
@@ -40782,7 +40810,7 @@ goog.structs.getCount = function(col) {
   if (col.getCount && typeof col.getCount == 'function') {
     return col.getCount();
   }
-  if (goog.isArrayLike(col) || goog.isString(col)) {
+  if (goog.isArrayLike(col) || typeof col === 'string') {
     return col.length;
   }
   return goog.object.getCount(col);
@@ -40798,7 +40826,7 @@ goog.structs.getValues = function(col) {
   if (col.getValues && typeof col.getValues == 'function') {
     return col.getValues();
   }
-  if (goog.isString(col)) {
+  if (typeof col === 'string') {
     return col.split('');
   }
   if (goog.isArrayLike(col)) {
@@ -40827,7 +40855,7 @@ goog.structs.getKeys = function(col) {
   if (col.getValues && typeof col.getValues == 'function') {
     return undefined;
   }
-  if (goog.isArrayLike(col) || goog.isString(col)) {
+  if (goog.isArrayLike(col) || typeof col === 'string') {
     var rv = [];
     var l = col.length;
     for (var i = 0; i < l; i++) {
@@ -40854,7 +40882,7 @@ goog.structs.contains = function(col, val) {
   if (col.containsValue && typeof col.containsValue == 'function') {
     return col.containsValue(val);
   }
-  if (goog.isArrayLike(col) || goog.isString(col)) {
+  if (goog.isArrayLike(col) || typeof col === 'string') {
     return goog.array.contains(/** @type {!Array<?>} */ (col), val);
   }
   return goog.object.containsValue(col, val);
@@ -40875,7 +40903,7 @@ goog.structs.isEmpty = function(col) {
   // string as
   // collection and as such even whitespace matters
 
-  if (goog.isArrayLike(col) || goog.isString(col)) {
+  if (goog.isArrayLike(col) || typeof col === 'string') {
     return goog.array.isEmpty(/** @type {!Array<?>} */ (col));
   }
   return goog.object.isEmpty(col);
@@ -40916,7 +40944,7 @@ goog.structs.clear = function(col) {
 goog.structs.forEach = function(col, f, opt_obj) {
   if (col.forEach && typeof col.forEach == 'function') {
     col.forEach(f, opt_obj);
-  } else if (goog.isArrayLike(col) || goog.isString(col)) {
+  } else if (goog.isArrayLike(col) || typeof col === 'string') {
     goog.array.forEach(/** @type {!Array<?>} */ (col), f, opt_obj);
   } else {
     var keys = goog.structs.getKeys(col);
@@ -40951,7 +40979,7 @@ goog.structs.filter = function(col, f, opt_obj) {
   if (typeof col.filter == 'function') {
     return col.filter(f, opt_obj);
   }
-  if (goog.isArrayLike(col) || goog.isString(col)) {
+  if (goog.isArrayLike(col) || typeof col === 'string') {
     return goog.array.filter(/** @type {!Array<?>} */ (col), f, opt_obj);
   }
 
@@ -41001,7 +41029,7 @@ goog.structs.map = function(col, f, opt_obj) {
   if (typeof col.map == 'function') {
     return col.map(f, opt_obj);
   }
-  if (goog.isArrayLike(col) || goog.isString(col)) {
+  if (goog.isArrayLike(col) || typeof col === 'string') {
     return goog.array.map(/** @type {!Array<?>} */ (col), f, opt_obj);
   }
 
@@ -41045,7 +41073,7 @@ goog.structs.some = function(col, f, opt_obj) {
   if (typeof col.some == 'function') {
     return col.some(f, opt_obj);
   }
-  if (goog.isArrayLike(col) || goog.isString(col)) {
+  if (goog.isArrayLike(col) || typeof col === 'string') {
     return goog.array.some(/** @type {!Array<?>} */ (col), f, opt_obj);
   }
   var keys = goog.structs.getKeys(col);
@@ -41079,7 +41107,7 @@ goog.structs.every = function(col, f, opt_obj) {
   if (typeof col.every == 'function') {
     return col.every(f, opt_obj);
   }
-  if (goog.isArrayLike(col) || goog.isString(col)) {
+  if (goog.isArrayLike(col) || typeof col === 'string') {
     return goog.array.every(/** @type {!Array<?>} */ (col), f, opt_obj);
   }
   var keys = goog.structs.getKeys(col);
@@ -41896,9 +41924,7 @@ goog.uri.utils.appendParamsFromMap = function(uri, map) {
  * @return {string} The URI with the query parameter added.
  */
 goog.uri.utils.appendParam = function(uri, key, opt_value) {
-  var value = goog.isDefAndNotNull(opt_value) ?
-      '=' + goog.string.urlEncode(opt_value) :
-      '';
+  var value = (opt_value != null) ? '=' + goog.string.urlEncode(opt_value) : '';
   return goog.uri.utils.appendQueryDataToUri_(uri, key + value);
 };
 
@@ -42333,8 +42359,8 @@ goog.Uri = function(opt_uri, opt_ignoreCase) {
   // Parse in the uri string
   var m;
   if (opt_uri instanceof goog.Uri) {
-    this.ignoreCase_ =
-        goog.isDef(opt_ignoreCase) ? opt_ignoreCase : opt_uri.getIgnoreCase();
+    this.ignoreCase_ = (opt_ignoreCase !== undefined) ? opt_ignoreCase :
+                                                        opt_uri.getIgnoreCase();
     this.setScheme(opt_uri.getScheme());
     this.setUserInfo(opt_uri.getUserInfo());
     this.setDomain(opt_uri.getDomain());
@@ -43137,7 +43163,7 @@ goog.Uri.decodeOrEmpty_ = function(val, opt_preserveReserved) {
  */
 goog.Uri.encodeSpecialChars_ = function(
     unescapedPart, extra, opt_removeDoubleEncoding) {
-  if (goog.isString(unescapedPart)) {
+  if (typeof unescapedPart === 'string') {
     var encoded = encodeURI(unescapedPart).replace(extra, goog.Uri.encodeChar_);
     if (opt_removeDoubleEncoding) {
       // encodeURI double-escapes %XX sequences used to represent restricted
@@ -43507,7 +43533,7 @@ goog.Uri.QueryData.prototype.getKeys = function() {
 goog.Uri.QueryData.prototype.getValues = function(opt_key) {
   this.ensureKeyMapInitialized_();
   var rv = [];
-  if (goog.isString(opt_key)) {
+  if (typeof opt_key === 'string') {
     if (this.containsKey(opt_key)) {
       rv = goog.array.concat(rv, this.keyMap_.get(this.getKeyName_(opt_key)));
     }
@@ -43949,7 +43975,8 @@ goog.soy.data.SanitizedHtml.prototype.contentKind =
  * @return {boolean}
  */
 goog.soy.data.SanitizedHtml.isCompatibleWith = function(value) {
-  return goog.isString(value) || value instanceof goog.soy.data.SanitizedHtml ||
+  return typeof value === 'string' ||
+      value instanceof goog.soy.data.SanitizedHtml ||
       value instanceof goog.html.SafeHtml;
 };
 
@@ -43996,7 +44023,8 @@ goog.soy.data.SanitizedJs.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
  * @return {boolean}
  */
 goog.soy.data.SanitizedJs.isCompatibleWith = function(value) {
-  return goog.isString(value) || value instanceof goog.soy.data.SanitizedJs ||
+  return typeof value === 'string' ||
+      value instanceof goog.soy.data.SanitizedJs ||
       value instanceof goog.html.SafeScript;
 };
 
@@ -44041,7 +44069,8 @@ goog.soy.data.SanitizedUri.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
  * @return {boolean}
  */
 goog.soy.data.SanitizedUri.isCompatibleWith = function(value) {
-  return goog.isString(value) || value instanceof goog.soy.data.SanitizedUri ||
+  return typeof value === 'string' ||
+      value instanceof goog.soy.data.SanitizedUri ||
       value instanceof goog.html.SafeUrl ||
       value instanceof goog.html.TrustedResourceUrl ||
       value instanceof goog.Uri;
@@ -44111,7 +44140,7 @@ goog.soy.data.SanitizedTrustedResourceUri.prototype.toTrustedResourceUrl =
  * @return {boolean}
  */
 goog.soy.data.SanitizedTrustedResourceUri.isCompatibleWith = function(value) {
-  return goog.isString(value) ||
+  return typeof value === 'string' ||
       value instanceof goog.soy.data.SanitizedTrustedResourceUri ||
       value instanceof goog.html.TrustedResourceUrl;
 };
@@ -44163,7 +44192,7 @@ goog.soy.data.SanitizedHtmlAttribute.prototype.contentDir =
  * @return {boolean}
  */
 goog.soy.data.SanitizedHtmlAttribute.isCompatibleWith = function(value) {
-  return goog.isString(value) ||
+  return typeof value === 'string' ||
       value instanceof goog.soy.data.SanitizedHtmlAttribute;
 };
 
@@ -44210,7 +44239,8 @@ goog.soy.data.SanitizedCss.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
  * @return {boolean}
  */
 goog.soy.data.SanitizedCss.isCompatibleWith = function(value) {
-  return goog.isString(value) || value instanceof goog.soy.data.SanitizedCss ||
+  return typeof value === 'string' ||
+      value instanceof goog.soy.data.SanitizedCss ||
       value instanceof goog.html.SafeStyle ||
       value instanceof goog.html.SafeStyleSheet;
 };
@@ -46616,10 +46646,23 @@ soy.$$isLowSurrogate_ = function(cc) {
  * @template T
  */
 soy.$$listContains = function(list, val) {
+  return soy.$$listIndexOf(list, val) >= 0;
+};
+
+
+/**
+ * Returns the index of val in list or -1
+ * @param {!IArrayLike<?>} list
+ * @param {*} val
+ * @return {number}
+ * @template T
+ */
+soy.$$listIndexOf = function(list, val) {
   return goog.array.findIndex(list, function(el) {
     return soy.$$equals(val, el);
-  }) >= 0;
+  });
 };
+
 
 
 /**

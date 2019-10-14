@@ -13,10 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package com.google.template.soy.invocationbuilders.javatypes;
 
+import static com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils.CHECK_NOT_NULL;
+
 import com.google.common.base.Strings;
-import com.google.template.soy.base.internal.IndentedLinesBuilder;
 
 /** Abstract base class representing a Java type used for invocation builders. */
 public abstract class JavaType {
@@ -47,9 +49,9 @@ public abstract class JavaType {
    *
    * <p>The return value would be "myListAsLong".
    */
-  public String appendRunTimeOperations(IndentedLinesBuilder ilb, String variableName) {
+  public String asInlineCast(String variableName) {
     if (!isNullable() && !isPrimitive()) {
-      ilb.appendLine("Preconditions.checkNotNull(" + variableName + ");");
+      return CHECK_NOT_NULL + "(" + variableName + ")";
     }
     return variableName;
   }
@@ -77,5 +79,25 @@ public abstract class JavaType {
 
   public boolean isGenericsTypeSupported() {
     return !Strings.isNullOrEmpty(asGenericsTypeArgumentString());
+  }
+
+  /**
+   * Returns the token completing the expression "new TypeToken<%s>() {}", which should represent
+   * this type in Java.
+   */
+  public String asTypeLiteralString() {
+    return toJavaTypeString();
+  }
+
+  /**
+   * Whether this type supports being represented as a TypeLiteral, TypeToken etc and whether this
+   * field value can be provided via a Guice provider.
+   *
+   * <p>Union types will be excluded since unions cannot be represented in the Java generic system.
+   * Additionally, any wrapped value, like CssParam, must be excluded because there's no hook in
+   * Guice to unwrap the value.
+   */
+  public boolean isTypeLiteralSupported() {
+    return true;
   }
 }

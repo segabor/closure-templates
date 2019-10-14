@@ -13,9 +13,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.google.template.soy.invocationbuilders.javatypes;
 
-import com.google.template.soy.base.internal.IndentedLinesBuilder;
+package com.google.template.soy.invocationbuilders.javatypes;
 
 /** Represents a list type for generated Soy Java invocation builders. */
 public final class ListJavaType extends JavaType {
@@ -38,34 +37,27 @@ public final class ListJavaType extends JavaType {
 
   @Override
   public String toJavaTypeString() {
-    return "java.util.List<" + elementType.asGenericsTypeArgumentString() + ">";
+    return "Iterable<" + elementType.asGenericsTypeArgumentString() + ">";
   }
 
   @Override
   String asGenericsTypeArgumentString() {
-    return "? extends " + toJavaTypeString();
+    // For nested lists we require them to be of type Collection since that's what Soy requires and
+    // we can't convert arbitrarily nested object graphs.
+    return "? extends java.util.Collection<" + elementType.asGenericsTypeArgumentString() + ">";
   }
 
   @Override
-  public String appendRunTimeOperations(IndentedLinesBuilder ilb, String variableName) {
-    String name = super.appendRunTimeOperations(ilb, variableName);
+  public String asInlineCast(String variableName) {
     if (elementType instanceof JavaNumberSubtype) {
       // Convert Iterable<? extends Number> to ImmutableList<Long> or ImmutableList<Double>.
       JavaNumberSubtype elementNumberType = (JavaNumberSubtype) elementType;
-      ilb.appendLine(
-          "ImmutableList<"
-              + elementNumberType.getBoxedTypeNameString()
-              + "> stronglyTypedList ="
-              + " Streams.stream("
-              + name
-              + ").map((num) -> "
-              + elementNumberType.transformNumberTypeToStricterSubtype("num")
-              + ").collect(toImmutableList());");
-      return "stronglyTypedList";
+      return elementNumberType.getListConverterMethod() + "(" + variableName + ")";
+    } else {
+      // Soy internals want a Java Collection for Soy list<> type. To support Iterable here we
+      // need to convert to Collection if necessary.
+      return CodeGenUtils.AS_COLLECTION + "(" + variableName + ")";
     }
-
-    // Otherwise just do ImmutableList.copyOf();
-    return "ImmutableList.copyOf(" + name + ")";
   }
 
   JavaType getElementType() {

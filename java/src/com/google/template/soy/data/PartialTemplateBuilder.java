@@ -13,26 +13,28 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 package com.google.template.soy.data;
 
 import java.util.Map;
 
 /**
- * An invocation of a Soy template, encapsulating both the template name and all the data parameters
- * passed to the template.
- *
- * @deprecated Renamed to SoyTemplate.
+ * Partial template instance (may not have all required params set), used for testing. This file is
+ * build visibility restricted to internal testing tools only.
  */
-@Deprecated
-public interface TemplateParameters {
+public final class PartialTemplateBuilder implements SoyTemplate {
+  private final SoyTemplate template;
 
-  /** Returns the name of the Soy template that this params object renders. */
-  String getTemplateName();
+  public PartialTemplateBuilder(BaseSoyTemplateImpl.AbstractBuilder<?, ?> builder) {
+    template = builder.buildPartialForTests();
+  }
 
-  /**
-   * Returns the parameters as a map. This method is only intended to be called by the Soy
-   * framework.
-   */
-  Map<String, SoyValueProvider> getParamsAsMap();
+  @Override
+  public String getTemplateName() {
+    return template.getTemplateName();
+  }
+
+  @Override
+  public Map<String, ?> getParamsAsMap() {
+    return template.getParamsAsMap();
+  }
 }
