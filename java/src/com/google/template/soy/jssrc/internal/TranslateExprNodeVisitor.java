@@ -21,6 +21,7 @@ import static com.google.common.base.CaseFormat.UPPER_CAMEL;
 import static com.google.template.soy.jssrc.dsl.Expression.LITERAL_FALSE;
 import static com.google.template.soy.jssrc.dsl.Expression.LITERAL_NULL;
 import static com.google.template.soy.jssrc.dsl.Expression.LITERAL_TRUE;
+import static com.google.template.soy.jssrc.dsl.Expression.arrayComprehension;
 import static com.google.template.soy.jssrc.dsl.Expression.arrayLiteral;
 import static com.google.template.soy.jssrc.dsl.Expression.construct;
 import static com.google.template.soy.jssrc.dsl.Expression.id;
@@ -273,7 +274,13 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
 
   @Override
   protected Expression visitListComprehensionNode(ListComprehensionNode node) {
-    throw new IllegalStateException("List comprehensions are not implemented yet.");
+    Expression listIterVarTranslation = addMappingForComprehensionVarDecl(node);
+
+    return arrayComprehension(
+        visit(node.getListExpr()),
+        visit(node.getListItemTransformExpr()),
+        listIterVarTranslation,
+        node.getFilterExpr() == null ? null : visit(node.getFilterExpr()));
   }
 
   @Override
@@ -326,6 +333,13 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
   @Override
   protected Expression visitDataAccessNode(DataAccessNode node) {
     return visitNullSafeNode(node).result(codeGenerator);
+  }
+
+  protected Expression addMappingForComprehensionVarDecl(ListComprehensionNode node) {
+    Expression uniqueVarId =
+        id("list_comp_" + node.getNodeId() + "_" + node.getListIterVar().name());
+    variableMappings.put(node.getListIterVar().name(), uniqueVarId);
+    return uniqueVarId;
   }
 
   /** Returns a function that can 'unpack' safe proto types into sanitized content types.. */

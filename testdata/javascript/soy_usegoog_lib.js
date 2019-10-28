@@ -4215,7 +4215,6 @@ goog.TRUSTED_TYPES_POLICY_ = goog.TRUSTED_TYPES_POLICY_NAME ?
  *
  * You should never need to throw goog.debug.Error(msg) directly, Error(msg) is
  * sufficient.
- *
  */
 
 goog.provide('goog.debug.Error');
@@ -4356,8 +4355,6 @@ goog.dom.NodeType = {
  * goog.asserts.assert(value);
  * // "value" is of type {!Object} at this point.
  * </code>
- *
- * @author agrieve@google.com (Andrew Grieve)
  */
 
 goog.provide('goog.asserts');
@@ -4795,8 +4792,6 @@ goog.asserts.getType_ = function(value) {
 
 /**
  * @fileoverview Utilities for manipulating arrays.
- *
- * @author arv@google.com (Erik Arvidsson)
  */
 
 
@@ -6919,8 +6914,6 @@ goog.string.internal.compareElements_ = function(left, right) {
  * @visibility {//javascript/closure/useragent:__subpackages__}
  * @visibility {//testing/puppet/modules:__pkg__}
  * @visibility {:util_legacy_users}
- *
- * @author nnaze@google.com (Nathan Naze)
  */
 
 goog.provide('goog.labs.userAgent.util');
@@ -7066,7 +7059,6 @@ goog.labs.userAgent.util.extractVersionTuples = function(userAgent) {
 
 /**
  * @fileoverview Utilities for manipulating objects/maps/hashes.
- * @author arv@google.com (Erik Arvidsson)
  */
 
 goog.provide('goog.object');
@@ -7847,8 +7839,6 @@ goog.object.getSuperClass = function(constructor) {
  * For more information on rendering engine, platform, or device see the other
  * sub-namespaces in goog.labs.userAgent, goog.labs.userAgent.platform,
  * goog.labs.userAgent.device respectively.)
- *
- * @author martone@google.com (Andy Martone)
  */
 
 goog.provide('goog.labs.userAgent.browser');
@@ -8609,8 +8599,6 @@ goog.dom.asserts.getWindow_ = function(o) {
  *
  * More about these can be found at
  * https://github.com/google/guava/wiki/FunctionalExplained
- *
- * @author nicksantos@google.com (Nick Santos)
  */
 
 
@@ -11418,10 +11406,8 @@ goog.require('goog.string.TypedString');
  * @param {!Object=} opt_token package-internal implementation detail.
  * @param {!TrustedScriptURL|string=} opt_content package-internal
  *     implementation detail.
- * @param {?TrustedURL=} opt_trustedUrl package-internal implementation detail.
  */
-goog.html.TrustedResourceUrl = function(
-    opt_token, opt_content, opt_trustedUrl) {
+goog.html.TrustedResourceUrl = function(opt_token, opt_content) {
   /**
    * The contained value of this TrustedResourceUrl.  The field has a purposely
    * ugly name to make (non-compiled) code that attempts to directly access this
@@ -11434,17 +11420,6 @@ goog.html.TrustedResourceUrl = function(
         goog.html.TrustedResourceUrl.CONSTRUCTOR_TOKEN_PRIVATE_) &&
        opt_content) ||
       '';
-
-  /**
-   * Value stored as TrustedURL. TrustedResourceURL corresponds to TrustedURL in
-   * some context thus we need to store it separately.
-   * @const
-   * @private {?TrustedURL}
-   */
-  this.trustedURL_ =
-      (opt_token === goog.html.TrustedResourceUrl.CONSTRUCTOR_TOKEN_PRIVATE_ &&
-       opt_trustedUrl) ||
-      null;
 
   /**
    * A type marker used to implement additional run-time type checking.
@@ -11604,19 +11579,6 @@ goog.html.TrustedResourceUrl.unwrapTrustedScriptURL = function(
         trustedResourceUrl + '\' of type ' + goog.typeOf(trustedResourceUrl));
     return 'type_error:TrustedResourceUrl';
   }
-};
-
-
-/**
- * Unwraps value as TrustedURL if supported or as a string if not.
- * @param {!goog.html.TrustedResourceUrl} trustedResourceUrl
- * @return {!TrustedURL|string}
- * @see goog.html.TrustedResourceUrl.unwrap
- */
-goog.html.TrustedResourceUrl.unwrapTrustedURL = function(trustedResourceUrl) {
-  return trustedResourceUrl.trustedURL_ ?
-      trustedResourceUrl.trustedURL_ :
-      goog.html.TrustedResourceUrl.unwrap(trustedResourceUrl);
 };
 
 
@@ -11832,13 +11794,8 @@ goog.html.TrustedResourceUrl
       goog.html.trustedtypes.PRIVATE_DO_NOT_ACCESS_OR_ELSE_POLICY
           .createScriptURL(url) :
       url;
-  var trustedUrl = goog.html.trustedtypes.PRIVATE_DO_NOT_ACCESS_OR_ELSE_POLICY ?
-      goog.html.trustedtypes.PRIVATE_DO_NOT_ACCESS_OR_ELSE_POLICY.createURL(
-          url) :
-      null;
   return new goog.html.TrustedResourceUrl(
-      goog.html.TrustedResourceUrl.CONSTRUCTOR_TOKEN_PRIVATE_, value,
-      trustedUrl);
+      goog.html.TrustedResourceUrl.CONSTRUCTOR_TOKEN_PRIVATE_, value);
 };
 
 
@@ -11929,7 +11886,6 @@ goog.provide('goog.html.SafeUrl');
 goog.require('goog.asserts');
 goog.require('goog.fs.url');
 goog.require('goog.html.TrustedResourceUrl');
-goog.require('goog.html.trustedtypes');
 goog.require('goog.i18n.bidi.Dir');
 goog.require('goog.i18n.bidi.DirectionalString');
 goog.require('goog.string.Const');
@@ -11977,15 +11933,14 @@ goog.require('goog.string.internal');
  * @implements {goog.i18n.bidi.DirectionalString}
  * @implements {goog.string.TypedString}
  * @param {!Object=} opt_token package-internal implementation detail.
- * @param {!TrustedURL|string=} opt_content package-internal
- *     implementation detail.
+ * @param {string=} opt_content package-internal implementation detail.
  */
 goog.html.SafeUrl = function(opt_token, opt_content) {
   /**
    * The contained value of this SafeUrl.  The field has a purposely ugly
    * name to make (non-compiled) code that attempts to directly access this
    * field stand out.
-   * @private {!TrustedURL|string}
+   * @private {string}
    */
   this.privateDoNotAccessOrElseSafeUrlWrappedValue_ =
       ((opt_token === goog.html.SafeUrl.CONSTRUCTOR_TOKEN_PRIVATE_) &&
@@ -12107,17 +12062,6 @@ if (goog.DEBUG) {
  *     `goog.asserts.AssertionError`.
  */
 goog.html.SafeUrl.unwrap = function(safeUrl) {
-  return goog.html.SafeUrl.unwrapTrustedURL(safeUrl).toString();
-};
-
-
-/**
- * Unwraps value as TrustedURL if supported or as a string if not.
- * @param {!goog.html.SafeUrl} safeUrl
- * @return {!TrustedURL|string}
- * @see goog.html.SafeUrl.unwrap
- */
-goog.html.SafeUrl.unwrapTrustedURL = function(safeUrl) {
   // Perform additional Run-time type-checking to ensure that safeUrl is indeed
   // an instance of the expected type.  This provides some additional protection
   // against security bugs due to application code that disables type checks.
@@ -12627,11 +12571,7 @@ goog.html.SafeUrl.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ = {};
 goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse = function(
     url) {
   return new goog.html.SafeUrl(
-      goog.html.SafeUrl.CONSTRUCTOR_TOKEN_PRIVATE_,
-      goog.html.trustedtypes.PRIVATE_DO_NOT_ACCESS_OR_ELSE_POLICY ?
-          goog.html.trustedtypes.PRIVATE_DO_NOT_ACCESS_OR_ELSE_POLICY.createURL(
-              url) :
-          url);
+      goog.html.SafeUrl.CONSTRUCTOR_TOKEN_PRIVATE_, url);
 };
 
 
@@ -15182,7 +15122,7 @@ goog.dom.safe.setFormElementAction = function(form, url) {
     safeUrl = goog.html.SafeUrl.sanitizeAssertUnchanged(url);
   }
   goog.dom.asserts.assertIsHTMLFormElement(form).action =
-      goog.html.SafeUrl.unwrapTrustedURL(safeUrl);
+      goog.html.SafeUrl.unwrap(safeUrl);
 };
 
 /**
@@ -15213,7 +15153,7 @@ goog.dom.safe.setButtonFormAction = function(button, url) {
     safeUrl = goog.html.SafeUrl.sanitizeAssertUnchanged(url);
   }
   goog.dom.asserts.assertIsHTMLButtonElement(button).formAction =
-      goog.html.SafeUrl.unwrapTrustedURL(safeUrl);
+      goog.html.SafeUrl.unwrap(safeUrl);
 };
 /**
  * Safely assigns a URL to an input element's formaction property.
@@ -15243,7 +15183,7 @@ goog.dom.safe.setInputFormAction = function(input, url) {
     safeUrl = goog.html.SafeUrl.sanitizeAssertUnchanged(url);
   }
   goog.dom.asserts.assertIsHTMLInputElement(input).formAction =
-      goog.html.SafeUrl.unwrapTrustedURL(safeUrl);
+      goog.html.SafeUrl.unwrap(safeUrl);
 };
 
 /**
@@ -15295,7 +15235,7 @@ goog.dom.safe.setAnchorHref = function(anchor, url) {
   } else {
     safeUrl = goog.html.SafeUrl.sanitizeAssertUnchanged(url);
   }
-  anchor.href = goog.html.SafeUrl.unwrapTrustedURL(safeUrl);
+  anchor.href = goog.html.SafeUrl.unwrap(safeUrl);
 };
 
 
@@ -15321,7 +15261,7 @@ goog.dom.safe.setImageSrc = function(imageElement, url) {
     var allowDataUrl = /^data:image\//i.test(url);
     safeUrl = goog.html.SafeUrl.sanitizeAssertUnchanged(url, allowDataUrl);
   }
-  imageElement.src = goog.html.SafeUrl.unwrapTrustedURL(safeUrl);
+  imageElement.src = goog.html.SafeUrl.unwrap(safeUrl);
 };
 
 /**
@@ -15346,7 +15286,7 @@ goog.dom.safe.setAudioSrc = function(audioElement, url) {
     var allowDataUrl = /^data:audio\//i.test(url);
     safeUrl = goog.html.SafeUrl.sanitizeAssertUnchanged(url, allowDataUrl);
   }
-  audioElement.src = goog.html.SafeUrl.unwrapTrustedURL(safeUrl);
+  audioElement.src = goog.html.SafeUrl.unwrap(safeUrl);
 };
 
 /**
@@ -15371,7 +15311,7 @@ goog.dom.safe.setVideoSrc = function(videoElement, url) {
     var allowDataUrl = /^data:video\//i.test(url);
     safeUrl = goog.html.SafeUrl.sanitizeAssertUnchanged(url, allowDataUrl);
   }
-  videoElement.src = goog.html.SafeUrl.unwrapTrustedURL(safeUrl);
+  videoElement.src = goog.html.SafeUrl.unwrap(safeUrl);
 };
 
 /**
@@ -15410,7 +15350,7 @@ goog.dom.safe.setEmbedSrc = function(embed, url) {
  */
 goog.dom.safe.setFrameSrc = function(frame, url) {
   goog.dom.asserts.assertIsHTMLFrameElement(frame);
-  frame.src = goog.html.TrustedResourceUrl.unwrapTrustedURL(url);
+  frame.src = goog.html.TrustedResourceUrl.unwrap(url);
 };
 
 
@@ -15430,7 +15370,7 @@ goog.dom.safe.setFrameSrc = function(frame, url) {
  */
 goog.dom.safe.setIframeSrc = function(iframe, url) {
   goog.dom.asserts.assertIsHTMLIFrameElement(iframe);
-  iframe.src = goog.html.TrustedResourceUrl.unwrapTrustedURL(url);
+  iframe.src = goog.html.TrustedResourceUrl.unwrap(url);
 };
 
 
@@ -15485,14 +15425,14 @@ goog.dom.safe.setLinkHrefAndRel = function(link, url, rel) {
     goog.asserts.assert(
         url instanceof goog.html.TrustedResourceUrl,
         'URL must be TrustedResourceUrl because "rel" contains "stylesheet"');
-    link.href = goog.html.TrustedResourceUrl.unwrapTrustedURL(url);
+    link.href = goog.html.TrustedResourceUrl.unwrap(url);
   } else if (url instanceof goog.html.TrustedResourceUrl) {
-    link.href = goog.html.TrustedResourceUrl.unwrapTrustedURL(url);
+    link.href = goog.html.TrustedResourceUrl.unwrap(url);
   } else if (url instanceof goog.html.SafeUrl) {
-    link.href = goog.html.SafeUrl.unwrapTrustedURL(url);
+    link.href = goog.html.SafeUrl.unwrap(url);
   } else {  // string
     // SafeUrl.sanitize must return legitimate SafeUrl when passed a string.
-    link.href = goog.html.SafeUrl.unwrapTrustedURL(
+    link.href = goog.html.SafeUrl.unwrap(
         goog.html.SafeUrl.sanitizeAssertUnchanged(url));
   }
 };
@@ -15600,7 +15540,7 @@ goog.dom.safe.setLocationHref = function(loc, url) {
   } else {
     safeUrl = goog.html.SafeUrl.sanitizeAssertUnchanged(url);
   }
-  loc.href = goog.html.SafeUrl.unwrapTrustedURL(safeUrl);
+  loc.href = goog.html.SafeUrl.unwrap(safeUrl);
 };
 
 /**
@@ -15633,7 +15573,7 @@ goog.dom.safe.assignLocation = function(loc, url) {
   } else {
     safeUrl = goog.html.SafeUrl.sanitizeAssertUnchanged(url);
   }
-  loc.assign(goog.html.SafeUrl.unwrapTrustedURL(safeUrl));
+  loc.assign(goog.html.SafeUrl.unwrap(safeUrl));
 };
 
 
@@ -15664,7 +15604,7 @@ goog.dom.safe.replaceLocation = function(loc, url) {
   } else {
     safeUrl = goog.html.SafeUrl.sanitizeAssertUnchanged(url);
   }
-  loc.replace(goog.html.SafeUrl.unwrapTrustedURL(safeUrl));
+  loc.replace(goog.html.SafeUrl.unwrap(safeUrl));
 };
 
 
@@ -15707,7 +15647,7 @@ goog.dom.safe.openInWindow = function(
   }
   var win = opt_openerWin || goog.global;
   return win.open(
-      goog.html.SafeUrl.unwrapTrustedURL(safeUrl),
+      goog.html.SafeUrl.unwrap(safeUrl),
       // If opt_name is undefined, simply passing that in to open() causes IE to
       // reuse the current window instead of opening a new one. Thus we pass ''
       // in instead, which according to spec opens a new window. See
@@ -15791,8 +15731,6 @@ goog.dom.safe.createImageFromBlob = function(blob) {
 
 /**
  * @fileoverview Utilities for string manipulation.
- * @author pupius@google.com (Daniel Pupius)
- * @author arv@google.com (Erik Arvidsson)
  */
 
 
@@ -17250,7 +17188,6 @@ goog.string.editDistance = function(a, b) {
  * @see http://en.wikipedia.org/wiki/User_agent
  * For more information on browser brand, platform, or device see the other
  * sub-namespaces in goog.labs.userAgent (browser, platform, and device).
- *
  */
 
 goog.provide('goog.labs.userAgent.engine');
@@ -17410,7 +17347,6 @@ goog.labs.userAgent.engine.getVersionForKey_ = function(tuples, key) {
  * For more information on browser brand, rendering engine, or device see the
  * other sub-namespaces in goog.labs.userAgent (browser, engine, and device
  * respectively).
- *
  */
 
 goog.provide('goog.labs.userAgent.platform');
@@ -17592,8 +17528,6 @@ goog.labs.userAgent.platform.isVersionOrHigher = function(version) {
 
 /**
  * @fileoverview Useful compiler idioms.
- *
- * @author johnlenz@google.com (John Lenz)
  */
 
 goog.provide('goog.reflect');
@@ -17735,7 +17669,6 @@ goog.reflect.cache = function(cacheObj, key, valueFn, opt_keyFn) {
  * @see <a href="http://www.useragentstring.com/">User agent strings</a>
  * For information on the browser brand (such as Safari versus Chrome), see
  * goog.userAgent.product.
- * @author arv@google.com (Erik Arvidsson)
  * @see ../demos/useragent.html
  */
 
@@ -19022,7 +18955,6 @@ goog.debug.freeze = function(arg) {
 
 /**
  * @fileoverview Browser capability checks for the dom package.
- *
  */
 
 
@@ -19869,7 +19801,6 @@ goog.math.Coordinate.prototype.rotateDegrees = function(degrees, opt_center) {
 
 /**
  * @fileoverview A utility class for representing two-dimensional sizes.
- * @author brenneman@google.com (Shawn Brenneman)
  */
 
 
@@ -20104,7 +20035,6 @@ goog.math.Size.prototype.scaleToFit = function(target) {
  * to a different document object.  This is useful if you are working with
  * frames or multiple windows.
  *
- * @author arv@google.com (Erik Arvidsson)
  * @suppress {strictMissingProperties}
  */
 
@@ -23420,7 +23350,6 @@ goog.dom.DomHelper.prototype.getCanvasContext2D = goog.dom.getCanvasContext2D;
 
 /**
  * @fileoverview Collection of utility functions for Unicode character.
- *
  */
 
 goog.provide('goog.i18n.uChar');
@@ -23717,7 +23646,6 @@ goog.i18n.uChar.buildSupplementaryCodePoint = function(lead, trail) {
 /**
  * @fileoverview Provides inversion and inversion map functionality for storing
  * integer ranges and corresponding values.
- *
  */
 
 goog.provide('goog.structs.InversionMap');
@@ -23877,7 +23805,6 @@ goog.structs.InversionMap.prototype.getLeast = function(intKey) {
  * Unicode 10 UAX#29. Tailoring for Virama × Indic Letters is used.
  *
  * Reference: http://unicode.org/reports/tr29
- *
  */
 
 goog.provide('goog.i18n.GraphemeBreak');
@@ -24325,7 +24252,6 @@ goog.i18n.GraphemeBreak.hasGraphemeBreakStrings = function(a, b, opt_extended) {
 
 /**
  * @fileoverview Provides utility functions for formatting strings, numbers etc.
- *
  */
 
 goog.provide('goog.format');
@@ -33602,7 +33528,6 @@ switch (goog.LOCALE) {
  * popular currencies (like USD, EUR) and currencies somewhat relevant in the
  * area (like CNY in HK, though native currency is HKD). There is no guarantee
  * of uniqueness.
- *
  */
 
 
@@ -39035,7 +38960,6 @@ goog.i18n.NumberFormat.prototype.isCurrencyCodeBeforeValue = function() {
 
 /**
  * @fileoverview Python style iteration utilities.
- * @author arv@google.com (Erik Arvidsson)
  */
 
 
@@ -40326,7 +40250,6 @@ goog.iter.combinationsWithReplacement = function(iterable, length) {
 /**
  * @fileoverview Datastructure: Hash Map.
  *
- * @author arv@google.com (Erik Arvidsson)
  *
  * This file contains an implementation of a Map structure. It implements a lot
  * of the methods used in goog.structs so those functions work on hashes. This
@@ -40782,7 +40705,6 @@ goog.structs.Map.hasKey_ = function(obj, key) {
 /**
  * @fileoverview Generics method for collection-like classes and objects.
  *
- * @author arv@google.com (Erik Arvidsson)
  *
  * This file contains functions to work with collections. It supports using
  * Map, Set, Array and Object and other classes that implement collection-like
@@ -41164,9 +41086,6 @@ goog.structs.every = function(col, f, opt_obj) {
  *
  * Uses features of RFC 3986 for parsing/formatting URIs:
  *   http://www.ietf.org/rfc/rfc3986.txt
- *
- * @author gboyer@google.com (Garrett Boyer) - The "lightened" design.
- * @author msamuel@google.com (Mike Samuel) - Domain knowledge and regexes.
  */
 
 goog.provide('goog.uri.utils');
@@ -42253,8 +42172,6 @@ goog.uri.utils.makeUnique = function(uri) {
  * Some changes have been made to the interface (more like .NETs), though the
  * internal representation is now of un-encoded parts, this will change the
  * behavior slightly.
- *
- * @author msamuel@google.com (Mike Samuel)
  */
 
 goog.provide('goog.Uri');
@@ -43775,8 +43692,6 @@ goog.Uri.QueryData.prototype.extend = function(var_args) {
  *
  * The goal is to encompass data types used by Soy, especially to mark content
  * as known to be "safe".
- *
- * @author gboyer@google.com (Garrett Boyer)
  */
 
 goog.provide('goog.soy.data.SanitizedContent');
@@ -44296,7 +44211,6 @@ goog.soy.data.SanitizedCss.prototype.toSafeStyleSheet = function() {
 
 /**
  * @fileoverview Provides utility methods to render soy template.
- * @author chrishenry@google.com (Chris Henry)
  */
 
 goog.provide('goog.soy');

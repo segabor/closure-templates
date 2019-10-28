@@ -50,6 +50,7 @@ import com.google.template.soy.exprtree.FieldAccessNode;
 import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
+import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
 import com.google.template.soy.exprtree.OperatorNodes.AndOpNode;
@@ -148,6 +149,13 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
       SoyErrorKind.of("Cannot iterate over {0} of type {1}.");
   private static final SoyErrorKind BAD_INDEX_TYPE = SoyErrorKind.of("Bad index type {0} for {1}.");
   private static final SoyErrorKind BAD_KEY_TYPE = SoyErrorKind.of("Bad key type {0} for {1}.");
+  private static final SoyErrorKind BAD_LIST_COMP_TYPE =
+      SoyErrorKind.of("Bad list comprehension type. {0} has type: {1}, but should be a list.");
+
+  private static final SoyErrorKind BAD_LIST_COMP_FILTER_TYPE =
+      SoyErrorKind.of(
+          "List comprehension filter must evaluate to a boolean. {0} has type: {1}, but should be"
+              + " a boolean.");
   private static final SoyErrorKind BRACKET_ACCESS_NOT_SUPPORTED =
       SoyErrorKind.of("Type {0} does not support bracket access.");
   private static final SoyErrorKind BRACKET_ACCESS_NULLABLE_UNION =
@@ -632,6 +640,46 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
             typeRegistry.getOrCreateListType(
                 SoyTypes.computeLowestCommonType(typeRegistry, elementTypes)));
       }
+      tryApplySubstitution(node);
+    }
+
+    @Override
+    protected void visitListComprehensionNode(ListComprehensionNode node) {
+
+      // Resolve the listExpr in "[itemMapExpr for $var in listExpr if filterExpr]".
+      visit(node.getListExpr());
+
+      // Report an error if listExpr did not actually evaluate to a list.
+      if (!(node.getListExpr().getType() instanceof ListType)) {
+        errorReporter.report(
+            node.getListExpr().getSourceLocation(),
+            BAD_LIST_COMP_TYPE,
+            node.getListExpr().toSourceString(),
+            node.getListExpr().getType());
+        node.getListIterVar().setType(ErrorType.getInstance());
+      } else {
+        // Otherwise, use the list element type to set the type of the iterator ($var in this
+        // example).
+        node.getListIterVar().setType(((ListType) node.getListExpr().getType()).getElementType());
+      }
+
+      if (node.getFilterExpr() != null) {
+        // Visit the optional filter expr, and make sure it evaluates to a boolean.
+        visit(node.getFilterExpr());
+        if (!(node.getFilterExpr().getType() instanceof BoolType)) {
+          errorReporter.report(
+              node.getFilterExpr().getSourceLocation(),
+              BAD_LIST_COMP_FILTER_TYPE,
+              node.getFilterExpr().toSourceString(),
+              node.getFilterExpr().getType());
+        }
+      }
+
+      // Resolve the type of the itemMapExpr, and use it to determine the comprehension's resulting
+      // list type.
+      visit(node.getListItemTransformExpr());
+      node.setType(typeRegistry.getOrCreateListType(node.getListItemTransformExpr().getType()));
+
       tryApplySubstitution(node);
     }
 

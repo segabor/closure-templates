@@ -50,6 +50,7 @@ public abstract class Expression extends CodeChunk {
   public static final Expression LITERAL_NULL = id("null");
   public static final Expression LITERAL_UNDEFINED = id("undefined");
   public static final Expression LITERAL_EMPTY_STRING = Leaf.create("''", /* isCheap= */ true);
+  public static final Expression LITERAL_EMPTY_LIST = Leaf.create("[]", /* isCheap= */ true);
   public static final Expression EMPTY_OBJECT_LITERAL = Leaf.create("{}", /* isCheap= */ false);
   public static final Expression THIS = id("this");
 
@@ -212,6 +213,15 @@ public abstract class Expression extends CodeChunk {
   /** Creates a code chunk representing a javascript array literal. */
   public static Expression arrayLiteral(Iterable<? extends Expression> elements) {
     return ArrayLiteral.create(ImmutableList.copyOf(elements));
+  }
+
+  /** Creates a code chunk representing a javascript array comprehension. */
+  public static Expression arrayComprehension(
+      Expression listExpr,
+      Expression itemExpr,
+      Expression iterVarDeclTranslation,
+      Expression filterExpr) {
+    return ArrayComprehension.create(listExpr, itemExpr, iterVarDeclTranslation, filterExpr);
   }
 
   /**

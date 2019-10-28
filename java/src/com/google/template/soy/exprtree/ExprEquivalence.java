@@ -79,6 +79,15 @@ public final class ExprEquivalence extends Equivalence<ExprNode> {
         }
 
         @Override
+        protected Integer visitListComprehensionNode(ListComprehensionNode node) {
+          return Objects.hash(
+              node.getListIterVar(),
+              node.getListExpr(),
+              node.getListItemTransformExpr(),
+              node.getFilterExpr());
+        }
+
+        @Override
         protected Integer visitRecordLiteralNode(RecordLiteralNode node) {
           return recordLiteralFields(node).hashCode();
         }

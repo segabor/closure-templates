@@ -33,6 +33,7 @@ import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.exprtree.IntegerNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
+import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
 import com.google.template.soy.exprtree.NullNode;
@@ -199,6 +200,35 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
   protected PyExpr visitListLiteralNode(ListLiteralNode node) {
     return PyExprUtils.convertIterableToPyListExpr(
         node.getChildren().stream().map(n -> visit(n)).collect(Collectors.toList()));
+  }
+
+  @Override
+  protected PyExpr visitListComprehensionNode(ListComprehensionNode node) {
+
+    // Visit the originalListExpr in: [transformExpr for $foo in originalListExpr if filterExpr].
+    PyExpr originalListExpr = visit(node.getListExpr());
+
+    // Build a unique name for the iterator variable ($foo in this example), and push a local var
+    // frame for its scope.
+    String baseListIterVarName = node.getListIterVar().name();
+    String uniqueListIterVarName =
+        String.format("%sListComprehensions%d", baseListIterVarName, node.getNodeId());
+    localVarExprs.pushFrame();
+    localVarExprs.addVariable(
+        baseListIterVarName, new PyExpr(uniqueListIterVarName, Integer.MAX_VALUE));
+
+    // Now we can visit the transformExpr and filterExpr (if present).
+    PyExpr itemTransformExpr = visit(node.getListItemTransformExpr());
+    PyExpr filterExpr = node.getFilterExpr() == null ? null : visit(node.getFilterExpr());
+
+    // Build the full list comprehension expr.
+    PyExpr comprehensionExpr =
+        PyExprUtils.genPyListComprehensionExpr(
+            originalListExpr, itemTransformExpr, filterExpr, uniqueListIterVarName);
+
+    localVarExprs.popFrame();
+
+    return comprehensionExpr;
   }
 
   @Override
