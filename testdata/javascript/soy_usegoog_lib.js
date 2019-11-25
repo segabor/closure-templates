@@ -4553,10 +4553,9 @@ goog.asserts.assertExists = function(value, opt_message, var_args) {
  */
 goog.asserts.fail = function(opt_message, var_args) {
   if (goog.asserts.ENABLE_ASSERTS) {
-    goog.asserts.errorHandler_(
-        new goog.asserts.AssertionError(
-            'Failure' + (opt_message ? ': ' + opt_message : ''),
-            Array.prototype.slice.call(arguments, 1)));
+    goog.asserts.errorHandler_(new goog.asserts.AssertionError(
+        'Failure' + (opt_message ? ': ' + opt_message : ''),
+        Array.prototype.slice.call(arguments, 1)));
   }
 };
 
@@ -4686,10 +4685,12 @@ goog.asserts.assertBoolean = function(value, opt_message, var_args) {
  *     enabled.
  * @throws {goog.asserts.AssertionError} When the value is not an Element.
  * @closurePrimitive {asserts.matchesReturn}
+ * @deprecated Use goog.asserts.dom.assertIsElement instead.
  */
 goog.asserts.assertElement = function(value, opt_message, var_args) {
   if (goog.asserts.ENABLE_ASSERTS &&
-      (!goog.isObject(value) || value.nodeType != goog.dom.NodeType.ELEMENT)) {
+      (!goog.isObject(value) ||
+       /** @type {!Node} */ (value).nodeType != goog.dom.NodeType.ELEMENT)) {
     goog.asserts.doAssertFailure_(
         'Expected Element but got %s: %s.', [goog.typeOf(value), value],
         opt_message, Array.prototype.slice.call(arguments, 2));
@@ -4703,6 +4704,11 @@ goog.asserts.assertElement = function(value, opt_message, var_args) {
  * goog.asserts.ENABLE_ASSERTS is true.
  *
  * The compiler may tighten the type returned by this function.
+ *
+ * Do not use this to ensure a value is an HTMLElement or a subclass! Cross-
+ * document DOM inherits from separate - though identical - browser classes, and
+ * such a check will unexpectedly fail. Please use the methods in
+ * goog.asserts.dom for these purposes.
  *
  * @param {?} value The value to check.
  * @param {function(new: T, ...)} type A user-defined constructor.
@@ -8325,6 +8331,7 @@ goog.dom.asserts.assertIsElementType_ = function(o, typename) {
  *
  * @param {?Object} o The object whose type to assert.
  * @return {!HTMLAnchorElement}
+ * @deprecated Use goog.asserts.dom.assertIsHtmlAnchorElement instead.
  */
 goog.dom.asserts.assertIsHTMLAnchorElement = function(o) {
   return /** @type {!HTMLAnchorElement} */ (
@@ -8339,6 +8346,7 @@ goog.dom.asserts.assertIsHTMLAnchorElement = function(o) {
  *
  * @param {?Object} o The object whose type to assert.
  * @return {!HTMLButtonElement}
+ * @deprecated Use goog.asserts.dom.assertIsHtmlButtonElement instead.
  */
 goog.dom.asserts.assertIsHTMLButtonElement = function(o) {
   return /** @type {!HTMLButtonElement} */ (
@@ -8353,6 +8361,7 @@ goog.dom.asserts.assertIsHTMLButtonElement = function(o) {
  *
  * @param {?Object} o The object whose type to assert.
  * @return {!HTMLLinkElement}
+ * @deprecated Use goog.asserts.dom.assertIsHtmlLinkElement instead.
  */
 goog.dom.asserts.assertIsHTMLLinkElement = function(o) {
   return /** @type {!HTMLLinkElement} */ (
@@ -8367,6 +8376,7 @@ goog.dom.asserts.assertIsHTMLLinkElement = function(o) {
  *
  * @param {?Object} o The object whose type to assert.
  * @return {!HTMLImageElement}
+ * @deprecated Use goog.asserts.dom.assertIsHtmlImageElement instead.
  */
 goog.dom.asserts.assertIsHTMLImageElement = function(o) {
   return /** @type {!HTMLImageElement} */ (
@@ -8381,6 +8391,7 @@ goog.dom.asserts.assertIsHTMLImageElement = function(o) {
  *
  * @param {?Object} o The object whose type to assert.
  * @return {!HTMLAudioElement}
+ * @deprecated Use goog.asserts.dom.assertIsHtmlAudioElement instead.
  */
 goog.dom.asserts.assertIsHTMLAudioElement = function(o) {
   return /** @type {!HTMLAudioElement} */ (
@@ -8395,6 +8406,7 @@ goog.dom.asserts.assertIsHTMLAudioElement = function(o) {
  *
  * @param {?Object} o The object whose type to assert.
  * @return {!HTMLVideoElement}
+ * @deprecated Use goog.asserts.dom.assertIsHtmlVideoElement instead.
  */
 goog.dom.asserts.assertIsHTMLVideoElement = function(o) {
   return /** @type {!HTMLVideoElement} */ (
@@ -8409,6 +8421,7 @@ goog.dom.asserts.assertIsHTMLVideoElement = function(o) {
  *
  * @param {?Object} o The object whose type to assert.
  * @return {!HTMLInputElement}
+ * @deprecated Use goog.asserts.dom.assertIsHtmlInputElement instead.
  */
 goog.dom.asserts.assertIsHTMLInputElement = function(o) {
   return /** @type {!HTMLInputElement} */ (
@@ -8423,6 +8436,7 @@ goog.dom.asserts.assertIsHTMLInputElement = function(o) {
  *
  * @param {?Object} o The object whose type to assert.
  * @return {!HTMLTextAreaElement}
+ * @deprecated Use goog.asserts.dom.assertIsHtmlTextAreaElement instead.
  */
 goog.dom.asserts.assertIsHTMLTextAreaElement = function(o) {
   return /** @type {!HTMLTextAreaElement} */ (
@@ -8437,6 +8451,7 @@ goog.dom.asserts.assertIsHTMLTextAreaElement = function(o) {
  *
  * @param {?Object} o The object whose type to assert.
  * @return {!HTMLCanvasElement}
+ * @deprecated Use goog.asserts.dom.assertIsHtmlCanvasElement instead.
  */
 goog.dom.asserts.assertIsHTMLCanvasElement = function(o) {
   return /** @type {!HTMLCanvasElement} */ (
@@ -8451,6 +8466,7 @@ goog.dom.asserts.assertIsHTMLCanvasElement = function(o) {
  *
  * @param {?Object} o The object whose type to assert.
  * @return {!HTMLEmbedElement}
+ * @deprecated Use goog.asserts.dom.assertIsHtmlEmbedElement instead.
  */
 goog.dom.asserts.assertIsHTMLEmbedElement = function(o) {
   return /** @type {!HTMLEmbedElement} */ (
@@ -8465,6 +8481,7 @@ goog.dom.asserts.assertIsHTMLEmbedElement = function(o) {
  *
  * @param {?Object} o The object whose type to assert.
  * @return {!HTMLFormElement}
+ * @deprecated Use goog.asserts.dom.assertIsHtmlFormElement instead.
  */
 goog.dom.asserts.assertIsHTMLFormElement = function(o) {
   return /** @type {!HTMLFormElement} */ (
@@ -8479,6 +8496,7 @@ goog.dom.asserts.assertIsHTMLFormElement = function(o) {
  *
  * @param {?Object} o The object whose type to assert.
  * @return {!HTMLFrameElement}
+ * @deprecated Use goog.asserts.dom.assertIsHtmlFrameElement instead.
  */
 goog.dom.asserts.assertIsHTMLFrameElement = function(o) {
   return /** @type {!HTMLFrameElement} */ (
@@ -8493,6 +8511,7 @@ goog.dom.asserts.assertIsHTMLFrameElement = function(o) {
  *
  * @param {?Object} o The object whose type to assert.
  * @return {!HTMLIFrameElement}
+ * @deprecated Use goog.asserts.dom.assertIsHtmlIFrameElement instead.
  */
 goog.dom.asserts.assertIsHTMLIFrameElement = function(o) {
   return /** @type {!HTMLIFrameElement} */ (
@@ -8507,6 +8526,7 @@ goog.dom.asserts.assertIsHTMLIFrameElement = function(o) {
  *
  * @param {?Object} o The object whose type to assert.
  * @return {!HTMLObjectElement}
+ * @deprecated Use goog.asserts.dom.assertIsHtmlObjectElement instead.
  */
 goog.dom.asserts.assertIsHTMLObjectElement = function(o) {
   return /** @type {!HTMLObjectElement} */ (
@@ -8521,6 +8541,7 @@ goog.dom.asserts.assertIsHTMLObjectElement = function(o) {
  *
  * @param {?Object} o The object whose type to assert.
  * @return {!HTMLScriptElement}
+ * @deprecated Use goog.asserts.dom.assertIsHtmlScriptElement instead.
  */
 goog.dom.asserts.assertIsHTMLScriptElement = function(o) {
   return /** @type {!HTMLScriptElement} */ (
@@ -8537,8 +8558,8 @@ goog.dom.asserts.assertIsHTMLScriptElement = function(o) {
 goog.dom.asserts.debugStringForType_ = function(value) {
   if (goog.isObject(value)) {
     try {
-      return value.constructor.displayName || value.constructor.name ||
-          Object.prototype.toString.call(value);
+      return /** @type {string|undefined} */ (value.constructor.displayName) ||
+          value.constructor.name || Object.prototype.toString.call(value);
     } catch (e) {
       return '<object could not be stringified>';
     }
@@ -25703,31 +25724,31 @@ goog.i18n.CompactNumberFormatSymbols_az = {
       'other': '000K'
     },
     '1000000': {
-      'other': '0M'
+      'other': '0 mln'
     },
     '10000000': {
-      'other': '00M'
+      'other': '00 mln'
     },
     '100000000': {
-      'other': '000M'
+      'other': '000 mln'
     },
     '1000000000': {
-      'other': '0G'
+      'other': '0 mlrd'
     },
     '10000000000': {
-      'other': '00G'
+      'other': '00 mlrd'
     },
     '100000000000': {
-      'other': '000G'
+      'other': '000 mlrd'
     },
     '1000000000000': {
-      'other': '0T'
+      'other': '0 trln'
     },
     '10000000000000': {
-      'other': '00T'
+      'other': '00 trln'
     },
     '100000000000000': {
-      'other': '000T'
+      'other': '000 trln'
     }
   },
   COMPACT_DECIMAL_LONG_PATTERN: {
@@ -25964,7 +25985,7 @@ goog.i18n.CompactNumberFormatSymbols_bn = {
       'other': '000 কো'
     },
     '10000000000': {
-      'other': '0000 কো'
+      'other': '00শত কো'
     },
     '100000000000': {
       'other': '00000 কো'
@@ -27006,15 +27027,6 @@ goog.i18n.CompactNumberFormatSymbols_es_419 = {
     },
     '100000': {
       'other': '000 k'
-    },
-    '1000000000': {
-      'other': '0k M'
-    },
-    '10000000000': {
-      'other': '00k M'
-    },
-    '100000000000': {
-      'other': '000k M'
     }
   },
   COMPACT_DECIMAL_LONG_PATTERN: {
@@ -27050,20 +27062,17 @@ goog.i18n.CompactNumberFormatSymbols_es_MX = {
     },
     '100000': {
       'other': '000 k'
-    },
-    '1000000000': {
-      'other': '0000 M'
-    },
-    '10000000000': {
-      'other': '00 mil M'
-    },
-    '100000000000': {
-      'other': '000 mil M'
     }
   },
   COMPACT_DECIMAL_LONG_PATTERN: {
     '1000000000000': {
       'other': '0 billones'
+    },
+    '10000000000000': {
+      'other': '00 billones'
+    },
+    '100000000000000': {
+      'other': '000 billones'
     }
   }
 };
@@ -27074,6 +27083,9 @@ goog.i18n.CompactNumberFormatSymbols_es_MX = {
  */
 goog.i18n.CompactNumberFormatSymbols_es_US = {
   COMPACT_DECIMAL_SHORT_PATTERN: {
+    '1000': {
+      'other': '0 K'
+    },
     '10000': {
       'other': '00 K'
     },
@@ -27625,24 +27637,6 @@ goog.i18n.CompactNumberFormatSymbols_fr = {
  */
 goog.i18n.CompactNumberFormatSymbols_fr_CA = {
   COMPACT_DECIMAL_SHORT_PATTERN: {
-    '1000': {
-      'other': '0 k'
-    },
-    '10000': {
-      'other': '00 k'
-    },
-    '100000': {
-      'other': '000 k'
-    },
-    '1000000': {
-      'other': '0 M'
-    },
-    '10000000': {
-      'other': '00 M'
-    },
-    '100000000': {
-      'other': '000 M'
-    },
     '1000000000': {
       'other': '0 G'
     },
@@ -27671,15 +27665,6 @@ goog.i18n.CompactNumberFormatSymbols_fr_CA = {
     },
     '100000': {
       'other': '000 mille'
-    },
-    '1000000': {
-      'other': '0 millions'
-    },
-    '10000000': {
-      'other': '00 millions'
-    },
-    '100000000': {
-      'other': '000 millions'
     }
   }
 };
@@ -31970,13 +31955,15 @@ goog.i18n.CompactNumberFormatSymbols_sv = {
 goog.i18n.CompactNumberFormatSymbols_sw = {
   COMPACT_DECIMAL_SHORT_PATTERN: {
     '1000': {
-      'other': 'elfu 0;elfu -0'
+      // Patching items with negative options until compact formatting is fixed.
+      // b/143315130
+      'other': 'elfu 0' //;elfu -0'
     },
     '10000': {
-      'other': 'elfu 00;elfu -00'
+      'other': 'elfu 00'  //;elfu -00'
     },
     '100000': {
-      'other': 'elfu 000;elfu -000'
+      'other': 'elfu 000'  //;elfu -000'
     },
     '1000000': {
       'other': '0M'
@@ -31988,13 +31975,13 @@ goog.i18n.CompactNumberFormatSymbols_sw = {
       'other': '000M'
     },
     '1000000000': {
-      'other': '0B;-0B'
+      'other': '0B'  //;-0B'
     },
     '10000000000': {
-      'other': '00B;-00B'
+      'other': '00B'  //;-00B'
     },
     '100000000000': {
-      'other': '000B;-000B'
+      'other': '000B'  //;-000B'
     },
     '1000000000000': {
       'other': '0T'
@@ -32008,40 +31995,40 @@ goog.i18n.CompactNumberFormatSymbols_sw = {
   },
   COMPACT_DECIMAL_LONG_PATTERN: {
     '1000': {
-      'other': 'elfu 0;elfu -0'
+      'other': 'elfu 0'  //;elfu -0'
     },
     '10000': {
-      'other': 'elfu 00;elfu -00'
+      'other': 'elfu 00'  //;elfu -00'
     },
     '100000': {
-      'other': 'elfu 000;elfu -000'
+      'other': 'elfu 000' //;elfu -000'
     },
     '1000000': {
-      'other': 'milioni 0;milioni -0'
+      'other': 'milioni 0' //;milioni -0'
     },
     '10000000': {
-      'other': 'milioni 00;milioni -00'
+      'other': 'milioni 00'  //;milioni -00'
     },
     '100000000': {
-      'other': 'milioni 000;milioni -000'
+      'other': 'milioni 000'  //;milioni -000'
     },
     '1000000000': {
-      'other': 'bilioni 0;bilioni -0'
+      'other': 'bilioni 0'//;bilioni -0'
     },
     '10000000000': {
-      'other': 'bilioni 00;bilioni -00'
+      'other': 'bilioni 00'  //;bilioni -00'
     },
     '100000000000': {
-      'other': 'bilioni 000;bilioni -000'
+      'other': 'bilioni 000'  //;bilioni -000'
     },
     '1000000000000': {
-      'other': 'trilioni 0;trilioni -0'
+      'other': 'trilioni 0'  //;trilioni -0'
     },
     '10000000000000': {
-      'other': 'trilioni 00;trilioni -00'
+      'other': 'trilioni 00'  //;trilioni -00'
     },
     '100000000000000': {
-      'other': 'trilioni 000;trilioni -000'
+      'other': 'trilioni 000'  //;trilioni -000'
     }
   }
 };
@@ -32827,13 +32814,13 @@ goog.i18n.CompactNumberFormatSymbols_zh = {
       'other': '0000亿'
     },
     '1000000000000': {
-      'other': '0兆'
+      'other': '0万亿'
     },
     '10000000000000': {
-      'other': '00兆'
+      'other': '00万亿'
     },
     '100000000000000': {
-      'other': '000兆'
+      'other': '000万亿'
     }
   },
   COMPACT_DECIMAL_LONG_PATTERN: {
@@ -32865,13 +32852,13 @@ goog.i18n.CompactNumberFormatSymbols_zh = {
       'other': '0000亿'
     },
     '1000000000000': {
-      'other': '0兆'
+      'other': '0万亿'
     },
     '10000000000000': {
-      'other': '00兆'
+      'other': '00万亿'
     },
     '100000000000000': {
-      'other': '000兆'
+      'other': '000万亿'
     }
   }
 };
@@ -34846,7 +34833,7 @@ goog.i18n.NumberFormatSymbols_en_IN = {
   DECIMAL_PATTERN: '#,##,##0.###',
   SCIENTIFIC_PATTERN: '#E0',
   PERCENT_PATTERN: '#,##,##0%',
-  CURRENCY_PATTERN: '¤ #,##,##0.00',
+  CURRENCY_PATTERN: '¤#,##,##0.00',
   DEF_CURRENCY_CODE: 'INR'
 };
 
@@ -35802,7 +35789,7 @@ goog.i18n.NumberFormatSymbols_mk = {
   NAN: 'NaN',
   DECIMAL_PATTERN: '#,##0.###',
   SCIENTIFIC_PATTERN: '#E0',
-  PERCENT_PATTERN: '#,##0%',
+  PERCENT_PATTERN: '#,##0 %',
   CURRENCY_PATTERN: '#,##0.00 ¤',
   DEF_CURRENCY_CODE: 'MKD'
 };
@@ -44772,6 +44759,7 @@ function $$populateMap(proto, jspbMap, map) {
  * Determines if the argument matches the soy.map.Map interface.
  * @param {?} map The object to check.
  * @return {boolean} True if it is a soy.map.Map, false otherwise.
+ * @suppress {missingProperties}
  */
 function $$isSoyMap(map) {
   return goog.isObject(map) && goog.isFunction(map.get) &&
@@ -45019,7 +45007,7 @@ soydata.SanitizedHtml.from = function(value) {
  * @private
  */
 soydata.$$EMPTY_STRING_ = {
-  VALUE: ''
+  VALUE: '',
 };
 
 
@@ -46916,7 +46904,7 @@ soy.esc.$$ESCAPE_MAP_FOR_NORMALIZE_HTML__AND__ESCAPE_HTML_NOSPACE__AND__NORMALIZ
   '\x85': '\x26#133;',
   '\xa0': '\x26#160;',
   '\u2028': '\x26#8232;',
-  '\u2029': '\x26#8233;'
+  '\u2029': '\x26#8233;',
 };
 
 /**
@@ -46967,7 +46955,7 @@ soy.esc.$$ESCAPE_MAP_FOR_ESCAPE_JS_STRING__AND__ESCAPE_JS_REGEX_ = {
   '\x7d': '\\x7d',
   '\x85': '\\x85',
   '\u2028': '\\u2028',
-  '\u2029': '\\u2029'
+  '\u2029': '\\u2029',
 };
 
 /**
@@ -47011,7 +46999,7 @@ soy.esc.$$ESCAPE_MAP_FOR_ESCAPE_CSS_STRING_ = {
   '\x85': '\\85 ',
   '\xa0': '\\a0 ',
   '\u2028': '\\2028 ',
-  '\u2029': '\\2029 '
+  '\u2029': '\\2029 ',
 };
 
 /**
@@ -47093,7 +47081,7 @@ soy.esc.$$ESCAPE_MAP_FOR_NORMALIZE_URI__AND__FILTER_NORMALIZE_URI__AND__FILTER_N
   '\uff1f': '%EF%BC%9F',
   '\uff20': '%EF%BC%A0',
   '\uff3b': '%EF%BC%BB',
-  '\uff3d': '%EF%BC%BD'
+  '\uff3d': '%EF%BC%BD',
 };
 
 /**
@@ -47152,7 +47140,7 @@ soy.esc.$$MATCHER_FOR_NORMALIZE_URI__AND__FILTER_NORMALIZE_URI__AND__FILTER_NORM
  * A pattern that vets values produced by the named directives.
  * @private {!RegExp}
  */
-soy.esc.$$FILTER_FOR_FILTER_CSS_VALUE_ = /^(?!-*(?:expression|(?:moz-)?binding))(?:(?:[.#]?-?(?:[_a-z0-9-]+)(?:-[_a-z0-9-]+)*-?|(?:rgb|hsl)a?\([0-9.%,\u0020]+\)|-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[a-z]{1,4}|%)?|!important)(?:\s+|$))*$/i;
+soy.esc.$$FILTER_FOR_FILTER_CSS_VALUE_ = /^(?!-*(?:expression|(?:moz-)?binding))(?:(?:[.#]?-?(?:[_a-z0-9-]+)(?:-[_a-z0-9-]+)*-?|(?:rgb|hsl)a?\([0-9.%,\u0020]+\)|-?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[a-z]{1,4}|%)?|!important)(?:\s*[,\u0020]\s*|$))*$/i;
 
 /**
  * A pattern that vets values produced by the named directives.

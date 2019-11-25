@@ -7,6 +7,7 @@
 import 'goog:soy.velog'; // from //javascript/template/soy:soyutils_velog
 
 import * as googSoy from 'goog:goog.soy';  // from //javascript/closure/soy
+import Message from 'goog:jspb.Message'; // from //javascript/apps/jspb:message_lib
 import {$$VisualElementData, ElementMetadata, Logger} from 'goog:soy.velog';  // from //javascript/template/soy:soyutils_velog
 import * as incrementaldom from 'incrementaldom';  // from //third_party/javascript/incremental_dom:incrementaldom
 
@@ -107,22 +108,26 @@ export class IncrementalDomRenderer implements IdomRendererApi {
   openSSR(nameOrCtor: string, key = '', data: unknown = null) {
     const el = incrementaldom.open(nameOrCtor, key);
     this.visit(el);
+
+    // `data` is only passed by {skip} elements that are roots of templates.
+    if (goog.DEBUG && el && data) {
+      maybeReportErrors(el, data);
+    }
+
+    // If the element has already been rendered, tell the template to skip it.
+    // Caveat: if the element has only attributes, we will skip regardless.
+    if (el && el.hasChildNodes()) {
+      this.skip();
+      // And exit its node so that we will continue with the next node.
+      this.close();
+      return false;
+    }
+    // If we have not yet populated this element, tell the template to do so.
+    // Only set the marker attribute when actually populating the element.
     if (goog.DEBUG) {
       this.attr('soy-server-key', key);
     }
-    // Keep going since either elements are being created or continuing will
-    // be a no-op.
-    if (!el || !el.hasChildNodes()) {
-      return true;
-    }
-    // Data is only passed by {skip} elements that are roots of templates.
-    if (goog.DEBUG && data) {
-      maybeReportErrors(el, data);
-    }
-    // Caveat: if the element has only attributes, we will skip regardless.
-    this.skip();
-    this.close();
-    return false;
+    return true;
   }
 
   // For users extending IncrementalDomRenderer
@@ -380,7 +385,7 @@ export function isMatchingKey(
 }
 
 function maybeReportErrors(el: HTMLElement, data: unknown) {
-  const stringifiedParams = JSON.stringify(data, null, 2);
+  const stringifiedParams = JSON.stringify(data, jsonProtoReplacer, 2);
   if (!el.__lastParams) {
     el.__lastParams = stringifiedParams;
     return;
@@ -397,6 +402,18 @@ New parameters: ${stringifiedParams}
 Element:
 ${el.dataset['debugSoy'] || el.outerHTML}`);
   }
+}
+
+/** Serializes JSPB protos using toObject if available. */
+function jsonProtoReplacer(key: string, value: unknown) {
+  if (value instanceof Message && !COMPILED &&
+      // tslint:disable-next-line:no-any Call undeclared function.
+      typeof (value as any)['toObject'] === 'function') {
+    // tslint:disable-next-line:no-any Call undeclared function.
+    JSON.stringify((value as any)['toObject'](), null, 2);
+  }
+  // All other values are serialized as-is, which will recursibly call this.
+  return value;
 }
 
 
