@@ -381,7 +381,6 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       }
 
       swiftCodeBuilder.appendLine("switch ", switchValueExpr.getText(), " {");
-      swiftCodeBuilder.increaseIndent();
 
       for (SoyNode child : node.getChildren()) {
         if (child instanceof SwitchCaseNode) {
@@ -413,7 +412,6 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
         }
       }
       
-      swiftCodeBuilder.decreaseIndent();
       swiftCodeBuilder.appendLine("}");
     }
 
