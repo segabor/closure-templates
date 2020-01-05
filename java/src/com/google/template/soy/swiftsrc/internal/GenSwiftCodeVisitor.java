@@ -4,6 +4,7 @@ import static com.google.template.soy.swiftsrc.internal.TranslateToSwiftExprVisi
 import static com.google.template.soy.swiftsrc.internal.TranslateToSwiftExprVisitor.IJDATA_INTERNAL_VAR_NAME;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import com.google.auto.value.AutoValue;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -30,6 +31,7 @@ import com.google.template.soy.soytree.PrintNode;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyNode;
+import com.google.template.soy.soytree.SoyNode.BlockNode;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
 import com.google.template.soy.soytree.SwitchCaseNode;
 import com.google.template.soy.soytree.SwitchDefaultNode;
@@ -382,6 +384,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
       swiftCodeBuilder.appendLine("switch ", switchValueExpr.getText(), " {");
 
+      SwitchDefaultNode defaultCaseNode = null;
       for (SoyNode child : node.getChildren()) {
         if (child instanceof SwitchCaseNode) {
           SwitchCaseNode scn = (SwitchCaseNode) child;
@@ -399,19 +402,24 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
             swiftCodeBuilder.decreaseIndent();
           }
         } else if (child instanceof SwitchDefaultNode) {
-          SwitchDefaultNode sdn = (SwitchDefaultNode) child;
-
-          swiftCodeBuilder.appendLine("default:");
-
-          // build default case
-          swiftCodeBuilder.increaseIndent();
-          visitChildren(sdn);
-          swiftCodeBuilder.decreaseIndent();
+          defaultCaseNode = (SwitchDefaultNode) child;
         } else {
           throw new AssertionError("Unexpected switch child node type. Child: " + child);
         }
       }
       
+      // build default case
+      swiftCodeBuilder.appendLine("default:");
+      if (defaultCaseNode != null) {
+        swiftCodeBuilder.increaseIndent();
+        visitChildren(defaultCaseNode);
+        swiftCodeBuilder.decreaseIndent();
+      } else {
+        swiftCodeBuilder.increaseIndent();
+        swiftCodeBuilder.appendLine("()");
+        swiftCodeBuilder.decreaseIndent();
+      }
+
       swiftCodeBuilder.appendLine("}");
     }
 
