@@ -215,23 +215,18 @@ public class GenSwiftCallExprVisitor extends AbstractReturningSoyNodeVisitor<Swi
 
     // Cases 2 and 3: Additional params with and without original data to pass.
     if (callNode.isPassingData()) {
-      // FIXME
-      // make a shallow copy so we don't accidentally modify the param
-      dataToPass = "dict(" + dataToPass + ")";
-      return "runtime.merge_into_dict(" + dataToPass + ", " + additionalParamsExpr.getText() + ")";
+      return dataToPass + ".merging(" + additionalParamsExpr.getText() + ")";
     } else {
       return additionalParamsExpr.getText();
     }
   }
 
-  // FIXME
-  private SwiftExpr wrapAsSanitizedContent(SanitizedContentKind contentKind, SwiftExpr pyExpr) {
-    String sanitizer = NodeContentKinds.toPySanitizedContentOrdainer(contentKind);
-    String approval =
-        "sanitize.IActuallyUnderstandSoyTypeSafetyAndHaveSecurityApproval("
-            + "'Internally created Sanitization.')";
-    return new SwiftExpr(
-        sanitizer + "(" + pyExpr.getText() + ", approval=" + approval + ")", Integer.MAX_VALUE);
+  private SwiftExpr wrapAsSanitizedContent(SanitizedContentKind contentKind, SwiftExpr swiftExpr) {
+    return new SwiftExpr("UnsafeSanitizedContentOrdainer.ordainAsSafe(value: " + swiftExpr.getText() + ", kind: " + convertSanitizedContentKindToSoyKitType(contentKind) + ")", Integer.MAX_VALUE);
+  }
+
+  private String convertSanitizedContentKindToSoyKitType(SanitizedContentKind contentKind) {
+    return "." + contentKind.name();
   }
 
   /**
