@@ -108,14 +108,14 @@ public final class MsgFuncGenerator {
   }
 
   private SwiftStringExpr swiftFuncForRawTextMsg() {
-    String pyMsgText = processMsgPartsHelper(msgParts, escaperForSwiftormatString);
+    String pyMsgText = processMsgPartsHelper(msgParts, escaperForSwiftFormatString);
 
     prepareFunc.addArg(msgId).addArg(pyMsgText);
     return renderFunc.addArg(prepareFunc.asSwiftExpr()).asSwiftStringExpr();
   }
 
   private SwiftStringExpr swiftFuncForGeneralMsg() {
-    String pyMsgText = processMsgPartsHelper(msgParts, escaperForSwiftormatString);
+    String pyMsgText = processMsgPartsHelper(msgParts, escaperForSwiftFormatString);
     Map<SwiftExpr, SwiftExpr> nodePyVarToPyExprMap = collectVarNameListAndToPyExprMap();
 
     prepareFunc
@@ -138,7 +138,7 @@ public final class MsgFuncGenerator {
     for (Case<SoyMsgPluralCaseSpec> pluralCase : pluralPart.getCases()) {
       caseSpecStrToMsgTexts.put(
           new SwiftStringExpr("\"" + pluralCase.spec() + "\""),
-          new SwiftStringExpr("\"" + processMsgPartsHelper(pluralCase.parts(), nullEscaper) + "\""));
+          new SwiftStringExpr("\"" + processMsgPartsHelper(pluralCase.parts(), escaperForIcuSection) + "\""));
     }
 
     prepareFunc
@@ -162,7 +162,7 @@ public final class MsgFuncGenerator {
 
     ImmutableList<SoyMsgPart> msgPartsInIcuSyntax =
         IcuSyntaxUtils.convertMsgPartsToEmbeddedIcuSyntax(msgParts);
-    String swiftMsgText = processMsgPartsHelper(msgPartsInIcuSyntax, nullEscaper);
+    String swiftMsgText = processMsgPartsHelper(msgPartsInIcuSyntax, escaperForIcuSection);
 
     prepareFunc
         .addArg(msgId)
@@ -259,7 +259,7 @@ public final class MsgFuncGenerator {
    *
    * @see "https://docs.python.org/2/library/string.html#formatstrings"
    */
-  private static final Function<String, String> escaperForSwiftormatString =
+  private static final Function<String, String> escaperForSwiftFormatString =
       new Function<String, String>() {
         @Override
         public String apply(String str) {
@@ -267,12 +267,10 @@ public final class MsgFuncGenerator {
         }
       };
 
-  /** A mapper which does nothing. */
-  private static final Function<String, String> nullEscaper =
-      new Function<String, String>() {
-        @Override
-        public String apply(String str) {
-          return str;
-        }
-      };
+  /**
+   * ICU messages use single quotes for escaping internal parts. This will escape the single quotes
+   * so they can be embedded in a python string literal.
+   */
+  private static final Function<String, String> escaperForIcuSection =
+      str -> str.replace("'", "\\\'");
 }
