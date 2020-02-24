@@ -88,7 +88,13 @@ public final class ParseExpressionTest {
       "function.with.Dots($arg).field",
       "proto().field",
       "pro.to(a: $a).field",
-      "record(a : 'b').a"
+      "record(a : 'b').a",
+      "$aaa.method()",
+      "$aaa?.method()",
+      "$aaa.method(1, 2, 3)",
+      "$aaa.method(A.b.c)",
+      "$aaa.method().field",
+      "$aaa.method()[0]"
     };
     for (String dataRef : dataRefs) {
       assertThatExpression(dataRef).isValidExpression();
@@ -201,7 +207,7 @@ public final class ParseExpressionTest {
 
   @Test
   public void testRecognizeRecordLiterals() {
-    assertThatExpression("record()").isValidExpression();
+    assertThatExpression("record()").isNotValidExpression();
     assertThatExpression("record(,)").isNotValidExpression();
     assertThatExpression("record(aa: 55)").isValidExpression();
     assertThatExpression("record(aa: 55,)").isValidExpression();
@@ -266,7 +272,6 @@ public final class ParseExpressionTest {
     assertThatExpression("pro.to(a: 1, b: $foo, c: proto())").isValidExpression();
 
     assertThatExpression("$isFirst()").isNotValidExpression();
-    assertThatExpression("$boo.isFirst()").isNotValidExpression();
     assertThatExpression("proto.mixed($a, b: $b)").isNotValidExpression();
     assertThatExpression("proto.mixed(a: $a, $b)").isNotValidExpression();
   }
@@ -423,9 +428,7 @@ public final class ParseExpressionTest {
 
   @Test
   public void testParseRecords() {
-    ExprNode expr = assertThatExpression("record()").isValidExpression();
-    assertThat(((RecordLiteralNode) expr).numChildren()).isEqualTo(0);
-    expr = assertThatExpression("record(aa: 55)").isValidExpression();
+    ExprNode expr = assertThatExpression("record(aa: 55)").isValidExpression();
     assertThat(((RecordLiteralNode) expr).numChildren()).isEqualTo(1);
     expr = assertThatExpression("record(aa: 55,)").isValidExpression();
     assertThat(((RecordLiteralNode) expr).numChildren()).isEqualTo(1);
@@ -464,7 +467,8 @@ public final class ParseExpressionTest {
   @Test
   public void testParseProtoInitCall() throws Exception {
     ExprNode expr =
-        assertThatExpression("my.Proto(a: 1, b: glo.bal, c: fn('str'))").isValidExpression();
+        assertThatExpression("my.Proto(a: 1, b: glo.bal, c: fn('str'), ext.name: 'str')")
+            .isValidExpression();
     ProtoInitNode protoFn = (ProtoInitNode) expr;
     assertThat(protoFn.getProtoName()).isEqualTo("my.Proto");
     assertThat(protoFn.getParamNames())
@@ -472,15 +476,17 @@ public final class ParseExpressionTest {
             Correspondence.from(
                 (Identifier actual, String expected) -> actual.identifier().equals(expected),
                 "is equal to"))
-        .containsExactly("a", "b", "c")
+        .containsExactly("a", "b", "c", "ext.name")
         .inOrder();
-    assertThat(protoFn.numChildren()).isEqualTo(3);
+    assertThat(protoFn.numChildren()).isEqualTo(4);
     assertThat(((IntegerNode) protoFn.getChild(0)).getValue()).isEqualTo(1);
     assertThat(((GlobalNode) protoFn.getChild(1)).getName()).isEqualTo("glo.bal");
     assertThat(((StringNode) ((FunctionNode) protoFn.getChild(2)).getChild(0)).getValue())
         .isEqualTo("str");
+    assertThat(((StringNode) protoFn.getChild(3)).getValue()).isEqualTo("str");
 
-    assertThatExpression("my.Proto(a: 1, b: glo.bal, c: fn('str'),)").isValidExpression();
+    assertThatExpression("my.Proto(a: 1, b: glo.bal, c: fn('str'), ext.name: 'str',)")
+        .isValidExpression();
   }
 
   @Test

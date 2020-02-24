@@ -219,10 +219,6 @@ final class ParseErrors {
         return "{switch";
       case SoyFileParserConstants.CMD_BEGIN_CASE:
         return "{case";
-      case SoyFileParserConstants.CMD_BEGIN_XID:
-      case SoyFileParserConstants.CMD_BEGIN_CSS:
-      case SoyFileParserConstants.CMD_BEGIN_FOREACH:
-        return null; // want to exclude this from expectation messages
       case SoyFileParserConstants.CMD_BEGIN_PRINT:
         return "{print";
       case SoyFileParserConstants.CMD_BEGIN_KEY:
@@ -264,9 +260,6 @@ final class ParseErrors {
         return "\'for\'";
       case SoyFileParserConstants.IN:
         return "\'in\'";
-
-      case SoyFileParserConstants.TEMPLATE_LINE_COMMENT:
-        return null; // Comments are ubiquitous and unnecessary in error messages.
 
       case SoyFileParserConstants.UNEXPECTED_TOKEN:
         throw new AssertionError("we should never expect the unexpected token");

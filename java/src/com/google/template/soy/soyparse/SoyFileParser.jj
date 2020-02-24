@@ -57,8 +57,9 @@ import com.google.template.soy.base.internal.BaseUtils;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.base.internal.QuoteStyle;
-import com.google.template.soy.error.ErrorReporter;
+import com.google.template.soy.basetree.Node;
 import com.google.template.soy.error.ErrorReporter.Checkpoint;
+import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.error.SoyErrorKind.StyleAllowance;
 import com.google.template.soy.exprtree.AbstractParentExprNode;
@@ -73,6 +74,7 @@ import com.google.template.soy.exprtree.IntegerNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
+import com.google.template.soy.exprtree.MethodNode;
 import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.NullNode;
 import com.google.template.soy.exprtree.Operator;
@@ -88,7 +90,9 @@ import com.google.template.soy.soytree.CallNode;
 import com.google.template.soy.soytree.CallParamContentNode;
 import com.google.template.soy.soytree.CallParamNode;
 import com.google.template.soy.soytree.CallParamValueNode;
+import com.google.template.soy.soytree.CaseOrDefaultNode;
 import com.google.template.soy.soytree.CommandTagAttribute;
+import com.google.template.soy.soytree.Comment;
 import com.google.template.soy.soytree.DebuggerNode;
 import com.google.template.soy.soytree.ForIfemptyNode;
 import com.google.template.soy.soytree.ForNode;
@@ -100,7 +104,6 @@ import com.google.template.soy.soytree.KeyNode;
 import com.google.template.soy.soytree.LetContentNode;
 import com.google.template.soy.soytree.LetNode;
 import com.google.template.soy.soytree.LetValueNode;
-import com.google.template.soy.soytree.LineCommentNode;
 import com.google.template.soy.soytree.LogNode;
 import com.google.template.soy.soytree.MsgFallbackGroupNode;
 import com.google.template.soy.soytree.MsgNode;
@@ -116,6 +119,7 @@ import com.google.template.soy.soytree.PrintNode;
 import com.google.template.soy.soytree.RawTextNode;
 import com.google.template.soy.soytree.SkipNode;
 import com.google.template.soy.soytree.SoyFileNode;
+import com.google.template.soy.soytree.SoyNode.BlockNode;
 import com.google.template.soy.soytree.SoyNode.StandaloneNode;
 import com.google.template.soy.soytree.SoyNode.StatementNode;
 import com.google.template.soy.soytree.SwitchCaseNode;
@@ -135,6 +139,7 @@ import com.google.template.soy.soytree.defn.TemplateStateVar;
 import com.google.template.soy.types.ast.GenericTypeNode;
 import com.google.template.soy.types.ast.NamedTypeNode;
 import com.google.template.soy.types.ast.RecordTypeNode;
+import com.google.template.soy.types.ast.TemplateTypeNode;
 import com.google.template.soy.types.ast.TypeNode;
 import com.google.template.soy.types.ast.UnionTypeNode;
 import java.io.Reader;
@@ -430,9 +435,6 @@ public class SoyFileParser {
       SoyErrorKind.of("Unexpected content after ''{0}'', expected only comments or whitespace.");
   private static final SoyErrorKind UNEXPECTED_CONTENT_BEFORE =
       SoyErrorKind.of("Unexpected content before ''{0}'', expected only comments or whitespace.");
-  private static final SoyErrorKind CSS_XID_MIGRATION =
-      SoyErrorKind.of("The ''{0}'' command is {1}, please switch to using the {0} function."
-  );
   // There's nothing technical preventing us from allowing default values on injected parameters,
   // but we're not sure if that's something we want in the language, so we're preventing it for now.
   private static final SoyErrorKind INJECT_DEFAULT_PARAM =
@@ -460,15 +462,10 @@ public class SoyFileParser {
       SoyErrorKind.of("Invalid param name ''{0}''.");
   private static final SoyErrorKind UNEXPECTED_PIPE =
       SoyErrorKind.of("Unexpected ''|''. Print directives should not have whitespace after ''|''.");
-  private static final SoyErrorKind OLD_RECORD_LITERAL_SYNTAX =
-      SoyErrorKind.of(
-          "Parse error at '':''. If this is a record literal, use the new syntax: "
-              + "''record(key1: \"value1\", key2: 2)''. If this is a legacy_object_map literal, "
-              + "there is no syntax for that, consider using ''map()'' instead.");
-
-  private static final SoyErrorKind FOREACH_IS_DISABLED = SoyErrorKind.of(
-      "foreach loops are no longer supported, please switch to the for loop."
-      , StyleAllowance.NO_CAPS);
+  private static final SoyErrorKind EMPTY_RECORD_LITERAL =
+      SoyErrorKind.of("Empty record literal.");
+  private static final SoyErrorKind EMPTY_RECORD_TYPE =
+      SoyErrorKind.of("Empty record type.");
 
   // Error message that mimics a ParseException
   private static final SoyErrorKind PARSER_ERROR =
@@ -532,6 +529,8 @@ public class SoyFileParser {
   /** The header info for the file we are parsing. */
   private SoyFileHeaderInfo headerInfo;
 
+  private Set<SourceLocation> handledDocComments = new HashSet<SourceLocation>();
+
   /**
    * Constructor that takes a reader object providing the input.
    *
@@ -549,6 +548,7 @@ public class SoyFileParser {
     this.nodeIdGen = checkNotNull(nodeIdGen);
     this.filePath = checkNotNull(filePath);
     this.errorReporter = checkNotNull(errorReporter);
+    initTokenSource();
   }
 
   /** Constructor for use by parseExpression() and parseType() only. */
@@ -563,6 +563,11 @@ public class SoyFileParser {
     this.errorReporter = checkNotNull(errorReporter);
     // Some part of the parser assume that header info is not null.
     this.headerInfo = SoyFileHeaderInfo.EMPTY;
+    initTokenSource();
+  }
+
+  private void initTokenSource() {
+    this.token_source.setParser(this);
   }
 
   /** Attempts to parse the given input as a Soy file. Returns null if parsing fails. */
@@ -649,13 +654,55 @@ public class SoyFileParser {
   }
 
   /** Create a SourceLocation spanning all given tokens. */
-  private SourceLocation createSrcLoc(Token tok1, Token... rest) {
+  SourceLocation createSrcLoc(Token tok1, Token... rest) {
     return Tokens.createSrcLoc(filePath, tok1, rest);
+  }
+
+  /** Create a SourceLocation spanning between the given token and node. */
+  private SourceLocation createSrcLoc(Token tok1, Node lastNode) {
+    return createSrcLoc(tok1).extend(lastNode.getSourceLocation());
+  }
+
+  /** Create a SourceLocation spanning between the given nodes. */
+  private SourceLocation createSrcLoc(Node firstNode, Node lastNode) {
+    return firstNode.getSourceLocation().extend(lastNode.getSourceLocation());
+  }
+
+  /** Create a SourceLocation spanning between a token and the last of a list of nodes. */
+  private SourceLocation createSrcLoc(Token tok1, List<? extends Node> nodes) {
+    if (nodes.isEmpty()) {
+      return createSrcLoc(tok1);
+    }
+    return createSrcLoc(tok1, nodes.get(nodes.size() - 1));
+  }
+
+  /** Create a SourceLocation spanning a list of nodes. */
+  private SourceLocation createSrcLoc(List<? extends Node> nodes) {
+    if (nodes.isEmpty()) {
+      return new SourceLocation(filePath);
+    }
+    return createSrcLoc(nodes.get(0), nodes.get(nodes.size() - 1));
   }
 
   /** Create an error ExprNode at the location of the given tokens. */
   private VarRefNode errorExpr(Token tok1, Token... rest) {
     return VarRefNode.error(createSrcLoc(tok1, rest));
+  }
+
+  private ImmutableList<Comment> buildComments(SoyFileParserTokenManager manager) {
+    ImmutableList.Builder<Comment> comments = ImmutableList.builder();
+    for (Comment comment : manager.comments) {
+      if (handledDocComments.contains(comment.getSourceLocation())) {
+        comments.add(comment.withType(Comment.Type.DOC_HANDLED));
+      } else {
+        comments.add(comment);
+      }
+    }
+    return comments.build();
+  }
+
+  private void handleDocComment(Token token) {
+    handledDocComments.add(createSrcLoc(token));
   }
 
   // An error that can be thrown to abort parsing.  This is useful if an error has been reported
@@ -675,6 +722,12 @@ TOKEN_MGR_DECLS: {
 
   private boolean isInTemplate;
   private int prevState = -1;
+  private SoyFileParser parser;
+  List<Comment> comments = new ArrayList<Comment>();
+
+  void setParser(SoyFileParser parser) {
+    this.parser = parser;
+  }
 
   /**
    * Saves the current lexical state and switch to a new one.  To switch back call
@@ -715,6 +768,27 @@ TOKEN_MGR_DECLS: {
     prevState = -1;
   }
 
+  void addLineComment(Token commentToken) {
+    comments.add(Comment.create(Comment.Type.LINE, commentToken.image, parser.createSrcLoc(commentToken)));
+  }
+
+  void addRangeComment(Token commentToken) {
+    comments.add(Comment.create(Comment.Type.RANGE, commentToken.image, parser.createSrcLoc(commentToken)));
+  }
+
+  void trimTokenBegin(Token token, int by) {
+    for (int i = 0; i < by; i++) {
+        char c = token.image.charAt(i);
+        if (c == '\n') {
+          token.beginLine += 1;
+          token.beginColumn = 1;
+        } else {
+          token.beginColumn++;
+        }
+    }
+    token.image = token.image.substring(by);
+  }
+
   @Override
   public String toString() {
     return "TokenManager{" + lexStateNames[curLexState] + "}";
@@ -736,21 +810,43 @@ TOKEN_MGR_DECLS: {
 
 <DEFAULT, IN_CMD_TAG, EXPR, EXPR_NO_DOUBLE_QUOTE, EXPR_NO_SINGLE_QUOTE> SKIP: {
   < <WS> >
-| < <LINE_COMMENT> >
+}
+
+<DEFAULT, IN_CMD_TAG, EXPR, EXPR_NO_DOUBLE_QUOTE, EXPR_NO_SINGLE_QUOTE> SPECIAL_TOKEN: {
+  < <LINE_COMMENT> > { addLineComment(matchedToken); }
+}
+
+// Due to ambiguity with uri schemes, line comments in TEMPLATE_DEFAULT are only interpreted as such
+// if there is preceding whitespace.
+// Other lexical states don't have this requirement.  The fact that comments swallow leading
+// whitespace characters doesn't affect output because of how line joining works.
+<TEMPLATE_DEFAULT> SPECIAL_TOKEN: {
+  // In theory we only require a single whitespace character, but this rule will consume all
+  // preceeding whitespace. This is necessary to make this unambiguous with the TOKEN_WS definition.
+  < (<WS>)+ <LINE_COMMENT> >
+  {
+    int i = matchedToken.image.indexOf('/');
+    trimTokenBegin(matchedToken, i);
+    addLineComment(matchedToken);
+  }
 }
 
 // NOTE: we don't just configure this for state * because these comments shouldn't work in things
 // like string literals or attribute values
-<DEFAULT, TEMPLATE_DEFAULT, IN_CMD_TAG, EXPR, EXPR_NO_DOUBLE_QUOTE, EXPR_NO_SINGLE_QUOTE> SKIP: {
+<DEFAULT, TEMPLATE_DEFAULT, IN_CMD_TAG, EXPR, EXPR_NO_DOUBLE_QUOTE, EXPR_NO_SINGLE_QUOTE> MORE: {
   < "/*" > { pushState(IN_MULTILINE_COMMENT); }
 }
 
-<IN_MULTILINE_COMMENT> SKIP: {
+<IN_MULTILINE_COMMENT> MORE: {
   < ~[] >
 }
 
-<IN_MULTILINE_COMMENT> SKIP: {
-  < "*/" > { popState(); }
+<IN_MULTILINE_COMMENT> SPECIAL_TOKEN: {
+  < "*/" >
+  {
+    addRangeComment(matchedToken);
+    popState();
+  }
 }
 
 
@@ -781,7 +877,11 @@ TOKEN_MGR_DECLS: {
 }
 
 <IN_SOYDOC> SPECIAL_TOKEN: {
-  <SOYDOC: "*/" > { popState(); }
+  <SOYDOC: "*/" >
+  {
+    addRangeComment(matchedToken);
+    popState();
+  }
 }
 
 
@@ -922,9 +1022,6 @@ TOKEN_MGR_DECLS: {
 | < CMD_BEGIN_FALLBACK_MSG       : "{fallbackmsg" <WS> > : IN_CMD_TAG
 | < CMD_CLOSE_MSG                : "{/msg}"         >
 
-| < CMD_BEGIN_XID                : "{xid" <WS>      > : IN_CMD_TAG
-| < CMD_BEGIN_CSS                : "{css" <WS>      > : IN_CMD_TAG
-
 | < CMD_BEGIN_IF                 : "{if" <WS>       > : EXPR
 | < CMD_BEGIN_ELSEIF             : "{elseif" <WS>   > : EXPR
 | < CMD_FULL_ELSE                : "{else}"         >
@@ -948,9 +1045,7 @@ TOKEN_MGR_DECLS: {
 | < CMD_BEGIN_CASE               : "{case" <WS>     > : EXPR
 | < CMD_FULL_DEFAULT             : "{default}"      >
 
-| < CMD_BEGIN_FOREACH            : "{foreach" <WS>  > : EXPR
 | < CMD_FULL_IFEMPTY             : "{ifempty}"      >
-| < CMD_CLOSE_FOREACH            : "{/foreach}"     >
 
 | < CMD_OPEN_LOG                 : "{log}"          >
 | < CMD_CLOSE_LOG                : "{/log}"         >
@@ -965,14 +1060,6 @@ TOKEN_MGR_DECLS: {
 | < CMD_CLOSE_VELOG              : "{/velog}"       >
 
 | < CMD_SKIP                     : "{skip}"         >
-
-// Due to ambiguity with uri schemes, line comments in TEMPLATE_DEFAULT are only interpreted as such
-// if there is preceding whitespace.
-// Other lexical states don't have this requirement.  The fact that comments swallow leading
-// whitespace characters doesn't affect output because of how line joining works.
-| < TEMPLATE_LINE_COMMENT        : (<WS>)+ <LINE_COMMENT> >
-// In theory we only require a single whitespace character, but this rule will consume all
-// preceeding whitespace. This is necessary to make this unambiguous with the TOKEN_WS definition.
 }
 
 
@@ -1002,13 +1089,10 @@ TOKEN_MGR_DECLS: {
   < ~[] >
 }
 
-// When we reach the '{/literal}' tag, return the collected text content (minus the end tag).
+// When we reach the '{/literal}' tag, return the collected text content. The token includes the end
+// tag, which is stripped when creating a RawTextNode.
 <IN_LITERAL_BLOCK> TOKEN: {
-  < LITERAL_RAW_TEXT_CONTENT: "{/literal}" >
-  {
-    // Note: 'image' is cumulative over MOREs while 'lengthOfMatch' is just the end tag length.
-    matchedToken.image = image.substring(0, image.length() - lengthOfMatch);
-  } : TEMPLATE_DEFAULT
+  < LITERAL_RAW_TEXT_CONTENT: "{/literal}" > : TEMPLATE_DEFAULT
 }
 
 
@@ -1084,36 +1168,37 @@ TOKEN_MGR_DECLS: {
 // Operators.
 
 <EXPR, EXPR_NO_DOUBLE_QUOTE, EXPR_NO_SINGLE_QUOTE> TOKEN: {
-  < QMARK: "?" >      // Precedence 1 operators
-| < COLON: ":" >      // Also used as part of part of map literal syntax
+  < QMARK: "?" >          // Precedence 1 operators
+| < COLON: ":" >          // Also used as part of part of map literal syntax
 | < QCOLON: "?:" >
-| < OR: "or" >        // Precedence 2 operators
-| < AND: "and" >      // Precedence 3 operators
-| < DOUBLE_EQ: "==">  // Precedence 4 operators
+| < OR: "or" >            // Precedence 2 operators
+| < AND: "and" >          // Precedence 3 operators
+| < DOUBLE_EQ: "==">      // Precedence 4 operators
 | < NOT_EQ: "!=" >
-| < LANGLE: "<" >     // Precedence 5 operators
+| < LANGLE: "<" >         // Precedence 5 operators
 | < RANGLE: ">" >
 | < LT_EQ: "<=" >
 | < GT_EQ: ">=" >
-| < PLUS: "+">        // Precedence 6 operators
-| < MINUS: "-">       // Precedence 6 as a binary operator and 8 as a unary operator
-| < TIMES: "*">       // Precedence 7 operators
+| < PLUS: "+">            // Precedence 6 operators
+| < MINUS: "-">           // Precedence 6 as a binary operator and 8 as a unary operator
+| < TIMES: "*">           // Precedence 7 operators
 | < DIV: "/">
 | < MOD: "%">
-| < NOT: "not" >      // Precedence 8 as a unary operator (along with MINUS)
-| < DOT: "." >        // Precedence 9 operators
+| < NOT: "not" >          // Precedence 8 as a unary operator (along with MINUS)
+| < DOT: "." >            // Precedence 9 operators
 | < QDOT: "?." >
-| < LBRACKET: "[" >   // Precedence 9 data access operators and part of legacy map literal syntax
+| < LBRACKET: "[" >       // Precedence 9 data access operators and part of legacy map literal syntax
 | < RBRACKET: "]" >
 | < QLBRACKET: "?[" >
-| < COMMA: "," >      // Not actually an operator, part of map/list literal syntax
-| < FOR: "for" >      // Not actually an operator, part of map/list comprehension syntax.
-| < IN: "in" >        // Not actually an operator, part of map/list comprehension syntax.
-| < IF: "if" >        // Not actually an operator, part of map/list comprehension syntax.
+| < COMMA: "," >          // Not actually an operator, part of map/list literal syntax
+| < FOR: "for" >          // Not actually an operator, part of map/list comprehension syntax.
+| < IN: "in" >            // Not actually an operator, part of map/list comprehension syntax.
+| < IF: "if" >            // Not actually an operator, part of map/list comprehension syntax.
 | < LPAREN: "(" >
 | < RPAREN: ")" >
-| < VBAR: "|" >       // an operator for type unions
-| < EQ: "=" >         // For state assignments and attribute value pairs in EXPR
+| < VBAR: "|" >           // an operator for type unions
+| < EQ: "=" >             // For state assignments and attribute value pairs in EXPR
+| < FORWARD_ARROW: "=>" > // Part of template type syntax.
 }
 
 
@@ -1199,7 +1284,7 @@ private SoyFileNode SoyFile() :
 
   {
     headerInfo = new SoyFileHeaderInfo(errorReporter, delpackageName, namespace, aliases);
-    SoyFileNode sfn = new SoyFileNode(nodeIdGen.genId(), filePath, namespace, headerInfo);
+    List<TemplateNode> templates = new ArrayList<TemplateNode>();
   }
 
   (
@@ -1207,14 +1292,19 @@ private SoyFileNode SoyFile() :
     {
       if (template != null) {
         // it will be null if a parsing error occurred
-        sfn.addChild(template);
+        templates.add(template);
       }
     }
   )+
 
   <EOF>
 
-  { return sfn; }
+  {
+    SoyFileNode sfn = new SoyFileNode(
+        nodeIdGen.genId(), filePath, namespace, headerInfo, buildComments(token_source));
+    sfn.addChildren(templates);
+    return sfn;
+  }
 }
 
 
@@ -1558,9 +1648,9 @@ private void TemplateOpenTagHelper(
     // --- Set the SoyDoc. ---
     // special tokens are accessible from the non-special tokens that come after them.
     Token soyDoc = open.specialToken;
-    // TODO(b/134590934): Add support for FILE_LINE_COMMENT
     if (soyDoc != null && soyDoc.kind == SOYDOC) {
       builder.setSoyDoc(soyDoc.image, createSrcLoc(soyDoc));
+      handleDocComment(soyDoc);
     }
   }
   close = <CMD_END>
@@ -1671,10 +1761,26 @@ private void SkipWhitespace() : { }
  */
 private RawTextNode RawText() :
 {
-  Token token;
+  Token tagBegin, token;
   RawTextBuilder builder = new RawTextBuilder(filePath, nodeIdGen, whitespaceMode);
 }
 {
+  // Parse special command characters as their own nodes (e.g. "{sp}" or {\t}"), so the formatter
+  // can distinguish between "{sp}" and " ", for example.
+  ( token = <CMD_FULL_SP>
+      | token = <CMD_FULL_NIL>
+      | token = <CMD_FULL_CR>
+      | token = <CMD_FULL_LF>
+      | token = <CMD_FULL_TAB>
+      | token = <CMD_FULL_LB>
+      | token = <CMD_FULL_RB>
+      | token = <CMD_FULL_NBSP>
+      )
+      {
+        return RawTextBuilder.buildCommandCharNode(token, filePath, nodeIdGen);
+      }
+  |
+
   // There is a choice conflict here because given a sequence of two characters we could parse it
   // as one RawTextNode containing two characters or 2 RawTextNodes each containing one char.
   // However, we always want the former, so we insert this LOOKAHEAD to suppress the
@@ -1688,21 +1794,22 @@ private RawTextNode RawText() :
       )
       { builder.addBasic(token); }
     |
-      <CMD_OPEN_LITERAL>
+      tagBegin = <CMD_OPEN_LITERAL>
       token = <LITERAL_RAW_TEXT_CONTENT>
-      { builder.addLiteral(token); }
-    |
-      ( token = <CMD_FULL_SP>
-      | token = <CMD_FULL_NIL>
-      | token = <CMD_FULL_CR>
-      | token = <CMD_FULL_LF>
-      | token = <CMD_FULL_TAB>
-      | token = <CMD_FULL_LB>
-      | token = <CMD_FULL_RB>
-      | token = <CMD_FULL_NBSP>
-      )
-      { builder.addTextualCommand(token); }
+      {
+        // Preserve the original SourceLocation.
+        SourceLocation loc = createSrcLoc(tagBegin, token);
+        // Remove the closing tag from the token.
+        token.image = token.image.substring(0, token.image.length() - "{/literal}".length());
+        token.endColumn -= "{/literal}".length();
+        return builder.buildLiteral(token, loc);
+      }
     )
+    {
+      if (getToken(1).kind == CMD_OPEN_LITERAL) {
+        return builder.build();
+      }
+    }
   )+
 
   { return builder.build(); }
@@ -1717,7 +1824,7 @@ private RawTextNode RawText() :
  * Important: The template header consists of a sequence of ParamDecls() separated by optional
  * whitespace.
  *
- * TemplateHeader -> ( Whitespace() | ParamDecl() | LineComment() )*
+ * TemplateHeader -> ( Whitespace() | ParamDecl() )*
  *
  * Whether or not a particular piece of whitespace is part of the header or part of an initial raw
  * text node is ambiguous.  So if there is a trailing piece of non-trivial whitespace it will be
@@ -1727,9 +1834,9 @@ private RawTextNode TemplateHeader(TemplateNodeBuilder<?> templateBuilder, boole
 {
   Token tok;
   TemplateHeaderVarDefn param;
-  LineCommentNode lineComment = null;
   List<TemplateHeaderVarDefn> params = ImmutableList.of();
   RawTextNode whitespace = null;
+  Token soyDocToken = null;
   String soyDoc = null;
 
 }
@@ -1742,8 +1849,9 @@ private RawTextNode TemplateHeader(TemplateNodeBuilder<?> templateBuilder, boole
 
       ( LOOKAHEAD(1)  // prefer staying in the loop
         tok = <TOKEN_WS>
-        { if (tok.specialToken != null) {
-            soyDoc = tok.specialToken.image;
+        { if (tok.specialToken != null && tok.specialToken.kind == SOYDOC) {
+            soyDocToken = tok.specialToken;
+            soyDoc = soyDocToken.image;
           }
           builder.addBasic(tok);
         }
@@ -1754,6 +1862,9 @@ private RawTextNode TemplateHeader(TemplateNodeBuilder<?> templateBuilder, boole
       (
         param = ParamDecl(soyDoc)
         {
+          if (soyDocToken != null) {
+            handleDocComment(soyDocToken);
+          }
           switch (param.kind()) {
           case PARAM:
             // we just parsed a param, preceding whitespace/doc comments are not important
@@ -1780,9 +1891,6 @@ private RawTextNode TemplateHeader(TemplateNodeBuilder<?> templateBuilder, boole
             throw new AssertionError("unexpected var kind: " + param.kind());
           }
         }
-      |
-        lineComment = LineComment()
-        { soyDoc = lineComment.getEscapedCommentText(); }  // soyDoc often ends up between `/*` `*/`
       )
     )
   )*
@@ -1802,7 +1910,6 @@ private RawTextNode TemplateHeader(TemplateNodeBuilder<?> templateBuilder, boole
 private TemplateHeaderVarDefn ParamDecl(@Nullable String desc) :
 {
   Token tagBegin, name;
-  LineCommentNode lineComment = null;
   TypeNode paramTypeNode = null;
   ExprNode value = null;
   boolean optional = false;
@@ -1821,6 +1928,7 @@ private TemplateHeaderVarDefn ParamDecl(@Nullable String desc) :
   // was passed to us.
   { if (tagBegin.specialToken != null) {
       desc = tagBegin.specialToken.image;
+      handleDocComment(tagBegin.specialToken);
     }
   }
 
@@ -1839,7 +1947,6 @@ private TemplateHeaderVarDefn ParamDecl(@Nullable String desc) :
       value = Expr()
     )
     <CMD_END>
-    [ lineComment = LineComment() ]
   } catch (ParseException parseException) {
     reportTemplateBodyErrorAndSkipTo(parseException, CMD_END);
   }
@@ -1847,18 +1954,7 @@ private TemplateHeaderVarDefn ParamDecl(@Nullable String desc) :
   {
     if (desc != null) {
       // trim the leading /** and trailing */ as well as the whitespace from the doc comment.
-      if (desc.startsWith("/**")) {
-        desc = desc.substring(3, desc.length() - 2);
-      }
-      desc = desc.trim();
-    }
-    if (lineComment != null) {
-      if (desc != null) {
-        desc += "\n";
-      } else {
-        desc = "";
-      }
-      desc += lineComment.getEscapedCommentText();
+      desc = desc.substring(3, desc.length() - 2).trim();
     }
     if (stateVar) {
       if (value == null) {
@@ -1997,14 +2093,13 @@ private StatementNode NonPrintableStmt() :
   | stmt = VeLogStmt()
   | stmt = KeyStmt()
   | stmt = SkipStmt()
-  | stmt = LineComment()
   )
 
   { return stmt; }
 }
 
 /**
- * PrintableStmt -> MsgStmt | XidStmt | CssStmt | CallStmt | PrintStmt
+ * PrintableStmt -> MsgStmt | CallStmt | PrintStmt
  */
 private StatementNode PrintableStmt() :
 {
@@ -2013,8 +2108,6 @@ private StatementNode PrintableStmt() :
 {
   (
     stmt = MsgStmt()
-  | stmt = XidStmt()
-  | stmt = CssStmt()
   | stmt = CallStmt()
   | stmt = PrintStmt()
   )
@@ -2034,7 +2127,6 @@ private StatementNode ControlFlowStmt() :
     stmt = IfStmt()
   | stmt = SwitchStmt()
   | stmt = ForStmt()
-  | stmt = ForeachStmt()
   )
 
   { return stmt; }
@@ -2047,9 +2139,10 @@ private StatementNode ControlFlowStmt() :
  */
 private MsgFallbackGroupNode MsgStmt() :
 {
-  Token tagBegin, tagEnd;
+  Token tagBegin, tagEnd, tagClose, fallbackTagBegin;
   List<CommandTagAttribute> attributes = ImmutableList.of();
-  List<StandaloneNode> templateBlock;
+  List<StandaloneNode> templateBlock, fallbackTemplateBlock;
+  MsgNode fallback = null;
 }
 {
   tagBegin = <CMD_BEGIN_MSG>
@@ -2061,19 +2154,21 @@ private MsgFallbackGroupNode MsgStmt() :
     tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
   }
 
-  {
-    SourceLocation loc = createSrcLoc(tagBegin, tagEnd);
-    MsgFallbackGroupNode msgGroup = new MsgFallbackGroupNode(nodeIdGen.genId(), loc);
+  templateBlock = TemplateBlockForMsg()
 
-    MsgNode msg = new MsgNode(nodeIdGen.genId(), loc, "msg", attributes, errorReporter);
-    msgGroup.addChild(msg);
+  {
+    SourceLocation msgLocation = createSrcLoc(tagBegin, tagEnd);
+    SourceLocation blockLocation = createSrcLoc(templateBlock);
+    // Makes sure that the error message for empty message does have a known location.
+    if (blockLocation.isKnown()) {
+      msgLocation = msgLocation.extend(blockLocation);
+    }
+    MsgNode msg = new MsgNode(nodeIdGen.genId(), msgLocation, "msg", attributes, errorReporter);
+    msg.addChildren(templateBlock);
   }
 
-  templateBlock = TemplateBlockForMsg()
-  { msg.addChildren(templateBlock); }
-
   [
-    tagBegin = <CMD_BEGIN_FALLBACK_MSG>
+    fallbackTagBegin = <CMD_BEGIN_FALLBACK_MSG>
 
     try {
       attributes = Attributes()
@@ -2082,20 +2177,29 @@ private MsgFallbackGroupNode MsgStmt() :
       tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
     }
 
+    fallbackTemplateBlock = TemplateBlockForMsg()
     {
-      loc = createSrcLoc(tagBegin, tagEnd);
-      MsgNode fallback =
-          new MsgNode(nodeIdGen.genId(), loc, "fallbackmsg", attributes, errorReporter);
-      msgGroup.addChild(fallback);
+      msgLocation = createSrcLoc(fallbackTagBegin, tagEnd);
+      blockLocation = createSrcLoc(fallbackTemplateBlock);
+      // Makes sure that the error message for empty message does have a known location.
+      if (blockLocation.isKnown()) {
+        msgLocation = msgLocation.extend(blockLocation);
+      }
+      fallback =
+          new MsgNode(nodeIdGen.genId(), msgLocation, "fallbackmsg", attributes, errorReporter);
+      fallback.addChildren(fallbackTemplateBlock);
     }
-
-    templateBlock = TemplateBlockForMsg()
-    { fallback.addChildren(templateBlock); }
   ]
 
-  <CMD_CLOSE_MSG>
+  tagClose = <CMD_CLOSE_MSG>
 
   {
+    MsgFallbackGroupNode msgGroup =
+        new MsgFallbackGroupNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose));
+    msgGroup.addChild(msg);
+    if (fallback != null) {
+      msgGroup.addChild(fallback);
+    }
     return msgGroup;
   }
 }
@@ -2133,7 +2237,6 @@ private List<StandaloneNode> TemplateBlockForMsg() :
 
   // try to collect all leading whitespace into a raw text node on its own.
   // This will make it possible to detect if a leading {plural} or {select} was preceeded by content
-  ( LineComment() )*  // TODO(b/138658479): Make sure these comments make it into the AST.
   [ LOOKAHEAD(1)  // prefer taking this branch over skipping and consuming as RawText
     { Token tok;
       RawTextBuilder builder = new RawTextBuilder(filePath, nodeIdGen, whitespaceMode);
@@ -2155,7 +2258,6 @@ private List<StandaloneNode> TemplateBlockForMsg() :
       msgPluralOrSelectNode = MsgPlural()
     | msgPluralOrSelectNode = MsgSelect()
     )
-    ( LineComment() )*  // TODO(b/138658479): Make sure these comments make it into the AST.
     SkipWhitespace()  // we want to ignore all whitespace after a plural or select, just expect it
     {
       if (firstNodeIsWhitespace) {
@@ -2203,8 +2305,7 @@ private List<StandaloneNode> TemplateBlockForMsg() :
  */
 private MsgPluralNode MsgPlural() :
 {
-  Token tagBegin, tagEnd;
-  Token defaultTag;
+  Token tagBegin, caseBeginTag, tagClose;
   ExprNode pluralExpr;
   ExprNode caseExpr;
   CommandTagAttribute offsetAttr = null;
@@ -2215,10 +2316,10 @@ private MsgPluralNode MsgPlural() :
   try {
     pluralExpr = Expr()
     [ offsetAttr = Attribute() ]
-    tagEnd = <CMD_END>
+    <CMD_END>
   } catch (ParseException e) {
     pluralExpr = errorExpr(tagBegin);
-    tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
+    reportTemplateBodyErrorAndSkipTo(e, CMD_END);
   }
 
   {
@@ -2251,24 +2352,17 @@ private MsgPluralNode MsgPlural() :
         offset = 0;
       }
     }
-
-    MsgPluralNode pluralNode =
-        new MsgPluralNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagEnd), pluralExpr, offset);
+    List<CaseOrDefaultNode> caseNodes = new ArrayList<CaseOrDefaultNode>();
   }
 
   // consume all whitespace between {plural} and the first {case}
   // later {case} and {default} tags will naturally consume whitespace due via RawText()
   SkipWhitespace()
-  (
-    // TODO(b/138658479): Make sure these comments make it into the AST.
-    LineComment()
-    SkipWhitespace()
-  )*
   try {
     (
-      tagBegin = <CMD_BEGIN_CASE>
+      caseBeginTag = <CMD_BEGIN_CASE>
       caseExpr = Expr()
-      tagEnd = <CMD_END>
+      <CMD_END>
       {
         int value;
         if (!(caseExpr instanceof IntegerNode)) {
@@ -2281,10 +2375,6 @@ private MsgPluralNode MsgPlural() :
             value = 0;
           }
         }
-
-        MsgPluralCaseNode caseNode =
-            new MsgPluralCaseNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagEnd), value);
-        pluralNode.addChild(caseNode);
       }
 
       templateBlock = TemplateBlockForMsg()
@@ -2295,16 +2385,17 @@ private MsgPluralNode MsgPlural() :
               templateBlock.get(0).getSourceLocation(),
               PLURAL_AND_SELECT_NOT_ALLOWED_INSIDE_PLURAL_BLOCK);
         }
+        MsgPluralCaseNode caseNode =
+            new MsgPluralCaseNode(
+                nodeIdGen.genId(),
+                createSrcLoc(caseBeginTag, templateBlock),
+                value);
         caseNode.addChildren(templateBlock);
+        caseNodes.add(caseNode);
       }
     )*
 
-    defaultTag = <CMD_FULL_DEFAULT>
-    {
-      MsgPluralDefaultNode defaultNode =
-          new MsgPluralDefaultNode(nodeIdGen.genId(), createSrcLoc(defaultTag));
-      pluralNode.addChild(defaultNode);
-    }
+    caseBeginTag = <CMD_FULL_DEFAULT>
 
     templateBlock = TemplateBlockForMsg()
     { if (templateBlock.size() == 1 &&
@@ -2314,17 +2405,25 @@ private MsgPluralNode MsgPlural() :
             templateBlock.get(0).getSourceLocation(),
             PLURAL_AND_SELECT_NOT_ALLOWED_INSIDE_PLURAL_BLOCK);
       }
+      MsgPluralDefaultNode defaultNode =
+          new MsgPluralDefaultNode(nodeIdGen.genId(), createSrcLoc(caseBeginTag, templateBlock));
       defaultNode.addChildren(templateBlock);
+      caseNodes.add(defaultNode);
     }
 
-    <CMD_CLOSE_PLURAL>
+    tagClose = <CMD_CLOSE_PLURAL>
   } catch (ParseException e) {
     // report and keep going to maintain previous behavior around reporting errors for unexpected
     // textual content before the first {case} tag
-    reportTemplateBodyErrorAndSkipTo(e, CMD_CLOSE_PLURAL);
+    tagClose = reportTemplateBodyErrorAndSkipTo(e, CMD_CLOSE_PLURAL);
   }
 
-  { return pluralNode; }
+  {
+    MsgPluralNode pluralNode =
+        new MsgPluralNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose), pluralExpr, offset);
+    pluralNode.addChildren(caseNodes);
+    return pluralNode;
+  }
 }
 
 
@@ -2335,8 +2434,7 @@ private MsgPluralNode MsgPlural() :
  */
 private MsgSelectNode MsgSelect() :
 {
-  Token tagBegin, tagEnd;
-  Token defaultTag;
+  Token tagBegin, caseTagBegin, tagClose;
   ExprNode selectExpr;
   ExprNode caseExpr;
   List<StandaloneNode> templateBlock;
@@ -2345,15 +2443,14 @@ private MsgSelectNode MsgSelect() :
   tagBegin = <CMD_BEGIN_SELECT>
   try {
     selectExpr = Expr()
-    tagEnd = <CMD_END>
+    <CMD_END>
   } catch (ParseException e) {
     selectExpr = errorExpr(tagBegin);
-    tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
+    reportTemplateBodyErrorAndSkipTo(e, CMD_END);
   }
 
   {
-    MsgSelectNode selectNode =
-        new MsgSelectNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagEnd), selectExpr);
+    List<CaseOrDefaultNode> caseNodes = new ArrayList<CaseOrDefaultNode>();
   }
 
   // consume all whitespace between {select} and the first {case}
@@ -2362,36 +2459,41 @@ private MsgSelectNode MsgSelect() :
 
   try {
     (
-      tagBegin = <CMD_BEGIN_CASE>
+      caseTagBegin = <CMD_BEGIN_CASE>
       caseExpr = Expr()
-      tagEnd = <CMD_END>
+      <CMD_END>
+      templateBlock = TemplateBlockForMsg()
+
       {
         String value = ParseErrors.validateSelectCaseLabel(caseExpr, errorReporter);
         MsgSelectCaseNode caseNode =
-            new MsgSelectCaseNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagEnd), value);
-        selectNode.addChild(caseNode);
+            new MsgSelectCaseNode(nodeIdGen.genId(), createSrcLoc(caseTagBegin, templateBlock), value);
+        caseNodes.add(caseNode);
+        caseNode.addChildren(templateBlock);
       }
-
-      templateBlock = TemplateBlockForMsg()
-      { caseNode.addChildren(templateBlock); }
     )*
 
-    defaultTag = <CMD_FULL_DEFAULT>
+    caseTagBegin = <CMD_FULL_DEFAULT>
+    templateBlock = TemplateBlockForMsg()
+
     {
       MsgSelectDefaultNode defaultNode =
-          new MsgSelectDefaultNode(nodeIdGen.genId(), createSrcLoc(defaultTag));
-      selectNode.addChild(defaultNode);
+          new MsgSelectDefaultNode(nodeIdGen.genId(), createSrcLoc(caseTagBegin, templateBlock));
+      caseNodes.add(defaultNode);
+      defaultNode.addChildren(templateBlock);
     }
 
-    templateBlock = TemplateBlockForMsg()
-    { defaultNode.addChildren(templateBlock); }
-
-    <CMD_CLOSE_SELECT>
+    tagClose = <CMD_CLOSE_SELECT>
   } catch (ParseException e) {
-    reportTemplateBodyErrorAndSkipTo(e, CMD_CLOSE_SELECT);
+    tagClose = reportTemplateBodyErrorAndSkipTo(e, CMD_CLOSE_SELECT);
   }
 
-  { return selectNode; }
+  {
+    MsgSelectNode selectNode =
+        new MsgSelectNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose), selectExpr);
+    selectNode.addChildren(caseNodes);
+    return selectNode;
+  }
 }
 
 
@@ -2549,68 +2651,12 @@ private SkipNode SkipStmt() :
 
 
 /**
- * XidStmt -> Error
- *
- * <p>This production exists purely to issue a good error message when there is an attempt to use
- * the legacy xid syntax
- *
- * <p>TODO(lukes): sometime in 2019, just delete this
- *
- * <p>Returns an empty LogNode as a placeholder
- */
-private LogNode XidStmt() :
-{
-  Token tagBegin, tagEnd;
-}
-{
-  tagBegin = <CMD_BEGIN_XID>
-  {
-    tagEnd = skipToTemplateToken(CMD_END);
-  }
-
-  {
-    SourceLocation location = createSrcLoc(tagBegin, tagEnd);
-    errorReporter.report(location, CSS_XID_MIGRATION, "xid", "no longer supported");
-    return new LogNode(nodeIdGen.genId(), location);
-  }
-}
-
-
-/**
- * CssStmt -> Error
- *
- * <p>This production exists purely to issue a good error message when there is an attempt to use
- * the legacy css syntax.
- *
- * <p>TODO(lukes): sometime in 2019, just delete this
- *
- * <p>Returns an empty LogNode as a placeholder
- */
-private LogNode CssStmt() :
-{
-  Token tagBegin, tagEnd;
-}
-{
-  tagBegin = <CMD_BEGIN_CSS>
-  {
-    tagEnd = skipToTemplateToken(CMD_END);
-  }
-
-  {
-    SourceLocation location = createSrcLoc(tagBegin, tagEnd);
-    errorReporter.report(location, CSS_XID_MIGRATION, "css", "no longer supported");
-    return new LogNode(nodeIdGen.genId(), location);
-  }
-}
-
-
-/**
  * LetStmt -> CmdBeginLet VarRef
  *            ( ":" Expr CmdSelfClose | [ Attribute ] CmdEnd TemplateBlock CmdCloseLet )
  */
 private LetNode LetStmt() :
 {
-  Token tagBegin, tagEnd, nameTok = null;
+  Token tagBegin, tagClose, nameTok = null;
   ExprNode valueExpr = null;
   CommandTagAttribute attr = null;
   List<StandaloneNode> templateBlock = ImmutableList.of();
@@ -2621,8 +2667,8 @@ private LetNode LetStmt() :
   try {
     nameTok = <DOLLAR_IDENT>
   } catch (ParseException e) {
-    tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_SELF_CLOSE, CMD_END);
-    SourceLocation loc = createSrcLoc(tagBegin, tagEnd);
+    tagClose = reportTemplateBodyErrorAndSkipTo(e, CMD_SELF_CLOSE, CMD_END);
+    SourceLocation loc = createSrcLoc(tagBegin, tagClose);
     return new LetValueNode(-1, loc, "$error", loc, errorExpr(tagBegin));
   }
 
@@ -2631,18 +2677,18 @@ private LetNode LetStmt() :
     try {
       <COLON>
       valueExpr = Expr()
-      tagEnd = <CMD_SELF_CLOSE>
+      tagClose = <CMD_SELF_CLOSE>
     } catch (ParseException e) {
-      tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_SELF_CLOSE, CMD_END);
+      tagClose = reportTemplateBodyErrorAndSkipTo(e, CMD_SELF_CLOSE, CMD_END);
       if (valueExpr == null) {
-        valueExpr = errorExpr(tagEnd);
+        valueExpr = errorExpr(tagClose);
       }
     }
 
     {
       return new LetValueNode(
           nodeIdGen.genId(),
-          createSrcLoc(tagBegin, tagEnd),
+          createSrcLoc(tagBegin, tagClose),
           nameTok.image,
           createSrcLoc(nameTok),
           valueExpr);
@@ -2651,23 +2697,23 @@ private LetNode LetStmt() :
     // Content block
     try {
       attr = Attribute()
-      tagEnd = <CMD_END>
+      <CMD_END>
     } catch (ParseException e) {
-      tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END, CMD_SELF_CLOSE);
+      reportTemplateBodyErrorAndSkipTo(e, CMD_END, CMD_SELF_CLOSE);
     }
 
     templateBlock = TemplateBlock()
-    <CMD_CLOSE_LET>
+    tagClose = <CMD_CLOSE_LET>
 
     {
       if (attr == null) {
-        SourceLocation loc = createSrcLoc(tagBegin, tagEnd);
+        SourceLocation loc = createSrcLoc(tagBegin, tagClose);
         return new LetValueNode(-1, loc, "$error", loc, errorExpr(tagBegin));
       }
       LetContentNode node =
           new LetContentNode(
               nodeIdGen.genId(),
-              createSrcLoc(tagBegin, tagEnd),
+              createSrcLoc(tagBegin, tagClose),
               nameTok.image,
               createSrcLoc(nameTok),
               attr,
@@ -2687,8 +2733,7 @@ private LetNode LetStmt() :
  */
 private IfNode IfStmt() :
 {
-  Token tagBegin, tagEnd;
-  Token elseTag;
+  Token tagBegin, tagClose, condTagBegin, elseTag;
   ExprNode ifExpr;
   List<StandaloneNode> templateBlock;
 }
@@ -2696,56 +2741,64 @@ private IfNode IfStmt() :
   tagBegin = <CMD_BEGIN_IF>
   try {
     ifExpr = Expr()
-    tagEnd = <CMD_END>
+    <CMD_END>
   } catch (ParseException e) {
     ifExpr = errorExpr(tagBegin);
-    tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
+    reportTemplateBodyErrorAndSkipTo(e, CMD_END);
   }
+  templateBlock = TemplateBlock()
 
   {
-    SourceLocation location = createSrcLoc(tagBegin, tagEnd);
-    IfNode ifNode = new IfNode(nodeIdGen.genId(), location);
-    IfCondNode ifCondNode = new IfCondNode(nodeIdGen.genId(), location, "if", ifExpr);
-    ifNode.addChild(ifCondNode);
+    List<BlockNode> condNodes = new ArrayList<BlockNode>();
+    IfCondNode ifCondNode = new IfCondNode(
+        nodeIdGen.genId(),
+        createSrcLoc(tagBegin, templateBlock),
+        "if",
+        ifExpr);
+    condNodes.add(ifCondNode);
+    ifCondNode.addChildren(templateBlock);
   }
 
-  templateBlock = TemplateBlock()
-  { ifCondNode.addChildren(templateBlock); }
-
   (
-    tagBegin = <CMD_BEGIN_ELSEIF>
+    condTagBegin = <CMD_BEGIN_ELSEIF>
     try {
       ifExpr = Expr()
-      tagEnd = <CMD_END>
+      <CMD_END>
     } catch (ParseException e) {
-      ifExpr = errorExpr(tagBegin);
-      tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
+      ifExpr = errorExpr(condTagBegin);
+      reportTemplateBodyErrorAndSkipTo(e, CMD_END);
     }
+    templateBlock = TemplateBlock()
 
     {
-      location = createSrcLoc(tagBegin, tagEnd);
-      ifCondNode = new IfCondNode(nodeIdGen.genId(), location, "elseif", ifExpr);
-      ifNode.addChild(ifCondNode);
+      ifCondNode = new IfCondNode(
+          nodeIdGen.genId(),
+          createSrcLoc(condTagBegin, templateBlock),
+          "elseif",
+          ifExpr);
+      condNodes.add(ifCondNode);
+      ifCondNode.addChildren(templateBlock);
     }
-
-    templateBlock = TemplateBlock()
-    { ifCondNode.addChildren(templateBlock); }
   )*
 
   [
     elseTag = <CMD_FULL_ELSE>
-    {
-      IfElseNode ifElseNode = new IfElseNode(nodeIdGen.genId(), createSrcLoc(elseTag));
-      ifNode.addChild(ifElseNode);
-    }
-
     templateBlock = TemplateBlock()
-    { ifElseNode.addChildren(templateBlock); }
+    {
+      IfElseNode ifElseNode =
+          new IfElseNode(nodeIdGen.genId(), createSrcLoc(elseTag, templateBlock));
+      condNodes.add(ifElseNode);
+      ifElseNode.addChildren(templateBlock);
+    }
   ]
 
-  <CMD_CLOSE_IF>
+  tagClose = <CMD_CLOSE_IF>
 
-  { return ifNode; }
+  {
+    IfNode ifNode = new IfNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose));
+    ifNode.addChildren(condNodes);
+    return ifNode;
+  }
 }
 
 
@@ -2756,7 +2809,7 @@ private IfNode IfStmt() :
 private VeLogNode VeLogStmt() :
 {
   ExprNode veDataExpr = null;
-  Token tagBegin, tagEnd;
+  Token tagBegin, tagClose;
   List<CommandTagAttribute> attributes = ImmutableList.of();
   List<StandaloneNode> templateBlock;
 }
@@ -2765,23 +2818,22 @@ private VeLogNode VeLogStmt() :
   try {
     veDataExpr = Expr()
     attributes = Attributes()
-    tagEnd = <CMD_END>
+    <CMD_END>
   } catch (ParseException e) {
     if (veDataExpr == null) {
       veDataExpr = errorExpr(tagBegin);
     }
-    tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
+    reportTemplateBodyErrorAndSkipTo(e, CMD_END);
   }
-
 
   templateBlock = TemplateBlock()
 
-  <CMD_CLOSE_VELOG>
+  tagClose = <CMD_CLOSE_VELOG>
 
   {
     VeLogNode node = new VeLogNode(
         nodeIdGen.genId(),
-        createSrcLoc(tagBegin, tagEnd),
+        createSrcLoc(tagBegin, tagClose),
         veDataExpr,
         attributes,
         errorReporter);
@@ -2799,8 +2851,7 @@ private VeLogNode VeLogStmt() :
  */
 private SwitchNode SwitchStmt() :
 {
-  Token tagBegin, tagEnd;
-  Token defaultTag;
+  Token tagBegin, caseTag, defaultTag, tagClose;
   ExprNode switchExpr;
   ImmutableList<ExprNode> caseExprs;
   List<StandaloneNode> templateBlock;
@@ -2809,15 +2860,14 @@ private SwitchNode SwitchStmt() :
   tagBegin = <CMD_BEGIN_SWITCH>
   try {
     switchExpr = Expr()
-    tagEnd = <CMD_END>
+    <CMD_END>
   } catch (ParseException e) {
     switchExpr = errorExpr(tagBegin);
-    tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
+    reportTemplateBodyErrorAndSkipTo(e, CMD_END);
   }
 
   {
-    SwitchNode switchNode =
-        new SwitchNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagEnd), switchExpr);
+    List<BlockNode> cases = new ArrayList<BlockNode>();
   }
 
   // consume all whitespace between {switch} and the first {case}
@@ -2827,44 +2877,42 @@ private SwitchNode SwitchStmt() :
 
   try {
     (
-      (
-        LineComment()
-        SkipWhitespace()
-      )+
-    |
-      (
-        tagBegin = <CMD_BEGIN_CASE>
-        caseExprs = ExprList()
-        tagEnd = <CMD_END>
-        {
-          SwitchCaseNode caseNode =
-              new SwitchCaseNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagEnd), caseExprs);
-          switchNode.addChild(caseNode);
-        }
-
-        templateBlock = TemplateBlock()
-        { caseNode.addChildren(templateBlock); }
-      )
+      caseTag = <CMD_BEGIN_CASE>
+      caseExprs = ExprList()
+      <CMD_END>
+      templateBlock = TemplateBlock()
+      {
+        SwitchCaseNode caseNode = new SwitchCaseNode(
+            nodeIdGen.genId(),
+            createSrcLoc(caseTag, templateBlock),
+            caseExprs);
+        caseNode.addChildren(templateBlock);
+        cases.add(caseNode);
+      }
     )+
 
     [
       defaultTag = <CMD_FULL_DEFAULT>
+      templateBlock = TemplateBlock()
       {
         SwitchDefaultNode defaultNode =
-            new SwitchDefaultNode(nodeIdGen.genId(), createSrcLoc(defaultTag));
-        switchNode.addChild(defaultNode);
+            new SwitchDefaultNode(nodeIdGen.genId(), createSrcLoc(defaultTag, templateBlock));
+        defaultNode.addChildren(templateBlock);
+        cases.add(defaultNode);
       }
-
-      templateBlock = TemplateBlock()
-      { defaultNode.addChildren(templateBlock); }
     ]
 
-    <CMD_CLOSE_SWITCH>
+    tagClose = <CMD_CLOSE_SWITCH>
   } catch (ParseException e) {
-    reportTemplateBodyErrorAndSkipTo(e, CMD_CLOSE_SWITCH);
+    tagClose = reportTemplateBodyErrorAndSkipTo(e, CMD_CLOSE_SWITCH);
   }
 
-  { return switchNode; }
+  {
+    SwitchNode switchNode =
+        new SwitchNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose), switchExpr);
+    switchNode.addChildren(cases);
+    return switchNode;
+  }
 }
 
 
@@ -2874,91 +2922,69 @@ private SwitchNode SwitchStmt() :
  */
 private ForNode ForStmt() :
 {
-  Token tagBegin, tagEnd, ifemptyTag, nameTok;
+  Token tagBegin, tagClose, ifemptyTag, nameTok;
+  Identifier nameId = null;
   ExprNode expr = null;
   String name = null;
-  SourceLocation nameLocation = null;
   List<StandaloneNode> templateBlock;
+  ForIfemptyNode ifempty = null;
 }
 {
   tagBegin = <CMD_BEGIN_FOR>
   try {
     nameTok = <DOLLAR_IDENT>
     {
-        name = nameTok.image;
-        nameLocation = createSrcLoc(nameTok);
+        nameId = Identifier.create(nameTok.image, createSrcLoc(nameTok));
     }
     <IN>
     expr = Expr()
 
-    tagEnd = <CMD_END>
+    <CMD_END>
   } catch (ParseException e) {
-    tagEnd =
-        reportTemplateBodyErrorAndSkipTo(
-            e,
-            "\nFor-loops should be formatted as: \"{for $foo in <listExpression>}\".",
-            CMD_END);
+    reportTemplateBodyErrorAndSkipTo(
+        e,
+        "\nFor-loops should be formatted as: \"{for $foo in <listExpression>}\".",
+        CMD_END);
 
-    if (name == null) {
-      name = "$error";
-      nameLocation = createSrcLoc(tagBegin);
+    if (nameId == null) {
+      nameId = Identifier.create("$error", createSrcLoc(tagBegin));
     }
     if (expr == null) {
       expr = errorExpr(tagBegin);
     }
   }
 
+  templateBlock = TemplateBlock()
   {
-    ForNode forNode =
-        new ForNode(
-            nodeIdGen.genId(),
-            createSrcLoc(tagBegin, tagEnd),
-            expr);
     ForNonemptyNode nonEmpty =
         new ForNonemptyNode(
             nodeIdGen.genId(),
-            name,
-            nameLocation);
-    forNode.addChild(nonEmpty);
+            nameId,
+            createSrcLoc(tagBegin, templateBlock));
+    nonEmpty.addChildren(templateBlock);
   }
-
-  templateBlock = TemplateBlock()
-  { nonEmpty.addChildren(templateBlock); }
 
   [
     ifemptyTag = <CMD_FULL_IFEMPTY>
     templateBlock = TemplateBlock()
     {
-      ForIfemptyNode ifempty =
-          new ForIfemptyNode(nodeIdGen.genId(), createSrcLoc(ifemptyTag));
+      ifempty = new ForIfemptyNode(nodeIdGen.genId(), createSrcLoc(ifemptyTag, templateBlock));
       ifempty.addChildren(templateBlock);
-      forNode.addChild(ifempty);
     }
   ]
 
-  <CMD_CLOSE_FOR>
-  { return forNode; }
-}
-
-/**
- * Foreach -> error
- *
- * <p>We used to support a 'foreach' loop syntax, but it has been superceded by the for loop.  This
- * production exists simply to provide a better error message. TODO(b/70577468): sometime in 2019,
- * just delete this and the token definitions.
- *
- * <p>returns an empty log node as a placeholder
- */
-private LogNode ForeachStmt() : {
-  Token tok;
-}
-{
-  tok = <CMD_BEGIN_FOREACH>
+  tagClose = <CMD_CLOSE_FOR>
   {
-    SourceLocation location = createSrcLoc(tok);
-    errorReporter.report(location, FOREACH_IS_DISABLED);
-    skipToTemplateToken(CMD_CLOSE_FOREACH);
-    return new LogNode(nodeIdGen.genId(), location);
+    ForNode forNode =
+        new ForNode(
+            nodeIdGen.genId(),
+            createSrcLoc(tagBegin, tagClose),
+            expr);
+    forNode.addChild(nonEmpty);
+    if (ifempty != null) {
+      forNode.addChild(ifempty);
+    }
+    return forNode;
   }
 }
 
@@ -2971,7 +2997,8 @@ private LogNode ForeachStmt() : {
  */
 private CallNode CallStmt() :
 {
-  Token tagBegin, tagEnd;
+  Token tagBegin, tagClose;
+  Token tagBeginEnd = null;
   Identifier calleeName = null;
   List<CommandTagAttribute> attributes = ImmutableList.of();
   List<CallParamNode> params = ImmutableList.of();
@@ -2985,14 +3012,14 @@ private CallNode CallStmt() :
       calleeName = TemplateName()
       attributes = Attributes()
       (
-        tagEnd = <CMD_SELF_CLOSE>
+        tagClose = <CMD_SELF_CLOSE>
       |
-        tagEnd = <CMD_END>
+        tagBeginEnd = <CMD_END>
         params = CallParams()
-        <CMD_CLOSE_CALL>
+        tagClose = <CMD_CLOSE_CALL>
       )
     } catch (ParseException e) {
-      tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_SELF_CLOSE, CMD_CLOSE_CALL);
+      tagClose = reportTemplateBodyErrorAndSkipTo(e, CMD_SELF_CLOSE, CMD_CLOSE_CALL);
       if (calleeName == null) {
         calleeName = Identifier.create(".error", createSrcLoc(tagBegin));
       }
@@ -3001,9 +3028,12 @@ private CallNode CallStmt() :
     {
       String fullName =
           SoyParseUtils.calculateFullCalleeName(calleeName, headerInfo, errorReporter);
+
+
       CallBasicNode node = new CallBasicNode(
           nodeIdGen.genId(),
-          createSrcLoc(tagBegin, tagEnd),
+          createSrcLoc(tagBegin, tagClose),
+          (tagBeginEnd != null) ? createSrcLoc(tagBegin, tagBeginEnd) : null,
           calleeName,
           fullName,
           attributes,
@@ -3019,14 +3049,14 @@ private CallNode CallStmt() :
       calleeName = TemplateName()
       attributes = Attributes()
       (
-        tagEnd = <CMD_SELF_CLOSE>
+        tagClose = <CMD_SELF_CLOSE>
       |
-        tagEnd = <CMD_END>
+        tagBeginEnd = <CMD_END>
         params = CallParams()
-        <CMD_CLOSE_DELCALL>
+        tagClose = <CMD_CLOSE_DELCALL>
       )
     } catch (ParseException e) {
-      tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_SELF_CLOSE, CMD_CLOSE_DELCALL);
+      tagClose = reportTemplateBodyErrorAndSkipTo(e, CMD_SELF_CLOSE, CMD_CLOSE_DELCALL);
       if (calleeName == null) {
         calleeName = Identifier.create("error", createSrcLoc(tagBegin));
       }
@@ -3039,7 +3069,8 @@ private CallNode CallStmt() :
 
       CallDelegateNode node = new CallDelegateNode(
           nodeIdGen.genId(),
-          createSrcLoc(tagBegin, tagEnd),
+          createSrcLoc(tagBegin, tagClose),
+          (tagBeginEnd != null) ? createSrcLoc(tagBeginEnd) : null,
           calleeName,
           attributes,
           errorReporter);
@@ -3062,12 +3093,6 @@ private List<CallParamNode> CallParams() :
   // consume all whitespace between {call}/{delcall} and the first {param} as well as between params
   SkipWhitespace()
   (
-    (
-      // TODO(b/138659631): Retain these comments.
-      LineComment()
-      SkipWhitespace()
-    )+
-    |
     paramNode = CallParam()
     {
       if (params.isEmpty()) {
@@ -3077,10 +3102,6 @@ private List<CallParamNode> CallParams() :
     }
 
     SkipWhitespace()
-    [
-      LineComment()
-      SkipWhitespace()
-    ]
   )*
 
   { return params; }
@@ -3093,7 +3114,7 @@ private List<CallParamNode> CallParams() :
  */
 private CallParamNode CallParam() :
 {
-  Token tagBegin, tagEnd;
+  Token tagBegin, tagClose;
   Identifier key;
   ExprNode valueExpr = null;
   CommandTagAttribute attr = null;
@@ -3106,8 +3127,8 @@ private CallParamNode CallParam() :
     key = Identifier()
   } catch (ParseException e) {
     key = Identifier.create("error", createSrcLoc(tagBegin));
-    tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_SELF_CLOSE, CMD_END);
-    return new CallParamValueNode(-1, createSrcLoc(tagBegin, tagEnd), key, errorExpr(tagBegin));
+    tagClose = reportTemplateBodyErrorAndSkipTo(e, CMD_SELF_CLOSE, CMD_END);
+    return new CallParamValueNode(-1, createSrcLoc(tagBegin, tagClose), key, errorExpr(tagBegin));
   }
 
   {
@@ -3120,40 +3141,41 @@ private CallParamNode CallParam() :
     try {
       <COLON>
       valueExpr = Expr()
-      tagEnd = <CMD_SELF_CLOSE>
+      tagClose = <CMD_SELF_CLOSE>
     } catch (ParseException e) {
-      tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_SELF_CLOSE, CMD_END);
+      tagClose = reportTemplateBodyErrorAndSkipTo(e, CMD_SELF_CLOSE, CMD_END);
       if (valueExpr == null) {
-        valueExpr = errorExpr(tagEnd);
+        valueExpr = errorExpr(tagClose);
       }
     }
 
     {
       return new CallParamValueNode(
           nodeIdGen.genId(),
-          createSrcLoc(tagBegin, tagEnd),
+          createSrcLoc(tagBegin, tagClose),
           key,
           valueExpr);
     }
   |
     try {
       attr = Attribute()
-      tagEnd = <CMD_END>
+      <CMD_END>
     } catch (ParseException e) {
-      tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END, CMD_SELF_CLOSE);
+      reportTemplateBodyErrorAndSkipTo(e, CMD_END, CMD_SELF_CLOSE);
     }
 
     templateBlock = TemplateBlock()
-    <CMD_CLOSE_PARAM>
+    tagClose = <CMD_CLOSE_PARAM>
 
     {
       if (attr == null) {
-        return new CallParamValueNode(-1, createSrcLoc(tagBegin, tagEnd), key, errorExpr(tagBegin));
+        return
+            new CallParamValueNode(-1, createSrcLoc(tagBegin, tagClose), key, errorExpr(tagBegin));
       }
       CallParamContentNode node =
           new CallParamContentNode(
               nodeIdGen.genId(),
-              createSrcLoc(tagBegin, tagEnd),
+              createSrcLoc(tagBegin, tagClose),
               key,
               attr,
               errorReporter);
@@ -3195,15 +3217,6 @@ private DebuggerNode DebuggerStmt() :
 {
   token = <CMD_FULL_DEBUGGER>
   { return new DebuggerNode(nodeIdGen.genId(), createSrcLoc(token)); }
-}
-
-private LineCommentNode LineComment() :
-{
-  Token token;
-}
-{
-  token = <TEMPLATE_LINE_COMMENT>
-  { return new LineCommentNode(nodeIdGen.genId(), token.image, createSrcLoc(token)); }
 }
 
 
@@ -3575,6 +3588,7 @@ private ExprNode PrecExpr8() :
 private ExprNode PrecExpr9() :
 {
   ExprNode expr, keyExpr;
+  ImmutableList<ExprNode> params = ImmutableList.of();
   Token ident, open, close, op;
 }
 {
@@ -3586,15 +3600,31 @@ private ExprNode PrecExpr9() :
       op = <QDOT>
     )
     ident = <IDENT>
-    { // TODO(lukes):  add the source location of the ident as a separate field.  This would be
-      // more useful for error messages about the access
-      expr =
-          new FieldAccessNode(
-              expr,
-              ident.image,
-              createSrcLoc(op, ident),
-              op.kind == QDOT);
-    }
+    (
+      <LPAREN>
+      [
+        params = ExprList()
+      ]
+      close = <RPAREN>
+      {
+        expr = new MethodNode(
+            expr,
+            params,
+            Identifier.create(ident.image, createSrcLoc(ident)),
+            createSrcLoc(op, close),
+            op.kind == QDOT);
+      }
+    |
+      { // TODO(lukes):  add the source location of the ident as a separate field.  This would be
+        // more useful for error messages about the access
+        expr =
+            new FieldAccessNode(
+                expr,
+                ident.image,
+                createSrcLoc(op, ident),
+                op.kind == QDOT);
+      }
+    )
   |
     (
       open = <LBRACKET>
@@ -3665,8 +3695,8 @@ private VarRefNode VarRef() :
  */
 private ExprNode GlobalOrFunctionCallLike() :
 {
-  Identifier ident;
-  Token openParen = null, closeParen = null, paramName;
+  Identifier ident, paramName;
+  Token openParen = null, closeParen = null, recordKey;
   ExprNode key, val;
   List<ExprNode> params = new ArrayList<ExprNode>();
   Set<String> paramNames;
@@ -3713,7 +3743,9 @@ private ExprNode GlobalOrFunctionCallLike() :
           val = Expr()
           {
             if (!(key instanceof GlobalNode)
-                || !BaseUtils.isIdentifier(((GlobalNode) key).getName())) {
+                || (!BaseUtils.isIdentifier(((GlobalNode) key).getName())
+                   && isRecord)
+                || (!BaseUtils.isDottedIdentifier(((GlobalNode) key).getName()))) {
               errorReporter.report(
                   key.getSourceLocation(),
                   INVALID_KEY_NAME,
@@ -3739,16 +3771,24 @@ private ExprNode GlobalOrFunctionCallLike() :
             LOOKAHEAD( { getToken(1).kind == COMMA && getToken(2).kind != RPAREN } )
             <COMMA>
 
-            paramName = <IDENT>
+            (
+              LOOKAHEAD( { isRecord } )
+              recordKey = <IDENT>
+              {
+                paramName = Identifier.create(recordKey.image, createSrcLoc(recordKey));
+              }
+            |
+              paramName = Identifier()
+            )
             {
-              if (!paramNames.add(paramName.image)) {
+              if (!paramNames.add(paramName.identifier())) {
                 errorReporter.report(
-                    createSrcLoc(paramName),
+                    paramName.location(),
                     DUPLICATE_KEY_NAME,
                     isRecord ? "record key" : "param name",
-                    paramName.image);
+                    paramName.identifier());
               } else {
-                paramIds.add(Identifier.create(paramName.image, createSrcLoc(paramName)));
+                paramIds.add(paramName);
               }
             }
             <COLON>
@@ -3763,6 +3803,9 @@ private ExprNode GlobalOrFunctionCallLike() :
             SourceLocation loc = ident.location().extend(createSrcLoc(closeParen));
             if (isRecord) {
               node = new RecordLiteralNode(ident, paramIds, loc);
+              if (params.isEmpty()) {
+                errorReporter.report(ident.location(), EMPTY_RECORD_LITERAL);
+              }
             } else {
               // TODO(user): Also add type, then remove code from RETV
               node = new ProtoInitNode(
@@ -3805,6 +3848,7 @@ private ExprNode GlobalOrFunctionCallLike() :
     // Otherwise, it is a function.
     SourceLocation loc = ident.location().extend(createSrcLoc(closeParen));
     if (isRecord) {
+      errorReporter.report(ident.location(), EMPTY_RECORD_LITERAL);
       return new RecordLiteralNode(ident, ImmutableList.of(), loc);
     }
     return new FunctionNode(ident, loc);
@@ -3954,25 +3998,14 @@ private ExprNode ListLiteral(Token begin, ExprNode firstItem) :
       items.add(firstItem);
     }
 
-    (
-      // If there's a colon here, this could be an attempt at the old legacy_object_map or record
-      // literal syntax, so report a custom error.
-      // TODO(b/80429224): Remove this custom error message after 8 June 2019.
-      end = <COLON>
-      {
-        errorReporter.report(createSrcLoc(end), OLD_RECORD_LITERAL_SYNTAX);
-        skipToTemplateToken();
-      }
-    |
-      // The next item will be a comma for a list
-      ( // this lookahead is necessary to make this loop unambiguous with the trailing comma
-        LOOKAHEAD( { getToken(1).kind == COMMA && getToken(2).kind != RBRACKET } )
-        <COMMA>
-        itemExpr = Expr()
-        { items.add(itemExpr); }
-      )*
-      [ <COMMA> ]  // trailing comma
-    )
+    // The next item will be a comma for a list
+    ( // this lookahead is necessary to make this loop unambiguous with the trailing comma
+      LOOKAHEAD( { getToken(1).kind == COMMA && getToken(2).kind != RBRACKET } )
+      <COMMA>
+      itemExpr = Expr()
+      { items.add(itemExpr); }
+    )*
+    [ <COMMA> ]  // trailing comma
     end = <RBRACKET>
     { return new ListLiteralNode(items, createSrcLoc(begin, end)); }
   )
@@ -4181,9 +4214,68 @@ private TypeNode PrimaryType() :
   | type = NullType()
   | type = UnknownType()
   | type = RecordType()
+  | type = TemplateType()
   )
 
   { return type; }
+}
+
+/**
+ * TemplateType -> "("  ( TemplateArgument ( "," TemplateArgument )* )? ")" "=>" TypeExpr
+ */
+private TypeNode TemplateType() :
+{
+  List<TemplateTypeNode.Argument> arguments = ImmutableList.of();
+  Token open, close, arrow;
+  TypeNode returnType;
+  TemplateTypeNode.Argument argument;
+}
+{
+  open = <LPAREN>
+
+  (
+    argument = TemplateArgument()
+    {
+      arguments = new ArrayList<TemplateTypeNode.Argument>();
+      arguments.add(argument);
+    }
+    (
+      <COMMA>
+      argument = TemplateArgument()
+      {
+        arguments.add(argument);
+      }
+    )*
+  )?
+
+  close = <RPAREN>
+
+  arrow = <FORWARD_ARROW>
+
+  returnType = NamedType()
+
+  {
+    SourceLocation srcLoc = createSrcLoc(open, close, arrow);
+    return TemplateTypeNode.create(srcLoc, arguments, returnType);
+  }
+}
+
+/**
+ * TemplateArgument -> IDENT ":" TypeExpr
+ */
+private TemplateTypeNode.Argument TemplateArgument() :
+{
+  Token argumentName;
+  TypeNode argumentType;
+}
+{
+  argumentName = <IDENT>
+  <COLON>
+  argumentType = TypeExpr()
+
+  {
+    return TemplateTypeNode.Argument.create(createSrcLoc(argumentName), argumentName.image, argumentType);
+  }
 }
 
 
@@ -4217,7 +4309,14 @@ private TypeNode RecordType() :
 
   close = <RBRACKET>
 
-  { return RecordTypeNode.create(createSrcLoc(open, close), properties); }
+  {
+    SourceLocation srcLoc = createSrcLoc(open, close);
+    if (properties.isEmpty()) {
+      errorReporter.report(srcLoc, EMPTY_RECORD_TYPE);
+    }
+
+    return RecordTypeNode.create(srcLoc, properties);
+  }
 }
 
 

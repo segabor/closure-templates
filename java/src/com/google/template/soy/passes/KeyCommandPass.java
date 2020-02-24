@@ -38,7 +38,7 @@ import java.util.Objects;
  * Note that while these restrictions are applied due to how Soy handles incremental dom keys, this
  * pass runs in every backend for consistency.
  */
-final class KeyCommandPass extends CompilerFilePass {
+final class KeyCommandPass implements CompilerFilePass {
 
   private static final SoyErrorKind KEY_ATTR_DIRECT_CHILD_OF_OPEN_TAG =
       SoyErrorKind.of(
@@ -146,6 +146,7 @@ final class KeyCommandPass extends CompilerFilePass {
         case LEGACY_OBJECT_MAP:
         case MAP:
         case PROTO:
+        case TEMPLATE:
         case VE:
         case VE_DATA:
         case ANY:

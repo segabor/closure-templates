@@ -22,7 +22,6 @@ import com.google.common.base.Ascii;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
-import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.base.internal.SanitizedContentKind;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.FunctionNode;
@@ -31,6 +30,7 @@ import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.soytree.PrintNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateNode;
+import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -244,7 +244,7 @@ public final class InferenceEngineTest {
         "<xmp>"
             + "{assert('HTML_RCDATA XMP')} foo {assert('HTML_RCDATA XMP')} "
             + "<div class='{assert('HTML_RCDATA XMP')}'>"
-            + "<{assert('HTML_RCDATA XMP')}>"
+            + "<x{assert('HTML_RCDATA XMP')}>"
             + "</textarea>"
             + "{assert('HTML_RCDATA XMP')}"
             + "</xmp>");

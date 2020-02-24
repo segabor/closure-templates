@@ -20,7 +20,6 @@ import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.base.internal.TriState;
@@ -130,7 +129,7 @@ public final class PassManager {
     private SoyTypeRegistry registry;
     // TODO(lukes): combine with the print directive map
     private PluginResolver pluginResolver;
-    private ImmutableMap<String, ? extends SoyPrintDirective> soyPrintDirectives;
+    private ImmutableList<? extends SoyPrintDirective> soyPrintDirectives;
     private ErrorReporter errorReporter;
     private SoyGeneralOptions options;
     private boolean allowUnknownGlobals;
@@ -152,8 +151,8 @@ public final class PassManager {
       return this;
     }
 
-    public Builder setSoyPrintDirectiveMap(
-        ImmutableMap<String, ? extends SoyPrintDirective> printDirectives) {
+    public Builder setSoyPrintDirectives(
+        ImmutableList<? extends SoyPrintDirective> printDirectives) {
       this.soyPrintDirectives = checkNotNull(printDirectives);
       return this;
     }
@@ -285,7 +284,6 @@ public final class PassManager {
       // meaning that errors reported in earlier passes do not prevent running subsequent passes.
       building = true;
       ImmutableList.Builder<CompilerFilePass> singleFilePassesBuilder = ImmutableList.builder();
-      addPass(new StripSoyCommentsPass(), singleFilePassesBuilder);
       // Needs to run after htmlrewriting, before ResolveNames, ResolveTemplateParamTypes and
       // autoescaping.
       addPass(new ContentSecurityPolicyNonceInjectionPass(errorReporter), singleFilePassesBuilder);
@@ -338,7 +336,14 @@ public final class PassManager {
         addPass(
             new ResolveExpressionTypesPass(registry, errorReporter, loggingConfig),
             singleFilePassesBuilder);
+        // Needs to come after types have been set.
+        addPass(
+            new EnforceExperimentalFeaturesPass(options.getExperimentalFeatures(), errorReporter),
+            singleFilePassesBuilder);
         addPass(new VeLogRewritePass(), singleFilePassesBuilder);
+        // Needs to run before CheckGlobalsPass to prevent unbound global errors on the getExtension
+        // parameters.
+        addPass(new GetExtensionRewriteParamPass(), singleFilePassesBuilder);
       }
       addPass(new ResolvePackageRelativeCssNamesPass(errorReporter), singleFilePassesBuilder);
       if (!allowUnknownGlobals) {
@@ -364,6 +369,7 @@ public final class PassManager {
       // Needs to run after HtmlRewritePass and StrictHtmlValidationPass (for single root
       // validation).
       addPass(new SoyElementPass(errorReporter), templateReturnTypeInferencePasses);
+      addPass(new CallAnnotationPass(), templateReturnTypeInferencePasses);
       if (!disableAllTypeChecking) {
         addPass(
             new VeLogValidationPass(errorReporter, registry), templateReturnTypeInferencePasses);
@@ -389,6 +395,7 @@ public final class PassManager {
       }
 
       if (autoescaperEnabled) {
+        addPass(new CombineConsecutiveRawTextNodesPass(), crossTemplateCheckingPassesBuilder);
         addPass(
             new AutoescaperPass(errorReporter, soyPrintDirectives),
             crossTemplateCheckingPassesBuilder);
@@ -409,8 +416,7 @@ public final class PassManager {
         addPass(new DesugarHtmlNodesPass(), crossTemplateCheckingPassesBuilder);
         addPass(new DesugarStateNodesPass(), crossTemplateCheckingPassesBuilder);
       }
-      // TODO(lukes): there should only be one way to disable the optimizer, not 2
-      if (optimize && options.isOptimizerEnabled()) {
+      if (optimize) {
         addPass(new OptimizationPass(), crossTemplateCheckingPassesBuilder);
       }
       // DesugarHtmlNodesPass may chop up RawTextNodes, and OptimizationPass may produce additional

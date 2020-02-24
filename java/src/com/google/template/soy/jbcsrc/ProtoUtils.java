@@ -57,12 +57,14 @@ import com.google.protobuf.GeneratedMessage.ExtendableMessage;
 import com.google.protobuf.GeneratedMessage.GeneratedExtension;
 import com.google.protobuf.Message;
 import com.google.protobuf.ProtocolMessageEnum;
+import com.google.template.soy.basicmethods.GetExtensionMethod;
 import com.google.template.soy.data.SanitizedContent;
 import com.google.template.soy.data.SanitizedContents;
 import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.FieldAccessNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
+import com.google.template.soy.exprtree.MethodNode;
 import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.internal.proto.JavaQualifiedNames;
 import com.google.template.soy.jbcsrc.restricted.BytecodeProducer;
@@ -197,7 +199,22 @@ final class ProtoUtils {
    */
   static SoyExpression accessField(
       SoyProtoType protoType, SoyExpression baseExpr, FieldAccessNode node) {
-    return new AccessorGenerator(protoType, baseExpr, node).generate();
+    return new AccessorGenerator(protoType, baseExpr, node.getFieldName(), node.getType())
+        .generate();
+  }
+
+  /**
+   * Returns a {@link SoyExpression} for accessing an extension field of a proto using the {@code
+   * getExtension} method.
+   *
+   * @param protoType The type of the proto being accessed.
+   * @param baseExpr The proto being accessed.
+   * @param node The method operation.
+   */
+  static SoyExpression accessExtensionField(
+      SoyProtoType protoType, SoyExpression baseExpr, MethodNode node) {
+    String fieldName = GetExtensionMethod.getExtensionId(node);
+    return new AccessorGenerator(protoType, baseExpr, fieldName, node.getType()).generate();
   }
 
   /**
@@ -207,17 +224,20 @@ final class ProtoUtils {
   private static final class AccessorGenerator {
     final SoyRuntimeType unboxedRuntimeType;
     final SoyExpression baseExpr;
-    final FieldAccessNode node;
+    final SoyType fieldType;
+    final String fieldName;
     final FieldDescriptor descriptor;
     final boolean shouldCheckForFieldPresence;
 
-    AccessorGenerator(SoyProtoType protoType, SoyExpression baseExpr, FieldAccessNode node) {
+    AccessorGenerator(
+        SoyProtoType protoType, SoyExpression baseExpr, String fieldName, SoyType fieldType) {
       this.unboxedRuntimeType = SoyRuntimeType.getUnboxedType(protoType).get();
       this.baseExpr = baseExpr;
-      this.node = node;
-      this.descriptor = protoType.getFieldDescriptor(node.getFieldName());
+      this.fieldName = fieldName;
+      this.fieldType = fieldType;
+      this.descriptor = protoType.getFieldDescriptor(fieldName);
       this.shouldCheckForFieldPresence =
-          protoType.shouldCheckFieldPresenceToEmulateJspbNullability(node.getFieldName());
+          protoType.shouldCheckFieldPresenceToEmulateJspbNullability(fieldName);
     }
 
     SoyExpression generate() {
@@ -507,15 +527,15 @@ final class ProtoUtils {
     }
 
     private SoyExpression messageToSoyExpression(Expression field) {
-      if (node.getType().getKind() == SoyType.Kind.PROTO) {
-        SoyProtoType fieldProtoType = (SoyProtoType) node.getType();
+      if (fieldType.getKind() == SoyType.Kind.PROTO) {
+        SoyProtoType fieldProtoType = (SoyProtoType) fieldType;
         SoyRuntimeType protoRuntimeType = SoyRuntimeType.getUnboxedType(fieldProtoType).get();
         return SoyExpression.forProto(protoRuntimeType, field);
       } else {
         // All other are special sanitized types
         Descriptor messageType = descriptor.getMessageType();
         MethodRef fromProtoMethod = SAFE_PROTO_TO_SANITIZED_CONTENT.get(messageType.getFullName());
-        return SoyExpression.forSoyValue(node.getType(), fromProtoMethod.invoke(field));
+        return SoyExpression.forSoyValue(fieldType, fromProtoMethod.invoke(field));
       }
     }
 
@@ -530,13 +550,13 @@ final class ProtoUtils {
       //    (I think SoyEasyList is supposed to support this)
       // For now we will do #3.  #2 would be ideal (least overhead) but would be very complex. #1 or
       // #4 would both be reasonable compromises.
-      SoyRuntimeType boxedType = SoyRuntimeType.getBoxedType(node.getType());
+      SoyRuntimeType boxedType = SoyRuntimeType.getBoxedType(fieldType);
       return SoyExpression.forSoyValue(
-          node.getType(),
+          fieldType,
           // NOTE: in theory this method can return NullData for missing fields, but since this
           // field is repeated, we know that that will not happen.
           MethodRef.SOY_PROTO_VALUE_GET_PROTO_FIELD
-              .invoke(baseExpr.box(), constant(node.getFieldName()))
+              .invoke(baseExpr.box(), constant(fieldName))
               .checkedCast(boxedType.runtimeType()));
     }
   }
@@ -700,8 +720,7 @@ final class ProtoUtils {
       // mapArg.asJavaMap() that converts SoyMapImpl to a Map<String, SoyValueProvider>.
       // TODO(lukes): handle map literals specially
       Expression resolved =
-          detacher
-              .resolveSoyValueProviderMap(mapArg.invoke(MethodRef.SOY_MAP_IMPL_AS_JAVA_MAP));
+          detacher.resolveSoyValueProviderMap(mapArg.invoke(MethodRef.SOY_MAP_IMPL_AS_JAVA_MAP));
 
       // Enter new scope
       LocalVariableManager.Scope scope = varManager.enterScope();
@@ -1044,7 +1063,7 @@ final class ProtoUtils {
           }
           return Message.class;
       }
-          throw new AssertionError("unsupported field type: " + field);
+      throw new AssertionError("unsupported field type: " + field);
     }
 
     /**
@@ -1146,17 +1165,17 @@ final class ProtoUtils {
   // TODO(lukes): Consider caching? in SoyRuntimeType?
   private static TypeInfo messageRuntimeType(Descriptor descriptor) {
     String className = JavaQualifiedNames.getClassName(descriptor);
-    return TypeInfo.create(className);
+    return TypeInfo.createClass(className);
   }
 
   private static TypeInfo enumRuntimeType(EnumDescriptor descriptor) {
     String className = JavaQualifiedNames.getClassName(descriptor);
-    return TypeInfo.create(className);
+    return TypeInfo.createClass(className);
   }
 
   private static TypeInfo builderRuntimeType(Descriptor descriptor) {
     String className = JavaQualifiedNames.getClassName(descriptor);
-    return TypeInfo.create(className + "$Builder");
+    return TypeInfo.createClass(className + "$Builder");
   }
 
   private static Type getRuntimeType(FieldDescriptor field) {
@@ -1170,7 +1189,7 @@ final class ProtoUtils {
       case ENUM:
         return isProto3EnumField(field)
             ? Type.INT_TYPE
-            : TypeInfo.create(JavaQualifiedNames.getClassName(field.getEnumType())).type();
+            : TypeInfo.createClass(JavaQualifiedNames.getClassName(field.getEnumType())).type();
       case FLOAT:
         return Type.FLOAT_TYPE;
       case INT:
@@ -1178,11 +1197,11 @@ final class ProtoUtils {
       case LONG:
         return Type.LONG_TYPE;
       case MESSAGE:
-        return TypeInfo.create(JavaQualifiedNames.getClassName(field.getMessageType())).type();
+        return TypeInfo.createClass(JavaQualifiedNames.getClassName(field.getMessageType())).type();
       case STRING:
         return STRING_TYPE;
     }
-        throw new AssertionError("unexpected type");
+    throw new AssertionError("unexpected type");
   }
 
   /** Returns the {@link MethodRef} for the generated getter method. */
@@ -1235,7 +1254,7 @@ final class ProtoUtils {
             message,
             new Method(
                 "get" + underscoresToCamelCase(descriptor.getName(), true) + "Case",
-                TypeInfo.create(JavaQualifiedNames.getCaseEnumClassName(descriptor)).type(),
+                TypeInfo.createClass(JavaQualifiedNames.getCaseEnumClassName(descriptor)).type(),
                 NO_METHOD_ARGS))
         .asCheap();
   }
@@ -1319,6 +1338,6 @@ final class ProtoUtils {
             + "."
             + JavaQualifiedNames.getOuterClassname(descriptor.getFile());
     return FieldRef.createPublicStaticField(
-        TypeInfo.create(containingClass), extensionFieldName, EXTENSION_TYPE);
+        TypeInfo.createClass(containingClass), extensionFieldName, EXTENSION_TYPE);
   }
 }

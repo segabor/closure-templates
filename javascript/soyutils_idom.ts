@@ -15,18 +15,19 @@
  * limitations under the License.
  */
 
+import SafeHtml from 'goog:goog.html.SafeHtml'; // from //javascript/closure/html:safehtml
 import * as googSoy from 'goog:goog.soy';  // from //javascript/closure/soy
 import SanitizedContent from 'goog:goog.soy.data.SanitizedContent'; // from //javascript/closure/soy:data
 import SanitizedContentKind from 'goog:goog.soy.data.SanitizedContentKind'; // from //javascript/closure/soy:data
 import SanitizedHtml from 'goog:goog.soy.data.SanitizedHtml'; // from //javascript/closure/soy:data
 import SanitizedHtmlAttribute from 'goog:goog.soy.data.SanitizedHtmlAttribute'; // from //javascript/closure/soy:data
-import * as googString from 'goog:goog.string';  // from //javascript/closure/string
 import * as soy from 'goog:soy';  // from //javascript/template/soy:soy_usegoog_js
 import {isAttribute} from 'goog:soy.checks';  // from //javascript/template/soy:checks
 import {ordainSanitizedHtml} from 'goog:soydata.VERY_UNSAFE';  // from //javascript/template/soy:soy_usegoog_js
 import * as incrementaldom from 'incrementaldom';  // from //third_party/javascript/incremental_dom:incrementaldom
 
 import {FalsinessRenderer, IncrementalDomRenderer, isMatchingKey, patch, patchOuter} from './api_idom';
+import {splitAttributes} from './attributes';
 import {IdomFunction, PatchFunction, SoyElement} from './element_lib_idom';
 import {getSoyUntyped} from './global';
 
@@ -115,19 +116,37 @@ function handleSoyElement<DATA, T extends SoyElement<DATA, {}>>(
 
 // tslint:disable-next-line:no-any Attaching arbitrary attributes to function.
 function makeHtml(idomFn: any): IdomFunction {
-  idomFn.toString = (renderer: IncrementalDomRenderer = defaultIdomRenderer) =>
+  const fn = (() => {
+               throw new Error('Should not be called directly');
+             }) as unknown as (SanitizedHtml & IdomFunction);
+  // tslint:disable-next-line:no-any Hack :(
+  (fn as any).prototype = SanitizedHtml;
+  fn.invoke = (renderer: IncrementalDomRenderer = defaultIdomRenderer) =>
+      idomFn(renderer);
+  fn.toString = (renderer: IncrementalDomRenderer = defaultIdomRenderer) =>
       htmlToString(idomFn, renderer);
-  idomFn.toBoolean = () => isTruthy(idomFn);
-  idomFn.contentKind = SanitizedContentKind.HTML;
-  return idomFn as IdomFunction;
+  fn.getContent = fn.toString;
+  fn.toBoolean = () => isTruthy(idomFn);
+  fn.contentKind = SanitizedContentKind.HTML;
+  fn.isInvokableFn = true;
+  return fn as IdomFunction;
 }
 
 // tslint:disable-next-line:no-any Attaching arbitrary attributes to function.
-function makeAttributes(idomFn: any): IdomFunction {
-  idomFn.toString = () => attributesToString(idomFn);
-  idomFn.toBoolean = () => isTruthy(idomFn);
-  idomFn.contentKind = SanitizedContentKind.ATTRIBUTES;
-  return idomFn as IdomFunction;
+function makeAttributes(idomFn: any): IdomFunction&SanitizedHtmlAttribute {
+  const fn = (() => {
+               throw new Error('Should not be called directly');
+             }) as unknown as (SanitizedHtmlAttribute & IdomFunction);
+  // tslint:disable-next-line:no-any Hack :(
+  (fn as any).prototype = SanitizedHtmlAttribute;
+  fn.invoke = (renderer: IncrementalDomRenderer = defaultIdomRenderer) =>
+      idomFn(renderer);
+  fn.toString = () => attributesToString(idomFn);
+  fn.getContent = fn.toString;
+  fn.toBoolean = () => isTruthy(idomFn);
+  fn.contentKind = SanitizedContentKind.ATTRIBUTES;
+  fn.isInvokableFn = true;
+  return fn as IdomFunction & SanitizedHtmlAttribute;
 }
 
 /**
@@ -162,7 +181,12 @@ function attributesToString(fn: PatchFunction): string {
   patchOuter(el, elFn);
   const s: string[] = [];
   for (let i = 0; i < el.attributes.length; i++) {
-    s.push(`${el.attributes[i].name}=${el.attributes[i].value}`);
+    if (el.attributes[i].value === '') {
+      s.push(el.attributes[i].name);
+    } else {
+      s.push(`${el.attributes[i].name}=\'${
+          soy.$$escapeHtmlAttribute(el.attributes[i].value)}\'`);
+    }
   }
   // The sort is important because attribute order varies per browser.
   return s.sort().join(' ');
@@ -172,36 +196,14 @@ function attributesToString(fn: PatchFunction): string {
  * Calls an expression in case of a function or outputs it as text content.
  */
 function renderDynamicContent(
-    incrementaldom: IncrementalDomRenderer, expr: unknown) {
+    incrementaldom: IncrementalDomRenderer, expr: IdomFunction) {
   // TODO(lukes): check content kind == html
-  if (typeof expr === 'function') {
+  if (expr && expr.isInvokableFn) {
     // The Soy compiler will validate the content kind of the parameter.
-    expr(incrementaldom);
+    expr.invoke(incrementaldom);
   } else {
     incrementaldom.text(String(expr));
   }
-}
-
-/**
- * Matches an HTML attribute name value pair.
- * Name is in group 1.  Value, if present, is in one of group (2,3,4)
- * depending on how it's quoted.
- *
- * This RegExp was derived from visual inspection of
- *   html.spec.whatwg.org/multipage/parsing.html#before-attribute-name-state
- * and following states.
- */
-const htmlAttributeRegExp: RegExp =
-    /([^\t\n\f\r />=]+)[\t\n\f\r ]*(?:=[\t\n\f\r ]*(?:"([^"]*)"?|'([^']*)'?|([^\t\n\f\r >]*)))?/g;
-
-function splitAttributes(attributes: string) {
-  const nameValuePairs: string[][] = [];
-  String(attributes).replace(htmlAttributeRegExp, (s, name, dq, sq, uq) => {
-    nameValuePairs.push(
-        [name, googString.unescapeEntities(dq || sq || uq || '')]);
-    return ' ';
-  });
-  return nameValuePairs;
 }
 
 /**
@@ -241,10 +243,10 @@ function callDynamicAttributes<A, B>(
 function printDynamicAttr(
     incrementaldom: IncrementalDomRenderer,
     expr: SanitizedHtmlAttribute|string|boolean|IdomFunction) {
-  if (goog.isFunction(expr) &&
+  if ((expr as IdomFunction).isInvokableFn &&
       (expr as IdomFunction).contentKind === SanitizedContentKind.ATTRIBUTES) {
     // tslint:disable-next-line:no-any
-    (expr as any as LetFunction)(incrementaldom);
+    (expr as IdomFunction).invoke(incrementaldom);
     return;
   }
   const attributes = splitAttributes(expr.toString());
@@ -334,11 +336,13 @@ declare global {
 function print(
     incrementaldom: IncrementalDomRenderer, expr: unknown,
     isSanitizedContent?: boolean|undefined) {
-  if (expr instanceof SanitizedHtml || isSanitizedContent) {
-    const content = String(expr);
+  if (expr instanceof SanitizedHtml || isSanitizedContent ||
+      expr instanceof SafeHtml) {
+    const content =
+        expr instanceof SafeHtml ? SafeHtml.unwrap(expr) : String(expr);
     // If the string has no < or &, it's definitely not HTML. Otherwise
     // proceed with caution.
-    if (content.indexOf('<') < 0 && content.indexOf('&') < 0) {
+    if (!content.includes('<') && !content.includes('&')) {
       incrementaldom.text(content);
     } else {
       // For HTML content we need to insert a custom element where we can place
@@ -352,7 +356,7 @@ function print(
       incrementaldom.close();
     }
   } else {
-    renderDynamicContent(incrementaldom, expr);
+    renderDynamicContent(incrementaldom, expr as IdomFunction);
   }
 }
 
@@ -377,9 +381,10 @@ function isTruthy(expr: unknown): boolean {
   if (expr instanceof SanitizedContent) return !!expr.getContent();
 
   // idom callbacks.
-  if (typeof expr === 'function') {
+  if ((expr as IdomFunction).isInvokableFn) {
     const renderer = new FalsinessRenderer();
-    expr(renderer);
+    (expr as IdomFunction)
+        .invoke(renderer as unknown as IncrementalDomRenderer);
     return renderer.didRender();
   }
 

@@ -18,10 +18,10 @@ package com.google.template.soy.jbcsrc.api;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.base.Preconditions.checkState;
 import static com.google.template.soy.jbcsrc.shared.Names.rewriteStackTrace;
 
 import com.google.common.base.Ascii;
-import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
 import com.google.common.base.Throwables;
@@ -65,19 +65,18 @@ public final class SoySauceImpl implements SoySauce {
   public SoySauceImpl(
       CompiledTemplates templates,
       SoyScopedData.Enterable apiCallScope,
-      ImmutableMap<String, ? extends SoyFunction> functions,
-      ImmutableMap<String, ? extends SoyPrintDirective> printDirectives,
+      ImmutableList<? extends SoyFunction> functions,
+      ImmutableList<? extends SoyPrintDirective> printDirectives,
       ImmutableMap<String, Supplier<Object>> pluginInstances) {
     this.templates = checkNotNull(templates);
     this.apiCallScope = checkNotNull(apiCallScope);
     ImmutableMap.Builder<String, Supplier<Object>> pluginInstanceBuilder = ImmutableMap.builder();
     pluginInstanceBuilder.putAll(pluginInstances);
 
-    for (Map.Entry<String, ? extends SoyFunction> entry : functions.entrySet()) {
-      String fnName = entry.getKey();
-      if (entry.getValue() instanceof SoyJavaFunction) {
-        SoyJavaFunction fn = (SoyJavaFunction) entry.getValue();
-        pluginInstanceBuilder.put(fnName, Suppliers.ofInstance(new LegacyFunctionAdapter(fn)));
+    for (SoyFunction fn : functions) {
+      if (fn instanceof SoyJavaFunction) {
+        pluginInstanceBuilder.put(
+            fn.getName(), Suppliers.ofInstance(new LegacyFunctionAdapter((SoyJavaFunction) fn)));
       }
     }
 
@@ -85,10 +84,10 @@ public final class SoySauceImpl implements SoySauce {
     // Filter them out.
     ImmutableMap.Builder<String, SoyJavaPrintDirective> soyJavaPrintDirectives =
         ImmutableMap.builder();
-    for (Map.Entry<String, ? extends SoyPrintDirective> entry : printDirectives.entrySet()) {
-      SoyPrintDirective printDirective = entry.getValue();
+    for (SoyPrintDirective printDirective : printDirectives) {
       if (printDirective instanceof SoyJavaPrintDirective) {
-        soyJavaPrintDirectives.put(entry.getKey(), (SoyJavaPrintDirective) printDirective);
+        soyJavaPrintDirectives.put(
+            printDirective.getName(), (SoyJavaPrintDirective) printDirective);
       }
     }
     this.printDirectives = soyJavaPrintDirectives.build();
@@ -181,9 +180,9 @@ public final class SoySauceImpl implements SoySauce {
 
     @Override
     public RendererImpl setData(Map<String, ?> record) {
-      Preconditions.checkState(
+      checkState(
           !dataSetInConstructor,
-          "May not call setData on a Renderer created from a TemplateParams");
+          "May not call setData on a Renderer createdd from a TemplateParams");
 
       this.data = SoyValueConverter.INSTANCE.newDictFromMap(checkNotNull(record));
       return this;
@@ -363,9 +362,7 @@ public final class SoySauceImpl implements SoySauce {
               .withActiveDelPackageSelector(activeDelegatePackages)
               .withLogger(logger)
               .build();
-      Scoper scoper =
-          new Scoper(
-              apiCallScope, BidiGlobalDir.forStaticIsRtl(msgs.isRtl()), msgs.getLocaleString());
+      Scoper scoper = new Scoper(apiCallScope, BidiGlobalDir.forStaticIsRtl(msgs.isRtl()));
       CompiledTemplate template = templateFactory.create(data, ij);
       return doRender(template, scoper, out, context);
     }
@@ -461,16 +458,14 @@ public final class SoySauceImpl implements SoySauce {
   private static final class Scoper {
     final SoyScopedData.Enterable scope;
     final BidiGlobalDir dir;
-    final String localeString;
 
-    Scoper(SoyScopedData.Enterable scope, BidiGlobalDir dir, String localeString) {
+    Scoper(SoyScopedData.Enterable scope, BidiGlobalDir dir) {
       this.scope = scope;
       this.dir = dir;
-      this.localeString = localeString;
     }
 
     SoyScopedData.InScope enter() {
-      return scope.enter(dir, localeString);
+      return scope.enter(dir);
     }
   }
 }

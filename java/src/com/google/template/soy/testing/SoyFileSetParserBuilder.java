@@ -14,13 +14,14 @@
  * limitations under the License.
  */
 
-package com.google.template.soy;
+package com.google.template.soy.testing;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+import com.google.template.soy.SoyFileSetParser;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
 import com.google.template.soy.base.internal.SoyFileSupplier;
 import com.google.template.soy.conformance.ValidatedConformanceConfig;
@@ -31,7 +32,6 @@ import com.google.template.soy.passes.PassManager;
 import com.google.template.soy.passes.PassManager.PassContinuationRule;
 import com.google.template.soy.passes.PluginResolver;
 import com.google.template.soy.plugin.restricted.SoySourceFunction;
-import com.google.template.soy.shared.SharedTestUtils;
 import com.google.template.soy.shared.SoyAstCache;
 import com.google.template.soy.shared.SoyGeneralOptions;
 import com.google.template.soy.shared.internal.InternalPlugins;
@@ -41,9 +41,7 @@ import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
 import com.google.template.soy.types.SoyTypeRegistry;
 import java.util.Arrays;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import javax.annotation.Nullable;
 
 /**
@@ -59,12 +57,14 @@ public final class SoyFileSetParserBuilder {
   private ErrorReporter errorReporter = ErrorReporter.exploding(); // See #parse for discussion.
   private boolean allowUnboundGlobals;
   private boolean allowV1Expression;
-  private final SoyScopedData scopedData;
-  private ImmutableMap<String, SoyFunction> soyFunctionMap;
-  private ImmutableMap<String, SoyPrintDirective> soyPrintDirectiveMap;
-  private ImmutableMap<String, SoySourceFunction> sourceFunctionMap;
   // disable optimization by default
-  private SoyGeneralOptions options = new SoyGeneralOptions().disableOptimizer();
+  private boolean runOptimizer = false;
+  private final SoyScopedData scopedData;
+  private ImmutableList<SoyFunction> soyFunctions;
+  private ImmutableList<SoyPrintDirective> soyPrintDirectives;
+  private ImmutableList<SoySourceFunction> sourceFunctions;
+  private ImmutableList<SoySourceFunction> soyMethods;
+  private SoyGeneralOptions options = new SoyGeneralOptions();
   private ValidatedConformanceConfig conformanceConfig = ValidatedConformanceConfig.EMPTY;
   private ValidatedLoggingConfig loggingConfig = ValidatedLoggingConfig.EMPTY;
   private boolean desugarHtmlAndStateNodes = true;
@@ -126,9 +126,10 @@ public final class SoyFileSetParserBuilder {
     }
     this.soyFileSuppliers = builder.build();
     this.scopedData = new SoySimpleScope();
-    this.soyFunctionMap = InternalPlugins.internalLegacyFunctionMap();
-    this.soyPrintDirectiveMap = InternalPlugins.internalDirectiveMap(scopedData);
-    this.sourceFunctionMap = InternalPlugins.internalFunctionMap();
+    this.soyFunctions = InternalPlugins.internalLegacyFunctions();
+    this.soyPrintDirectives = InternalPlugins.internalDirectives(scopedData);
+    this.sourceFunctions = InternalPlugins.internalFunctions();
+    this.soyMethods = InternalPlugins.internalMethods();
   }
 
   /** Enable experiments. Returns this object, for chaining. */
@@ -146,13 +147,12 @@ public final class SoyFileSetParserBuilder {
     return addSoyFunctions(ImmutableList.of(function));
   }
 
-  public SoyFileSetParserBuilder addSoyFunctions(Iterable<? extends SoyFunction> soyFunctions) {
-    Map<String, SoyFunction> functions = new LinkedHashMap<>();
-    functions.putAll(soyFunctionMap);
-    for (SoyFunction function : soyFunctions) {
-      functions.put(function.getName(), function);
-    }
-    this.soyFunctionMap = ImmutableMap.copyOf(functions);
+  public SoyFileSetParserBuilder addSoyFunctions(Iterable<? extends SoyFunction> newSoyFunctions) {
+    this.soyFunctions =
+        ImmutableList.<SoyFunction>builder()
+            .addAll(this.soyFunctions)
+            .addAll(newSoyFunctions)
+            .build();
     return this;
   }
 
@@ -161,30 +161,40 @@ public final class SoyFileSetParserBuilder {
   }
 
   public SoyFileSetParserBuilder addSoySourceFunctions(
-      Iterable<? extends SoySourceFunction> sourceFunctions) {
-    Map<String, SoySourceFunction> functions = new LinkedHashMap<>();
-    functions.putAll(sourceFunctionMap);
-    for (Map.Entry<String, SoySourceFunction> entry :
-        InternalPlugins.fromFunctions(sourceFunctions).entrySet()) {
-      functions.put(entry.getKey(), entry.getValue());
-    }
-    this.sourceFunctionMap = ImmutableMap.copyOf(functions);
+      Iterable<? extends SoySourceFunction> newSourceFunctions) {
+    this.sourceFunctions =
+        ImmutableList.<SoySourceFunction>builder()
+            .addAll(this.sourceFunctions)
+            .addAll(newSourceFunctions)
+            .build();
     return this;
   }
 
   public SoyFileSetParserBuilder addPrintDirectives(
-      Iterable<? extends SoyPrintDirective> soyPrintDirectives) {
-    Map<String, SoyPrintDirective> directives = new LinkedHashMap<>();
-    directives.putAll(soyPrintDirectiveMap);
-    for (SoyPrintDirective printDirective : soyPrintDirectives) {
-      directives.put(printDirective.getName(), printDirective);
-    }
-    this.soyPrintDirectiveMap = ImmutableMap.copyOf(directives);
+      Iterable<? extends SoyPrintDirective> newSoyPrintDirectives) {
+    this.soyPrintDirectives =
+        ImmutableList.<SoyPrintDirective>builder()
+            .addAll(this.soyPrintDirectives)
+            .addAll(newSoyPrintDirectives)
+            .build();
     return this;
   }
 
   public SoyFileSetParserBuilder addPrintDirective(SoyPrintDirective printDirective) {
     return addPrintDirectives(ImmutableList.of(printDirective));
+  }
+
+  public SoyFileSetParserBuilder addMethods(Iterable<? extends SoySourceFunction> newMethods) {
+    soyMethods =
+        ImmutableList.<SoySourceFunction>builder()
+            .addAll(this.soyMethods)
+            .addAll(newMethods)
+            .build();
+    return this;
+  }
+
+  public SoyFileSetParserBuilder addMethod(SoySourceFunction method) {
+    return addMethods(ImmutableList.of(method));
   }
 
   public SoyFileSetParserBuilder options(SoyGeneralOptions options) {
@@ -224,6 +234,11 @@ public final class SoyFileSetParserBuilder {
 
   public SoyFileSetParserBuilder runAutoescaper(boolean runAutoescaper) {
     this.runAutoescaper = runAutoescaper;
+    return this;
+  }
+
+  public SoyFileSetParserBuilder runOptimizer(boolean runOptimizer) {
+    this.runOptimizer = runOptimizer;
     return this;
   }
 
@@ -278,7 +293,7 @@ public final class SoyFileSetParserBuilder {
   public SoyFileSetParser build() {
     // Add the remaining PassManager configuration bits.
     passManager
-        .setSoyPrintDirectiveMap(soyPrintDirectiveMap)
+        .setSoyPrintDirectives(soyPrintDirectives)
         .setErrorReporter(errorReporter)
         .setTypeRegistry(typeRegistry)
         .desugarHtmlAndStateNodes(desugarHtmlAndStateNodes)
@@ -287,11 +302,13 @@ public final class SoyFileSetParserBuilder {
         .setPluginResolver(
             new PluginResolver(
                 PluginResolver.Mode.REQUIRE_DEFINITIONS,
-                ImmutableMap.copyOf(soyPrintDirectiveMap),
-                ImmutableMap.copyOf(soyFunctionMap),
-                sourceFunctionMap,
+                soyPrintDirectives,
+                soyFunctions,
+                sourceFunctions,
+                soyMethods,
                 errorReporter))
         .setAutoescaperEnabled(runAutoescaper)
+        .optimize(runOptimizer)
         .addHtmlAttributesForDebugging(addHtmlAttributesForDebugging)
         .setLoggingConfig(loggingConfig);
     if (allowUnboundGlobals) {

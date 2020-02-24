@@ -16,6 +16,7 @@
 
 package com.google.template.soy.sharedpasses.render;
 
+import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.template.soy.shared.internal.SharedRuntime.dividedBy;
 import static com.google.template.soy.shared.internal.SharedRuntime.equal;
@@ -32,6 +33,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.annotations.ForOverride;
 import com.google.template.soy.base.internal.Identifier;
+import com.google.template.soy.basicmethods.GetExtensionMethod;
 import com.google.template.soy.data.LoggingAdvisingAppendable;
 import com.google.template.soy.data.SoyAbstractValue;
 import com.google.template.soy.data.SoyDataException;
@@ -67,6 +69,7 @@ import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.ListComprehensionNode.ComprehensionVarDefn;
 import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
+import com.google.template.soy.exprtree.MethodNode;
 import com.google.template.soy.exprtree.NullNode;
 import com.google.template.soy.exprtree.OperatorNodes.AndOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.ConditionalOpNode;
@@ -124,6 +127,17 @@ import javax.annotation.Nullable;
  */
 public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
 
+  /** Defines how we deal with and produce UndefinedData instanes. */
+  public enum UndefinedDataHandlingMode {
+    /**
+     * In 'bugged' mode we will produce instances of undefined data when dereferencing null instead
+     * of throwing an exception.
+     */
+    BUGGED,
+    /** Normal mode just means not doing the bugged behavior. */
+    NORMAL;
+  }
+
   /** Interface for a factory that creates an EvalVisitor. */
   public interface EvalVisitorFactory {
 
@@ -169,6 +183,9 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
    */
   private final ImmutableMap<String, Supplier<Object>> pluginInstances;
 
+  /** How to manage old data handling bugs. */
+  private final UndefinedDataHandlingMode undefinedDataHandlingMode;
+
   /**
    * @param env The current environment.
    * @param pluginInstances The instances used for evaluating functions that call instance methods.
@@ -179,7 +196,8 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
       @Nullable SoyIdRenamingMap xidRenamingMap,
       @Nullable SoyMsgBundle msgBundle,
       boolean debugSoyTemplateInfo,
-      ImmutableMap<String, Supplier<Object>> pluginInstances) {
+      ImmutableMap<String, Supplier<Object>> pluginInstances,
+      UndefinedDataHandlingMode undefinedDataHandlingMode) {
     this.env = checkNotNull(env);
     this.msgBundle = msgBundle;
     this.cssRenamingMap = (cssRenamingMap == null) ? SoyCssRenamingMap.EMPTY : cssRenamingMap;
@@ -187,6 +205,7 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
     this.debugSoyTemplateInfo = debugSoyTemplateInfo;
     this.context = new TofuPluginContext(msgBundle);
     this.pluginInstances = checkNotNull(pluginInstances);
+    this.undefinedDataHandlingMode = checkNotNull(undefinedDataHandlingMode);
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -350,6 +369,9 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
       case ITEM_ACCESS_NODE:
         return visitNullSafeItemAccessNode((ItemAccessNode) node);
 
+      case METHOD_NODE:
+        return visitNullSafeMethodNode((MethodNode) node);
+
       default:
         return visit(node);
     }
@@ -394,7 +416,17 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
 
       // This behavior is not ideal, but needed for compatibility with existing code.
       // TODO: If feasible, find and fix existing instances, then throw RenderException here.
-      return UndefinedData.INSTANCE;
+      if (undefinedDataHandlingMode == UndefinedDataHandlingMode.BUGGED) {
+        return UndefinedData.INSTANCE;
+      }
+      if (isNullOrUndefinedBase(base)) {
+        throw RenderException.create(
+            String.format("Attempted to access field \"%s\" of null.", fieldAccess.getFieldName()));
+      }
+      throw RenderException.create(
+          String.format(
+              "Attempted to access field \"%s\" of non-record type: %s.",
+              fieldAccess.getFieldName(), base.getClass().getName()));
     }
 
     // If the static type is a proto, access it using proto semantics
@@ -420,7 +452,11 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
               fieldAccess.getType(), value.getClass().getSimpleName()));
     }
 
-    return (value != null) ? value : UndefinedData.INSTANCE;
+    return (value != null)
+        ? value
+        : (undefinedDataHandlingMode == UndefinedDataHandlingMode.BUGGED
+            ? UndefinedData.INSTANCE
+            : NullData.INSTANCE);
   }
 
   private static boolean isProtoOrUnionOfProtos(SoyType type) {
@@ -463,14 +499,25 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
 
       // This behavior is not ideal, but needed for compatibility with existing code.
       // TODO: If feasible, find and fix existing instances, then throw RenderException here.
-      return UndefinedData.INSTANCE;
+      if (undefinedDataHandlingMode == UndefinedDataHandlingMode.BUGGED) {
+        return UndefinedData.INSTANCE;
+      }
+      if (isNullOrUndefinedBase(base)) {
+        throw RenderException.create(
+            String.format(
+                "Attempted to access item \"%s\" of null.", itemAccess.getSourceStringSuffix()));
+      }
+      throw RenderException.create(
+          String.format(
+              "While evaluating \"%s\", encountered non-map/list just before accessing \"%s\".",
+              itemAccess.toSourceString(), itemAccess.getSourceStringSuffix()));
     }
 
     // base is a valid SoyMap or SoyLegacyObjectMap: get value
     maybeMarkBadProtoAccess(itemAccess, base);
     SoyValue key = visit(itemAccess.getKeyExprChild());
 
-    SoyType baseType = SoyTypes.tryRemoveNull(itemAccess.getBaseExprChild().getType());
+    SoyType baseType = SoyTypes.removeNull(itemAccess.getBaseExprChild().getType());
 
     // We need to know whether to invoke the SoyMap or SoyLegacyObjectMap method.
     // An instanceof check on the runtime value of base is insufficient, since
@@ -491,7 +538,7 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
 
     if (value != null) {
       return value;
-    } else if (shouldUseNewMap) {
+    } else if (shouldUseNewMap || undefinedDataHandlingMode != UndefinedDataHandlingMode.BUGGED) {
       // UndefinedData is a misfeature. The new map type should return null for failed lookups.
       return NullData.INSTANCE;
     } else {
@@ -507,6 +554,26 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
     if (value instanceof SoyProtoValue) {
       ((SoyProtoValue) value).setAccessLocationKey(expr.getSourceLocation());
     }
+  }
+
+  private SoyValue visitNullSafeMethodNode(MethodNode methodNode) {
+    SoyValue base = visitNullSafeNodeRecurse(methodNode.getBaseExprChild());
+
+    if (methodNode.isNullSafe() && isNullOrUndefinedBase(base)) {
+      return NullSafetySentinel.INSTANCE;
+    }
+
+    // TODO(b/147372851): Handle case when the implementation of the method cannot be determined
+    // from the base type during compile time and the node has multiple SoySourceFunctions.
+    checkArgument(methodNode.isMethodResolved());
+
+    if (GetExtensionMethod.isGetExtensionMethod(methodNode)) {
+      String fieldName = GetExtensionMethod.getExtensionId(methodNode);
+      return ((SoyProtoValue) base).getProtoField(fieldName);
+    }
+
+    // TODO(b/147372851): Implement method calls for normal SoyMethodSignature methods.
+    return base;
   }
 
   // Returns true if the base SoyValue of a data access chain is null or undefined.
@@ -663,6 +730,8 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
           return visitCssFunction(node);
         case XID:
           return visitXidFunction(node);
+        case SOY_SERVER_KEY:
+          return visitSoyServerKeyFunction(node);
         case IS_PRIMARY_MSG_IN_USE:
           return visitIsPrimaryMsgInUseFunction(node);
         case UNKNOWN_JS_GLOBAL:
@@ -829,6 +898,10 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
     String xid = visit(node.getChild(0)).stringValue();
     String renamed = xidRenamingMap.get(xid);
     return (renamed != null) ? StringData.forValue(renamed) : StringData.forValue(xid + "_");
+  }
+
+  private SoyValue visitSoyServerKeyFunction(FunctionNode node) {
+    return visit(node.getChild(0));
   }
 
   private SoyValue visitIsPrimaryMsgInUseFunction(FunctionNode node) {

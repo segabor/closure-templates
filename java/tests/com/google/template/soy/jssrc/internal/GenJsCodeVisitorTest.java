@@ -24,7 +24,6 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
-import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.base.internal.UniqueNameGenerator;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
@@ -33,10 +32,11 @@ import com.google.template.soy.jssrc.dsl.CodeChunk;
 import com.google.template.soy.jssrc.dsl.Expression;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyLibraryAssistedJsSrcFunction;
-import com.google.template.soy.shared.SharedTestUtils;
 import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.TemplateNode;
+import com.google.template.soy.testing.SharedTestUtils;
+import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import com.google.template.soy.types.SoyTypeRegistry;
 import java.util.List;
 import java.util.Set;
@@ -292,7 +292,7 @@ public final class GenJsCodeVisitorTest {
             + "\n"
             + "\n"
             + "/**\n"
-            + " * @param {Object<string, *>=} opt_data\n"
+            + " * @param {?Object<string, *>=} opt_data\n"
             + " * @param {(?goog.soy.IjData|?Object<string, *>)=} opt_ijData\n"
             + " * @param {(?goog.soy.IjData|?Object<string, *>)=} opt_ijData_deprecated\n"
             + " * @return {!goog.soy.data.SanitizedHtml}\n"
@@ -350,7 +350,7 @@ public final class GenJsCodeVisitorTest {
             + "\n"
             + "\n"
             + "/**\n"
-            + " * @param {Object<string, *>=} opt_data\n"
+            + " * @param {?Object<string, *>=} opt_data\n"
             + " * @param {(?goog.soy.IjData|?Object<string, *>)=} opt_ijData\n"
             + " * @param {(?goog.soy.IjData|?Object<string, *>)=} opt_ijData_deprecated\n"
             + " * @return {!goog.soy.data.SanitizedHtml}\n"
@@ -587,18 +587,18 @@ public final class GenJsCodeVisitorTest {
     String expectedJsCode =
         ""
             + "if (opt_data.boo) {\n"
-            + "  var alpha__soy8 = opt_data.boo.foo;\n"
-            + "  var beta__soy11 = 'Boo!';\n"
-            + "  var gamma__soy21 = '';\n"
-            + "  var i14ListLen = Math.max(0, Math.ceil((alpha__soy8 - 0) / 1));\n"
-            + "  for (var i14Index = 0; i14Index < i14ListLen; i14Index++) {\n"
-            + "    var i14Data = 0 + i14Index * 1;\n"
-            + "    gamma__soy21 += i14Data + beta__soy11;\n"
+            + "  var alpha__soy5 = opt_data.boo.foo;\n"
+            + "  var beta__soy8 = 'Boo!';\n"
+            + "  var gamma__soy18 = '';\n"
+            + "  var i16ListLen = Math.max(0, Math.ceil((alpha__soy5 - 0) / 1));\n"
+            + "  for (var i16Index = 0; i16Index < i16ListLen; i16Index++) {\n"
+            + "    var i16Data = 0 + i16Index * 1;\n"
+            + "    gamma__soy18 += i16Data + beta__soy8;\n"
             + "  }\n"
-            + "  var delta__soy24 = 'Boop!';\n"
-            + "  var delta__wrapped24 = soydata.VERY_UNSAFE"
-            + ".$$ordainSanitizedHtmlForInternalBlocks(delta__soy24);\n"
-            + "  output += alpha__soy8 + beta__soy11 + gamma__soy21 + delta__wrapped24;\n"
+            + "  var delta__soy21 = 'Boop!';\n"
+            + "  var delta__wrapped21 = soydata.VERY_UNSAFE"
+            + ".$$ordainSanitizedHtmlForInternalBlocks(delta__soy21);\n"
+            + "  output += alpha__soy5 + beta__soy8 + gamma__soy18 + delta__wrapped21;\n"
             + "}\n";
     assertGeneratedJsCode(soyNodeCode, expectedJsCode);
   }
@@ -643,7 +643,7 @@ public final class GenJsCodeVisitorTest {
             "var $tmp;",
             "if (opt_data.boo) {",
             "  $tmp = 'Blah';",
-            "} else if (!soy.$$strContains('' + (gooData8), 'goo')) {",
+            "} else if (!soy.$$strContains('' + gooData8, 'goo')) {",
             "  $tmp = 'Bleh';",
             "} else {",
             "  $tmp = 'Bluh';",
@@ -668,12 +668,12 @@ public final class GenJsCodeVisitorTest {
     expectedJsCode =
         ""
             + "if (opt_data.boo.foo > 0) {\n"
-            + "  var i9ListLen = Math.max(0, Math.ceil((4 - 0) / 1));\n"
-            + "  for (var i9Index = 0; i9Index < i9ListLen; i9Index++) {\n"
-            + "    var i9Data = 0 + i9Index * 1;\n"
-            + "    output += i9Data + 1 + '<br>';\n"
+            + "  var i10ListLen = Math.max(0, Math.ceil((4 - 0) / 1));\n"
+            + "  for (var i10Index = 0; i10Index < i10ListLen; i10Index++) {\n"
+            + "    var i10Data = 0 + i10Index * 1;\n"
+            + "    output += i10Data + 1 + '<br>';\n"
             + "  }\n"
-            + "} else if (!soy.$$strContains('' + (gooData8), 'goo')) {\n"
+            + "} else if (!soy.$$strContains('' + gooData8, 'goo')) {\n"
             + "  output += 'Bleh';\n"
             + "} else {\n"
             + "  output += 'Bluh';\n"
@@ -704,14 +704,14 @@ public final class GenJsCodeVisitorTest {
             + "{/call}\n";
     String expectedJsCode =
         ""
-            + "var param12 = '';\n"
-            + "var i6ListLen = Math.max(0, Math.ceil((7 - 0) / 1));\n"
-            + "for (var i6Index = 0; i6Index < i6ListLen; i6Index++) {\n"
-            + "  var i6Data = 0 + i6Index * 1;\n"
-            + "  param12 += i6Data;\n"
+            + "var param11 = '';\n"
+            + "var i9ListLen = Math.max(0, Math.ceil((7 - 0) / 1));\n"
+            + "for (var i9Index = 0; i9Index < i9ListLen; i9Index++) {\n"
+            + "  var i9Data = 0 + i9Index * 1;\n"
+            + "  param11 += i9Data;\n"
             + "}\n"
-            + "output += some.func(soy.$$assignDefaults("
-            + "{goo: param12}, opt_data.boo), opt_ijData);\n";
+            + "output += some.func(soy.$$assignDefaults({goo: param11}, opt_data.boo),"
+            + " opt_ijData);\n";
     assertGeneratedJsCode(soyNodeCode, expectedJsCode);
   }
 
@@ -1262,7 +1262,7 @@ public final class GenJsCodeVisitorTest {
 
     String expectedJsCode =
         "/**\n"
-            + " * @param {Object<string, *>=} opt_data\n"
+            + " * @param {?Object<string, *>=} opt_data\n"
             + " * @param {(?goog.soy.IjData|?Object<string, *>)=} opt_ijData\n"
             + " * @param {(?goog.soy.IjData|?Object<string, *>)=} opt_ijData_deprecated\n"
             + " * @return {!goog.soy.data.SanitizedHtml}\n"
@@ -1320,7 +1320,7 @@ public final class GenJsCodeVisitorTest {
             + "\n"
             + "\n"
             + "/**\n"
-            + " * @param {Object<string, *>=} opt_data\n"
+            + " * @param {?Object<string, *>=} opt_data\n"
             + " * @param {(?goog.soy.IjData|?Object<string, *>)=} opt_ijData\n"
             + " * @param {(?goog.soy.IjData|?Object<string, *>)=} opt_ijData_deprecated\n"
             + " * @return {!goog.soy.data.SanitizedHtml}\n"

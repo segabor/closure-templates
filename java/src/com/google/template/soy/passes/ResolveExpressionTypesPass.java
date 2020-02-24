@@ -20,6 +20,7 @@ import static com.google.common.base.Preconditions.checkState;
 import static com.google.template.soy.passes.CheckTemplateCallsPass.ARGUMENT_TYPE_MISMATCH;
 
 import com.google.common.base.Equivalence.Wrapper;
+import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
@@ -27,12 +28,12 @@ import com.google.common.collect.Maps;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.base.internal.Identifier;
-import com.google.template.soy.basicfunctions.AugmentMapFunction;
 import com.google.template.soy.basicfunctions.ConcatListsFunction;
 import com.google.template.soy.basicfunctions.KeysFunction;
 import com.google.template.soy.basicfunctions.LegacyObjectMapToMapFunction;
 import com.google.template.soy.basicfunctions.MapKeysFunction;
 import com.google.template.soy.basicfunctions.MapToLegacyObjectMapFunction;
+import com.google.template.soy.basicmethods.GetExtensionMethod;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.ErrorReporter.Checkpoint;
 import com.google.template.soy.error.SoyErrorKind;
@@ -53,6 +54,7 @@ import com.google.template.soy.exprtree.ItemAccessNode;
 import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
+import com.google.template.soy.exprtree.MethodNode;
 import com.google.template.soy.exprtree.OperatorNodes.AndOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.ConditionalOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.DivideByOpNode;
@@ -83,6 +85,7 @@ import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.shared.internal.ResolvedSignature;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
+import com.google.template.soy.shared.restricted.SoyMethodSignature;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
 import com.google.template.soy.soyparse.SoyFileParser;
 import com.google.template.soy.soytree.AbstractSoyNodeVisitor;
@@ -142,7 +145,7 @@ import javax.annotation.Nullable;
  * Visitor which resolves all expression types.
  *
  */
-public final class ResolveExpressionTypesPass extends CompilerFilePass {
+public final class ResolveExpressionTypesPass implements CompilerFilePass {
 
   // Keep in alphabetical order.
   private static final SoyErrorKind BAD_FOREACH_TYPE =
@@ -213,10 +216,16 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
       SoyErrorKind.of("Unknown proto type ''{0}''.");
   private static final SoyErrorKind PROTO_FIELD_DOES_NOT_EXIST =
       SoyErrorKind.of("Proto field ''{0}'' does not exist.{1}", StyleAllowance.NO_PUNCTUATION);
+  private static final SoyErrorKind PROTO_EXTENSION_DOES_NOT_EXIST =
+      SoyErrorKind.of(
+          "Proto extension field ''{0}'' does not exist on the proto ''{1}''.{2}",
+          StyleAllowance.NO_PUNCTUATION);
   private static final SoyErrorKind PROTO_MISSING_REQUIRED_FIELD =
       SoyErrorKind.of("Missing required proto field ''{0}''.");
   private static final SoyErrorKind PROTO_NULL_ARG_TYPE =
       SoyErrorKind.of("Cannot assign static type ''null'' to proto field ''{0}''.");
+  private static final SoyErrorKind PROTO_FIELD_NAME_ALIAS_CONFLICT =
+      SoyErrorKind.of("Alias ''{0}'' conflicts with a field with the same name in proto ''{1}''.");
   private static final SoyErrorKind TYPE_MISMATCH =
       SoyErrorKind.of("Soy types ''{0}'' and ''{1}'' are not comparable.");
   private static final SoyErrorKind DECLARED_DEFAULT_TYPE_MISMATCH =
@@ -234,6 +243,17 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
       SoyErrorKind.of("Function ''{0}'' must have a loop variable as its argument.");
   private static final SoyErrorKind STRING_LITERAL_REQUIRED =
       SoyErrorKind.of("Argument to function ''{0}'' must be a string literal.");
+  private static final SoyErrorKind INVALID_METHOD_BASE =
+      SoyErrorKind.of("Method ''{0}'' does not exist for base type ''{1}''.");
+  private static final SoyErrorKind METHOD_INVALID_PARAM_NUM =
+      SoyErrorKind.of("Method ''{0}'' called with {1} parameters (expected {2}).");
+  private static final SoyErrorKind GET_EXTENSION_GLOBAL_REQUIRED =
+      SoyErrorKind.of(
+          "The parameter of method ''getExtension'' must be a dotted identifier. Found ''{0}''");
+  private static final SoyErrorKind METHOD_BASE_TYPE_NULL_SAFE_REQUIRED =
+      SoyErrorKind.of(
+          "Method calls are not allowed on objects with nullable types (''{0}''). Either ensure"
+              + " the type is non-nullable or perform a null safe access (''?.'').");
   private static final SoyErrorKind EXPLICIT_NULL =
       SoyErrorKind.of("Explicit use of the ''null'' type is not allowed.");
   private static final SoyErrorKind AMBIGUOUS_INFERRED_TYPE =
@@ -253,6 +273,8 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
   private final TypeNodeConverter typeNodeConverter;
   /** Cached map that converts a string representation of types to actual soy types. */
   private final Map<Signature, ResolvedSignature> signatureMap = new HashMap<>();
+  /** Cached map of a method to the actual soy type of the base type. */
+  private final Map<SoyMethodSignature, SoyType> methodBaseTypeMap = new HashMap<>();
 
   /** Current set of type substitutions. */
   private TypeSubstitution substitutions;
@@ -330,7 +352,7 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
         }
         if (headerVar.defaultValue() != null) {
           new ResolveTypesExprVisitor(
-                  /* isDefaultInitializerForInferredParam=*/ headerVar.getTypeNode() == null)
+                  /* isDefaultInitializerForInferredParam=*/ headerVar.getTypeNode() == null, node)
               .exec(headerVar.defaultValue());
           SoyType actualType = headerVar.defaultValue().getRoot().getType();
           if (headerVar.getTypeNode() != null) {
@@ -467,8 +489,6 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
 
     @Override
     protected void visitForNonemptyNode(ForNonemptyNode node) {
-      // Visit the foreach iterator expression
-      visitExpressions(node.getParent());
       // Set the inferred type of the loop variable.
       node.getVar().setType(getElementType(node.getExpr().getType(), node));
       // Visit the node body
@@ -510,7 +530,7 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
 
   private void visitExpressions(ExprHolderNode node) {
     ResolveTypesExprVisitor exprVisitor =
-        new ResolveTypesExprVisitor(/* isDefaultInitializerForInferredParam=*/ false);
+        new ResolveTypesExprVisitor(/* isDefaultInitializerForInferredParam=*/ false, node);
     for (ExprRootNode expr : node.getExprList()) {
       exprVisitor.exec(expr);
     }
@@ -533,7 +553,7 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
 
       case LIST:
         if (collectionType == ListType.EMPTY_LIST) {
-          errorReporter.report(node.getParent().getSourceLocation(), EMPTY_LIST_FOREACH);
+          errorReporter.report(node.getExpr().getSourceLocation(), EMPTY_LIST_FOREACH);
           return ErrorType.getInstance();
         }
         return ((ListType) collectionType).getElementType();
@@ -581,8 +601,15 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
      */
     final boolean isDefaultInitializerForInferredParam;
 
-    ResolveTypesExprVisitor(boolean isDefaultInitializerForInferredParam) {
+    /**
+     * The ExprHolderNode of the expression. Used to get the SoyFileNode when visiting
+     * ProtoInitNodes to resolve the aliased fields.
+     */
+    final SoyNode exprHolderNode;
+
+    ResolveTypesExprVisitor(boolean isDefaultInitializerForInferredParam, SoyNode exprHolderNode) {
       this.isDefaultInitializerForInferredParam = isDefaultInitializerForInferredParam;
+      this.exprHolderNode = exprHolderNode;
     }
 
     private final AbstractExprNodeVisitor<Void> checkAllTypesAssignedVisitor =
@@ -689,15 +716,7 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
 
       int numChildren = node.numChildren();
       checkState(numChildren == node.getKeys().size());
-      if (numChildren == 0) {
-        // TODO(b/79869432): Remove support for the empty record.
-        node.setType(RecordType.EMPTY_RECORD);
-        if (isDefaultInitializerForInferredParam) {
-          errorReporter.report(
-              node.getSourceLocation(), AMBIGUOUS_INFERRED_TYPE, "an empty record");
-        }
-        return;
-      }
+      checkState(numChildren > 0);
 
       List<RecordType.Member> members = new ArrayList<>();
       for (int i = 0; i < numChildren; i++) {
@@ -792,6 +811,146 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
               node.getKeyExprChild().getSourceLocation());
       node.setType(itemType);
       tryApplySubstitution(node);
+    }
+
+    @Override
+    protected void visitMethodNode(MethodNode node) {
+      visitChildren(node);
+      SoyType baseType = node.getBaseExprChild().getType();
+      SoySourceFunction method = resolveMethodFromBaseType(node, baseType, node.getSoyMethods());
+      if (method != null) {
+        node.setSoyMethods(ImmutableList.of(method));
+      } else {
+        // Remove all existing soy methods if the method could not be resolved.
+        node.setSoyMethods(ImmutableList.of());
+      }
+
+      if (method instanceof GetExtensionMethod) {
+        visitGetExtensionMethod(node);
+      }
+      // TODO(b/147372851): Check parameter types and set the return type for methods that aren't
+      // the getExtension method.
+    }
+
+    private void visitGetExtensionMethod(MethodNode node) {
+      SoyType baseType = SoyTypes.tryRemoveNull(node.getBaseExprChild().getType());
+
+      if (baseType.getKind() != SoyType.Kind.PROTO) {
+        errorReporter.report(
+            node.getBaseExprChild().getSourceLocation(),
+            INVALID_METHOD_BASE,
+            node.getMethodName(),
+            baseType);
+        node.setSoyMethods(ImmutableList.of());
+        node.setType(ErrorType.getInstance());
+        return;
+      }
+
+      ExprNode child = node.getChild(1);
+      // Fully qualified name parameter should initially be parsed as a global node.
+      if (child.getKind() != ExprNode.Kind.GLOBAL_NODE) {
+        errorReporter.report(
+            child.getSourceLocation(), GET_EXTENSION_GLOBAL_REQUIRED, child.getType().toString());
+        node.setType(ErrorType.getInstance());
+        return;
+      }
+
+      GlobalNode parameter = (GlobalNode) child;
+      SoyProtoType protoType = (SoyProtoType) baseType;
+      ImmutableSet<String> fields = protoType.getExtensionFieldNames();
+
+      String fieldName = parameter.getName();
+      if (!fields.contains(fieldName)) {
+        String extraErrorMessage =
+            SoyErrors.getDidYouMeanMessageForProtoFields(
+                fields, protoType.getDescriptor(), fieldName);
+        errorReporter.report(
+            parameter.getSourceLocation(),
+            PROTO_EXTENSION_DOES_NOT_EXIST,
+            fieldName,
+            protoType.getDescriptor().getFullName(),
+            extraErrorMessage);
+        node.setType(ErrorType.getInstance());
+        return;
+      }
+      node.setType(protoType.getFieldType(fieldName, errorReporter, node.getSourceLocation()));
+    }
+
+    @Nullable
+    private SoySourceFunction resolveMethodFromBaseType(
+        MethodNode node, SoyType baseType, List<SoySourceFunction> methods) {
+      // The methods list is empty when there are no methods with a name matching the one that the
+      // method node is called with, and an error is reported during the ResolvePluginsPass.
+      if (methods.isEmpty()) {
+        node.setType(ErrorType.getInstance());
+        return null;
+      }
+
+      if (SoyTypes.isNullable(baseType)) {
+        if (!node.isNullSafe()) {
+          errorReporter.report(
+              node.getBaseExprChild().getSourceLocation(),
+              METHOD_BASE_TYPE_NULL_SAFE_REQUIRED,
+              baseType);
+          node.setType(ErrorType.getInstance());
+          return null;
+        }
+        baseType = SoyTypes.tryRemoveNull(baseType);
+      }
+
+      SoySourceFunction resolvedMethod = null;
+      for (SoySourceFunction method : methods) {
+        SoyMethodSignature methodSignature =
+            method.getClass().getAnnotation(SoyMethodSignature.class);
+        SoyType expectedBaseType = methodBaseTypeMap.get(methodSignature);
+
+        if (expectedBaseType == null) {
+          String baseTypeString = methodSignature.baseType();
+          TypeNode parsedBaseType =
+              SoyFileParser.parseType(
+                  baseTypeString, method.getClass().getCanonicalName(), errorReporter);
+          if (parsedBaseType != null) {
+            expectedBaseType = typeNodeConverter.getOrCreateType(parsedBaseType);
+            methodBaseTypeMap.put(methodSignature, expectedBaseType);
+          }
+        }
+
+        // TODO(b/147372851): Handle case where the base type is unknown at compile time, and the
+        // SoySourceFunction cannot be determined until runtime.
+        // TODO(b/147372851): Handle case where the base type is known at compile time, and multiple
+        // methods match the given base type.
+        if (expectedBaseType != null && expectedBaseType.isAssignableFrom(baseType)) {
+          resolvedMethod = method;
+        }
+      }
+
+      if (resolvedMethod == null) {
+        errorReporter.report(
+            node.getSourceLocation(),
+            INVALID_METHOD_BASE,
+            node.getMethodName().identifier(),
+            baseType);
+        node.setType(ErrorType.getInstance());
+        return null;
+      }
+      // Check that the number of parameters from the SoyMethodSignature matches the node's.
+      Set<Integer> validParamsSize =
+          PluginResolver.getValidArgsSizes(
+              resolvedMethod.getClass().getAnnotation(SoyMethodSignature.class).value());
+      // The first child of the node is the base expression. All children following the first are
+      // the parameters.
+      int numParameters = node.numChildren() - 1;
+      if (!validParamsSize.contains(numParameters)) {
+        errorReporter.report(
+            node.getSourceLocation(),
+            METHOD_INVALID_PARAM_NUM,
+            node.getMethodName().identifier(),
+            numParameters,
+            Joiner.on(" or ").join(validParamsSize));
+        node.setType(ErrorType.getInstance());
+        return null;
+      }
+      return resolvedMethod;
     }
 
     @Override
@@ -1157,18 +1316,6 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
       }
     }
 
-    private void visitAugmentMapFunction(FunctionNode node) {
-      // We don't bother unioning the value types of the child nodes, because if the values
-      // were maps/records themselves, then access becomes funky.  For example, if:
-      //     RHS was legacy_object_map(a: record(b: 1, c:2))
-      // and LHS was legacy_object_map(a: record(c: 3, d:4))
-      // ... no one can access result[a].b or result[a].d, because (since it was unioned), the
-      // compile would want b & d to exist on both sides of the union.
-      node.setType(
-          typeRegistry.getOrCreateLegacyObjectMapType(
-              StringType.getInstance(), UnknownType.getInstance()));
-    }
-
     @Override
     protected void visitProtoInitNode(ProtoInitNode node) {
       visitChildren(node);
@@ -1185,14 +1332,55 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
       } else {
         node.setType(type);
 
-        // Check that all proto required fields are present.
         SoyProtoType protoType = (SoyProtoType) type;
         // TODO(user): Consider writing a soyProtoTypeImpl.getRequiredFields()
         Set<String> givenParams = new HashSet<>();
+        ImmutableSet<String> fields = protoType.getFieldNames();
+
+        SoyFileNode file = exprHolderNode.getNearestAncestor(SoyFileNode.class);
+        boolean hasAliasedParams = false;
+        List<Identifier> resolvedIdentifiers = new ArrayList<>();
+
+        // Resolve aliases for the given field names of the proto.
         for (Identifier id : node.getParamNames()) {
+          String originalName = id.identifier();
+          String resolvedName = file.resolveAlias(originalName);
+          if (!resolvedName.equals(originalName)) {
+            // Check that the aliased name does not conflict with a field in the proto as we cannot
+            // determine whether the intended field to instantiate is the regular field or the
+            // aliased value.
+            if (fields.contains(originalName)
+                && !protoType.getFieldDescriptor(originalName).isExtension()) {
+              errorReporter.report(
+                  id.location(),
+                  PROTO_FIELD_NAME_ALIAS_CONFLICT,
+                  originalName,
+                  protoType.getDescriptor().getName());
+              node.setType(ErrorType.getInstance());
+              continue;
+            }
+            hasAliasedParams = true;
+            id = Identifier.create(resolvedName, id.location());
+          }
+          resolvedIdentifiers.add(id);
           givenParams.add(id.identifier());
         }
-        ImmutableSet<String> fields = protoType.getFieldNames();
+
+        if (node.getType().getKind() == Kind.ERROR) {
+          return;
+        }
+
+        // Replace the ProtoInitNode to have a list of the resolved param names.
+        if (hasAliasedParams) {
+          ProtoInitNode resolvedNode =
+              new ProtoInitNode(node.getProtoName(), resolvedIdentifiers, node.getSourceLocation());
+          resolvedNode.setType(node.getType());
+          resolvedNode.addChildren(node.getChildren());
+          node.getParent().replaceChild(node, resolvedNode);
+          node = resolvedNode;
+        }
+
+        // Check that all proto required fields are present.
         for (String field : fields) {
           if (protoType.getFieldDescriptor(field).isRequired() && !givenParams.contains(field)) {
             errorReporter.report(node.getSourceLocation(), PROTO_MISSING_REQUIRED_FIELD, field);
@@ -1241,6 +1429,14 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
           }
 
           SoyType expectedType = SoyTypes.makeNullable(fieldType);
+          if (!expectedType.isAssignableFrom(argType)) {
+            argType =
+                RuntimeTypeCoercion.maybeCoerceType(
+                    expr,
+                    expectedType instanceof UnionType
+                        ? ((UnionType) expectedType).getMembers()
+                        : ImmutableList.of(expectedType));
+          }
           if (!expectedType.isAssignableFrom(argType)) {
             errorReporter.report(
                 expr.getSourceLocation(),
@@ -1448,6 +1644,7 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
         case TRUSTED_RESOURCE_URI:
         case MAP:
         case PROTO_ENUM:
+        case TEMPLATE:
         case VE:
         case VE_DATA:
           errorReporter.report(sourceLocation, DOT_ACCESS_NOT_SUPPORTED, baseType);
@@ -1552,6 +1749,7 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
         case RECORD:
         case PROTO:
         case PROTO_ENUM:
+        case TEMPLATE:
         case VE:
         case VE_DATA:
           errorReporter.report(baseLocation, BRACKET_ACCESS_NOT_SUPPORTED, baseType);
@@ -1618,6 +1816,7 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
           checkArgIsStringLiteral(node, node.numChildren() - 1, builtinFunction);
           node.setType(StringType.getInstance());
           break;
+        case SOY_SERVER_KEY:
         case XID:
           // arg validation is already handled by the XidPass
           node.setType(StringType.getInstance());
@@ -1663,9 +1862,7 @@ public final class ResolveExpressionTypesPass extends CompilerFilePass {
      */
     private void visitInternalSoyFunction(Object fn, FunctionNode node) {
       // Here we have special handling for a variety of 'generic' function.
-      if (fn instanceof AugmentMapFunction) {
-        visitAugmentMapFunction(node);
-      } else if (fn instanceof LegacyObjectMapToMapFunction) {
+      if (fn instanceof LegacyObjectMapToMapFunction) {
         // If argument type is incorrect, do not try to create a return type. Instead, set the
         // return type to unknown.
         if (checkArgType(node.getChild(0), LegacyObjectMapType.ANY_MAP, node)) {

@@ -94,11 +94,6 @@ final class JbcSrcValueFactory extends JavaValueFactory {
             SoyExpression soyExpression = (SoyExpression) exprTemplate.expr();
             return JbcSrcJavaValue.of(jbcPluginContext.getAllRequiredCssNamespaces(soyExpression));
           }
-
-          @Override
-          public JavaValue getRenderedCssNamespaces() {
-            return JbcSrcJavaValue.of(jbcPluginContext.getRenderedCssNamespaces());
-          }
         };
   }
 
@@ -159,7 +154,8 @@ final class JbcSrcValueFactory extends JavaValueFactory {
     //   callXMethod(METHOD1, callXMethod(METHOD2, arg1), callXMethod(METHOD3, arg2));
     // ... which would call METHOD1 with the results of METHOD2 & METHOD3.
     Expression[] adapted = adaptParams(methodSignature, params);
-    TypeInfo owner = TypeInfo.create(methodSignature.fullyQualifiedClassName());
+    TypeInfo owner =
+        TypeInfo.create(methodSignature.fullyQualifiedClassName(), methodSignature.inInterface());
     org.objectweb.asm.commons.Method asmMethod =
         new org.objectweb.asm.commons.Method(
             methodSignature.methodName(),

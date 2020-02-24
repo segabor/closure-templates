@@ -80,6 +80,9 @@ public final class JsRuntime {
   public static final Expression GOOG_SOY_DATA_SANITIZED_CONTENT =
       GoogRequire.create("goog.soy.data.SanitizedContent").reference();
 
+  public static final Expression GOOG_HTML_SAFE_HTML =
+      GoogRequire.create("goog.html.SafeHtml").reference();
+
   public static final Expression GOOG_STRING_UNESCAPE_ENTITIES =
       GOOG_STRING.dotAccess("unescapeEntities");
 
@@ -91,6 +94,8 @@ public final class JsRuntime {
   public static final Expression SOY_ASSIGN_DEFAULTS = SOY.dotAccess("$$assignDefaults");
 
   public static final Expression SOY_CHECK_NOT_NULL = SOY.dotAccess("$$checkNotNull");
+
+  public static final Expression SERIALIZE_KEY = SOY.dotAccess("$$serializeKey");
 
   public static final Expression SOY_COERCE_TO_BOOLEAN = SOY.dotAccess("$$coerceToBoolean");
 

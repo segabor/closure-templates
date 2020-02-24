@@ -36,7 +36,6 @@ import com.google.common.util.concurrent.Futures;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.template.soy.SoyFileSetParser;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
-import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.coredirectives.EscapeHtmlDirective;
 import com.google.template.soy.data.LoggingAdvisingAppendable;
 import com.google.template.soy.data.LoggingAdvisingAppendable.BufferingAppendable;
@@ -71,6 +70,7 @@ import com.google.template.soy.soytree.CallDelegateNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateRegistry;
+import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.util.HashMap;
@@ -156,8 +156,6 @@ public class BytecodeCompilerTest {
         BytecodeCompiler.compile(
                 parseResult.registry(),
                 parseResult.fileSet(),
-
-                /*developmentMode=*/ false,
                 ErrorReporter.exploding(),
                 parser.soyFileSuppliers(),
                 parser.typeRegistry())
@@ -227,8 +225,6 @@ public class BytecodeCompilerTest {
         BytecodeCompiler.compile(
                 parseResult.registry(),
                 parseResult.fileSet(),
-
-                /*developmentMode=*/ false,
                 ErrorReporter.exploding(),
                 parser.soyFileSuppliers(),
                 parser.typeRegistry())
@@ -964,6 +960,12 @@ public class BytecodeCompilerTest {
   }
 
   @Test
+  public void testMsg_emptyPlaceholder() throws IOException {
+    // regression for a bug where this would cause a crash
+    assertThatTemplateBody("  {msg desc='...'}{''}{/msg}").rendersAs("");
+  }
+
+  @Test
   public void testGenders() {
     CompiledTemplateSubject tester =
         assertThatTemplateBody(
@@ -1031,8 +1033,6 @@ public class BytecodeCompilerTest {
         BytecodeCompiler.compile(
                 templateRegistry,
                 soyTree,
-
-                /*developmentMode=*/ false,
                 ErrorReporter.exploding(),
                 parser.soyFileSuppliers(),
                 parser.typeRegistry())
@@ -1214,10 +1214,10 @@ public class BytecodeCompilerTest {
   }
 
   private static final class FakeRenamingMap implements SoyCssRenamingMap {
-    private final Map<String, String> renamingMap;
+    private final ImmutableMap<String, String> renamingMap;
 
     FakeRenamingMap(Map<String, String> renamingMap) {
-      this.renamingMap = renamingMap;
+      this.renamingMap = ImmutableMap.copyOf(renamingMap);
     }
 
     @Nullable
@@ -1234,7 +1234,6 @@ public class BytecodeCompilerTest {
         BytecodeCompiler.compile(
                 parseResult.registry(),
                 parseResult.fileSet(),
-                /*developmentMode=*/ false,
                 ErrorReporter.exploding(),
                 parser.soyFileSuppliers(),
                 parser.typeRegistry())

@@ -152,9 +152,8 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
     T elementValue;
     T callValue;
 
-    public Holder(T value, T callValue) {
+    public Holder(T value) {
       this.elementValue = value;
-      this.callValue = callValue;
     }
   }
 
@@ -272,7 +271,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
   @Override
   protected void visitTemplateNode(TemplateNode node) {
     keyCounterStack = new ArrayDeque<>();
-    keyCounterStack.push(new Holder<>(0, 0));
+    keyCounterStack.push(new Holder<>(0));
     staticsCounter = 0;
     SanitizedContentKind kind = node.getContentKind();
     getJsCodeBuilder().setContentKind(kind);
@@ -462,8 +461,12 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
     }
 
     ImmutableList.Builder<Statement> stateVarInitializations = ImmutableList.builder();
+    IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
     for (TemplateStateVar stateVar : node.getStateVars()) {
       JsType jsType = JsType.forIncrementalDomState(stateVar.type());
+      for (GoogRequire require : jsType.getGoogRequires()) {
+        jsCodeBuilder.addGoogRequire(require);
+      }
       JsDoc stateVarJsdoc =
           JsDoc.builder().addParameterizedAnnotation("private", jsType.typeExpr()).build();
       Expression rhsValue;
@@ -498,7 +501,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
             JsDoc.builder()
                 .addParam(INCREMENTAL_DOM_PARAM_NAME, "!incrementaldomlib.IncrementalDomRenderer")
                 .addParam("opt_data", paramsType)
-                .addAnnotation("protected")
+                .addAnnotation("public")
                 .addAnnotation("override")
                 .addParameterizedAnnotation("suppress", "checkTypes")
                 .build(),
@@ -821,7 +824,6 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
           break;
       }
 
-      TemplateNode template = node.getNearestAncestor(TemplateNode.class);
       String keyVariable = "_keyVariable" + staticsCounter++;
       if (shouldPushKey) {
         if (node.getKeyExpr() != null) {
@@ -831,7 +833,10 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
           getJsCodeBuilder()
               .append(
                   VariableDeclaration.builder(keyVariable)
-                      .setRhs(INCREMENTAL_DOM_PUSH_KEY.call(incrementKeyForCall(template)))
+                      .setRhs(
+                          INCREMENTAL_DOM_PUSH_KEY.call(
+                              JsRuntime.XID.call(
+                                  Expression.stringLiteral(node.getTemplateCallKey()))))
                       .build());
         }
       }
@@ -958,7 +963,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
     boolean needsToBeCoerced = false;
     // There may be HTML nodes in the children that can get coerced to a string. In this case,
     // the appending path needs to be executed.
-    for (Object n : value.getChildren()) {
+    for (SoyNode n : value.getChildren()) {
       if (n instanceof CallNode) {
         Optional<SanitizedContentKind> kind = templateRegistry.getCallContentKind((CallNode) n);
         needsToBeCoerced =
@@ -990,17 +995,6 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
     Holder<Integer> keyCounter = keyCounterStack.peek();
     return JsRuntime.XID.call(
         Expression.stringLiteral(template.getTemplateName() + "-" + keyCounter.elementValue++));
-  }
-
-  /**
-   * Returns a unique key for the template. This has the side-effect of incrementing the current
-   * keyCounter at the top of the stack. This is for calls to disambugate between HTML nodes and
-   * calls.
-   */
-  private Expression incrementKeyForCall(TemplateNode template) {
-    Holder<Integer> keyCounter = keyCounterStack.peek();
-    return JsRuntime.XID.call(
-        Expression.stringLiteral(template.getTemplateName() + "-call-" + keyCounter.callValue++));
   }
 
   /**
@@ -1097,7 +1091,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
     if (keyNode == null) {
       key = incrementKeyForTemplate(template);
     } else {
-      keyCounterStack.push(new Holder<>(0, 0));
+      keyCounterStack.push(new Holder<>(0));
     }
     args.add(key);
 

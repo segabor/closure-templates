@@ -21,7 +21,6 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.fail;
 
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.passes.PassManager.PassContinuationRule;
 import com.google.template.soy.shared.SoyGeneralOptions;
@@ -35,12 +34,12 @@ public final class PassManagerTest {
   private static PassManager.Builder builder() {
     return new PassManager.Builder()
         .setGeneralOptions(new SoyGeneralOptions())
-        .setSoyPrintDirectiveMap(ImmutableMap.of())
+        .setSoyPrintDirectives(ImmutableList.of())
         .setTypeRegistry(new SoyTypeRegistry())
         .setErrorReporter(ErrorReporter.exploding());
   }
 
-  private static class NoSuchPass extends CompilerPass {}
+  private static class NoSuchPass implements CompilerPass {}
 
   @Test
   public void testInvalidRule() {
@@ -68,8 +67,7 @@ public final class PassManagerTest {
             .build();
 
     assertThat(names(manager.singleFilePasses))
-        .containsExactly(
-            "StripSoyComments", "ContentSecurityPolicyNonceInjection", "ResolveTemplateParamTypes");
+        .containsExactly("ContentSecurityPolicyNonceInjection", "ResolveTemplateParamTypes");
     assertThat(names(manager.crossTemplateCheckingPasses)).isEmpty();
   }
 
@@ -82,7 +80,7 @@ public final class PassManagerTest {
             .build();
 
     assertThat(names(manager.singleFilePasses))
-        .containsExactly("StripSoyComments", "ContentSecurityPolicyNonceInjection");
+        .containsExactly("ContentSecurityPolicyNonceInjection");
     assertThat(names(manager.crossTemplateCheckingPasses)).isEmpty();
   }
 

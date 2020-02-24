@@ -18,6 +18,7 @@ package com.google.template.soy.invocationbuilders.passes;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
@@ -133,7 +134,9 @@ final class InvocationBuilderTypeUtils {
         break;
       case ANY:
       case UNKNOWN:
-        types = ImmutableList.of(SimpleJavaType.OBJECT);
+        // The Soy type system assumes any and ? include null and does not expand param? of these
+        // types to any|null. Therefore we need to make these types always nullable.
+        types = ImmutableList.of(SimpleJavaType.OBJECT.asNullable());
         break;
       case ATTRIBUTES:
         types = ImmutableList.of(SimpleJavaType.ATTRIBUTES);
@@ -148,6 +151,7 @@ final class InvocationBuilderTypeUtils {
       case NULL:
       case VE:
       case VE_DATA:
+      case TEMPLATE:
         break;
     }
 
@@ -158,10 +162,7 @@ final class InvocationBuilderTypeUtils {
   }
 
   private static ImmutableList<JavaType> trySimpleRecordType(RecordType recordType, boolean list) {
-    // Empty records make no sense.
-    if (recordType.isEmpty()) {
-      return ImmutableList.of();
-    }
+    Preconditions.checkArgument(!recordType.getMembers().isEmpty());
 
     // No records of records.
     if (Streams.stream(SoyTypes.getTypeTraverser(recordType, null))

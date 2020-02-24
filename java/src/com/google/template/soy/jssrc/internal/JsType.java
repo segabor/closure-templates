@@ -21,6 +21,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.template.soy.jssrc.dsl.Expression.number;
 import static com.google.template.soy.jssrc.dsl.Expression.stringLiteral;
+import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_HTML_SAFE_HTML;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_IS_ARRAY;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_IS_FUNCTION;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_IS_OBJECT;
@@ -170,6 +171,8 @@ public final class JsType {
   private static final JsType IDOM_HTML =
       builder()
           .addType("!goog.soy.data.SanitizedHtml")
+          .addType("!goog.html.SafeHtml")
+          .addRequire(GoogRequire.createTypeRequire("goog.html.SafeHtml"))
           .addRequire(GoogRequire.createTypeRequire("goog.soy.data.SanitizedHtml"))
           .addType("!google3.javascript.template.soy.element_lib_idom.IdomFunction")
           .addRequire(
@@ -183,6 +186,7 @@ public final class JsType {
                   Optional.of(
                       IS_IDOM_FUNCTION_TYPE
                           .call(value, SANITIZED_CONTENT_KIND.dotAccess("HTML"))
+                          .or(value.instanceOf(GOOG_HTML_SAFE_HTML), codeGenerator)
                           .or(value.instanceOf(GOOG_SOY_DATA_SANITIZED_CONTENT), codeGenerator)))
           .build();
 
@@ -264,7 +268,7 @@ public final class JsType {
         String enumTypeName = enumType.getNameForBackend(SoyBackendKind.JS_SRC);
         JsType.Builder enumBuilder =
             builder()
-                .addType(enumTypeName)
+                .addType("!" + enumTypeName)
                 .addRequire(GoogRequire.createTypeRequire(enumTypeName))
                 .setPredicate(typeofTypePredicate("number"));
         if (!isStrict) {
@@ -375,9 +379,7 @@ public final class JsType {
       case RECORD:
         {
           RecordType recordType = (RecordType) soyType;
-          if (recordType.isEmpty()) {
-            return RAW_OBJECT_TYPE;
-          }
+          Preconditions.checkArgument(!recordType.getMembers().isEmpty());
           Builder builder = builder();
           Map<String, String> members = new LinkedHashMap<>();
           for (RecordType.Member member : recordType.getMembers()) {
@@ -441,6 +443,8 @@ public final class JsType {
         return VE_TYPE;
       case VE_DATA:
         return VE_DATA_TYPE;
+      case TEMPLATE:
+        throw new UnsupportedOperationException("Not implemented!");
       case ERROR:
         // continue
     }

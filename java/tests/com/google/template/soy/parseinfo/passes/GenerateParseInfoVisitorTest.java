@@ -25,11 +25,9 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.protobuf.Descriptors.GenericDescriptor;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
-import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.error.ErrorReporter;
-import com.google.template.soy.shared.SharedTestUtils;
 import com.google.template.soy.shared.internal.gencode.GeneratedFile;
 import com.google.template.soy.soytree.NamespaceDeclaration;
 import com.google.template.soy.soytree.SoyFileNode;
@@ -38,6 +36,8 @@ import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.testing.Extendable;
 import com.google.template.soy.testing.Extension;
 import com.google.template.soy.testing.Foo;
+import com.google.template.soy.testing.SharedTestUtils;
+import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import com.google.template.soy.types.SoyTypeRegistry;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -144,6 +144,17 @@ public final class GenerateParseInfoVisitorTest {
   }
 
   @Test
+  public void testFindsProtoFromGetExtension() {
+    String parseInfoContent =
+        createParseInfo(
+            ImmutableList.of(Extendable.getDescriptor(), Extension.getDescriptor()),
+            "{@param extendable: soy.test.Extendable}",
+            "{$extendable.getExtension(soy.test.Extension.extension).enumField}");
+
+    assertThat(parseInfoContent).contains("com.google.template.soy.testing.Test.getDescriptor()");
+  }
+
+  @Test
   public void testFindsProtoEnumUse() {
     String parseInfoContent =
         createParseInfo(
@@ -197,7 +208,8 @@ public final class GenerateParseInfoVisitorTest {
             Identifier.create(namespace, SourceLocation.UNKNOWN),
             ImmutableList.of(),
             ErrorReporter.exploding()),
-        new TemplateNode.SoyFileHeaderInfo(namespace));
+        new TemplateNode.SoyFileHeaderInfo(namespace),
+        ImmutableList.of());
   }
 
   private static String createParseInfo(

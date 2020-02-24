@@ -19,13 +19,14 @@ package com.google.template.soy.passes;
 import static com.google.common.truth.Truth.assertThat;
 
 import com.google.common.base.Strings;
-import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.base.SourceLocation.Point;
 import com.google.template.soy.error.ErrorReporter;
-import com.google.template.soy.shared.SharedTestUtils;
 import com.google.template.soy.soytree.RawTextNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
+import com.google.template.soy.soytree.SoyNode.Kind;
 import com.google.template.soy.soytree.TemplateNode;
+import com.google.template.soy.testing.SharedTestUtils;
+import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import java.util.Arrays;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -45,7 +46,7 @@ public final class CombineConsecutiveRawTextNodesPassTest {
             + "\n"
             + "{template .foo}\n"
             + "  {@param goo: ?}\n"
-            + "  Blah{$goo}blah\n"
+            + "  Blah{$goo}blah{sp}blooh\n"
             + "{/template}\n";
 
     ErrorReporter boom = ErrorReporter.exploding();
@@ -64,12 +65,12 @@ public final class CombineConsecutiveRawTextNodesPassTest {
 
     assertThat(template.numChildren()).isEqualTo(3);
     assertThat(((RawTextNode) template.getChild(0)).getRawText()).isEqualTo("Blah");
-    assertThat(((RawTextNode) template.getChild(2)).getRawText()).isEqualTo("blahblehbluh");
+    assertThat(((RawTextNode) template.getChild(2)).getRawText()).isEqualTo("blah bloohblehbluh");
   }
 
   @Test
   public void testCombineConsecutiveRawTextNodes_preserveSourceLocations() {
-    String testFileContent = "{namespace boo}{template .foo}\nbl{nil}ah\n{/template}";
+    String testFileContent = "{namespace boo}{template .foo}\nbl\n{nil}ah\n{/template}";
 
     ErrorReporter boom = ErrorReporter.exploding();
     SoyFileSetNode soyTree =
@@ -83,10 +84,10 @@ public final class CombineConsecutiveRawTextNodesPassTest {
     RawTextNode node = (RawTextNode) template.getChild(0);
     assertThat(node.getRawText()).isEqualTo("blah");
     assertThat(node.getSourceLocation().getBeginPoint()).isEqualTo(Point.create(2, 1));
-    assertThat(node.getSourceLocation().getEndPoint()).isEqualTo(Point.create(2, 9));
+    assertThat(node.getSourceLocation().getEndPoint()).isEqualTo(Point.create(3, 7));
 
     // we also know the locations of individual characters
-    assertThat(node.locationOf(2)).isEqualTo(Point.create(2, 8));
+    assertThat(node.locationOf(2)).isEqualTo(Point.create(3, 6)); // letter "a".
 
     // split it up into 1 node per character
     int newId = 1; // arbitrary
@@ -106,8 +107,8 @@ public final class CombineConsecutiveRawTextNodesPassTest {
     // all the data is preserved across the join operation
     assertThat(node.getRawText()).isEqualTo("blah");
     assertThat(node.getSourceLocation().getBeginPoint()).isEqualTo(Point.create(2, 1));
-    assertThat(node.getSourceLocation().getEndPoint()).isEqualTo(Point.create(2, 9));
-    assertThat(node.locationOf(2)).isEqualTo(Point.create(2, 8));
+    assertThat(node.getSourceLocation().getEndPoint()).isEqualTo(Point.create(3, 7));
+    assertThat(node.locationOf(2)).isEqualTo(Point.create(3, 6));
   }
 
   // There used to be a pathological performance issue when merging many raw text nodes, this stress
@@ -143,5 +144,40 @@ public final class CombineConsecutiveRawTextNodesPassTest {
     assertThat(template.numChildren()).isEqualTo(1);
     assertThat(((RawTextNode) template.getChild(0)).getRawText())
         .isEqualTo(Strings.repeat("<div class='foo'>", numCopies));
+  }
+
+  @Test
+  public void testForConcurrentModificationBug() {
+    String testFileContent =
+        "{namespace boo}\n"
+            + "{template .finishedInWrongBlock}\n"
+            + "{@param p : ?}\n"
+            + "// the whitespace finishes the attribute value, but it was started in another"
+            + " block\n"
+            + "<div x=x{if $p}a {/if}>\n"
+            + "<div x=\"x{if $p}a\"{/if}>  // ditto but for quoted values\n"
+            + "\n"
+            + "// special case for finishing in the wrong block\n"
+            + "{/template}";
+
+    ErrorReporter boomForTest = ErrorReporter.createForTest();
+    SoyFileSetNode soyFileSetNode =
+        SoyFileSetParserBuilder.forFileContents(testFileContent)
+            .errorReporter(boomForTest)
+            .parse() // NOTE(b/145693330): this would fail.
+            .fileSet();
+    TemplateNode template = soyFileSetNode.getChild(0).getChild(0);
+    for (int i = 0; i < template.numChildren(); i++) {
+      if (template.getChild(i) instanceof RawTextNode) {
+        RawTextNode rtn = (RawTextNode) template.getChild(i);
+        assertThat(rtn.getRawText()).isNotEmpty();
+        if (i > 0) {
+          assertThat(template.getChild(i - 1).getKind()).isNotEqualTo(Kind.RAW_TEXT_NODE);
+        }
+        if (i < template.numChildren() - 1) {
+          assertThat(template.getChild(i + 1).getKind()).isNotEqualTo(Kind.RAW_TEXT_NODE);
+        }
+      }
+    }
   }
 }

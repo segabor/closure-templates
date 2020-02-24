@@ -21,8 +21,8 @@ import static com.google.common.truth.Truth.assertThat;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableMap;
 import com.google.template.soy.SoyFileSet;
-import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.soytree.SoyFileSetNode;
+import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -121,7 +121,7 @@ public final class ContentSecurityPolicyNonceInjectionPassTest {
             "<textarea><script>notAScript()</script></textarea>",
             "<script is-script=yes"
                 + NONCE
-                + ">document.write('<script>not()<\\/script>');</script>",
+                + ">document.write('<\\script>not()<\\/script>');</script>",
             "<a href=\"//google.com/search?q=<script>hi()</script>\">Link</a>\n",
             "{/template}"),
         join(
@@ -132,7 +132,7 @@ public final class ContentSecurityPolicyNonceInjectionPassTest {
             // Injecting a nonce into something that is not a script might be bad.
             "<!-- <script>notAScript()</script> -->",
             "<textarea><script>notAScript()</script></textarea>",
-            "<script is-script=yes>document.write('<script>not()<\\/script>');</script>",
+            "<script is-script=yes>document.write('<\\script>not()<\\/script>');</script>",
             "<a href=\"//google.com/search?q=<script>hi()</script>\">Link</a>\n",
             "{/template}"));
   }

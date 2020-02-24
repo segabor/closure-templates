@@ -24,6 +24,7 @@ import static com.google.template.soy.data.SoyValueConverter.EMPTY_DICT;
 import com.google.common.base.Joiner;
 import com.google.common.base.Supplier;
 import com.google.common.base.Suppliers;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
 import com.google.common.truth.FailureMetadata;
@@ -33,7 +34,6 @@ import com.google.common.truth.ThrowableSubject;
 import com.google.common.truth.Truth;
 import com.google.template.soy.SoyFileSetParser;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
-import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.data.LoggingAdvisingAppendable;
 import com.google.template.soy.data.LoggingAdvisingAppendable.BufferingAppendable;
 import com.google.template.soy.data.SoyRecord;
@@ -51,17 +51,18 @@ import com.google.template.soy.jbcsrc.shared.RenderContext;
 import com.google.template.soy.msgs.SoyMsgBundle;
 import com.google.template.soy.plugin.restricted.SoySourceFunction;
 import com.google.template.soy.shared.SoyCssRenamingMap;
-import com.google.template.soy.shared.SoyGeneralOptions;
 import com.google.template.soy.shared.SoyIdRenamingMap;
 import com.google.template.soy.shared.internal.InternalPlugins;
 import com.google.template.soy.shared.internal.SoySimpleScope;
 import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.shared.restricted.SoyJavaFunction;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
+import com.google.template.soy.shared.restricted.SoyPrintDirective;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
+import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import com.google.template.soy.types.SoyTypeRegistry;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
@@ -81,10 +82,10 @@ public final class TemplateTester {
   private static RenderContext.Builder createDefaultBuilder() {
     return new RenderContext.Builder()
         .withSoyPrintDirectives(
-            InternalPlugins.internalDirectiveMap(new SoySimpleScope()).entrySet().stream()
-                .filter(e -> e.getValue() instanceof SoyJavaPrintDirective)
+            InternalPlugins.internalDirectives(new SoySimpleScope()).stream()
+                .filter(e -> e instanceof SoyJavaPrintDirective)
                 .collect(
-                    toImmutableMap(Map.Entry::getKey, e -> (SoyJavaPrintDirective) e.getValue())));
+                    toImmutableMap(SoyPrintDirective::getName, d -> (SoyJavaPrintDirective) d)));
   }
 
   static RenderContext getDefaultContext(CompiledTemplates templates) {
@@ -156,7 +157,7 @@ public final class TemplateTester {
     private Iterable<ClassData> classData;
     private CompiledTemplate.Factory factory;
     private SoyTypeRegistry typeRegistry = new SoyTypeRegistry();
-    private SoyGeneralOptions generalOptions = new SoyGeneralOptions();
+    private ImmutableList<String> experimentalFeatures = ImmutableList.of();
     private RenderContext defaultContext;
 
     private CompiledTemplateSubject(FailureMetadata failureMetadata, String subject) {
@@ -171,6 +172,11 @@ public final class TemplateTester {
       return this;
     }
 
+    CompiledTemplateSubject withExperimentalFeatures(ImmutableList<String> experimentalFeatures) {
+      this.experimentalFeatures = experimentalFeatures;
+      return this;
+    }
+
     CompiledTemplateSubject withLegacySoyFunction(SoyFunction soyFunction) {
       classData = null;
       factory = null;
@@ -182,11 +188,6 @@ public final class TemplateTester {
       classData = null;
       factory = null;
       this.soySourceFunctions.add(checkNotNull(soySourceFunction));
-      return this;
-    }
-
-    CompiledTemplateSubject withGeneralOptions(SoyGeneralOptions options) {
-      this.generalOptions = options;
       return this;
     }
 
@@ -273,7 +274,8 @@ public final class TemplateTester {
       SoyFileSetParser parser =
           builder
               .typeRegistry(typeRegistry)
-              .options(generalOptions)
+              .runOptimizer(true)
+              .enableExperimentalFeatures(experimentalFeatures)
               .errorReporter(ErrorReporter.exploding())
               .build();
       ParseResult parseResult = parser.parse();
@@ -282,7 +284,6 @@ public final class TemplateTester {
           BytecodeCompiler.compile(
               parseResult.registry(),
               parseResult.fileSet(),
-              /* developmentMode= */ false,
               errors,
               parser.soyFileSuppliers(),
               typeRegistry);
@@ -347,8 +348,9 @@ public final class TemplateTester {
         ParseResult parseResult =
             builder
                 .typeRegistry(typeRegistry)
-                .options(generalOptions)
+                .runOptimizer(true)
                 .errorReporter(ErrorReporter.exploding())
+                .enableExperimentalFeatures(experimentalFeatures)
                 .parse();
         SoyFileSetNode fileSet = parseResult.fileSet();
 
@@ -476,7 +478,6 @@ public final class TemplateTester {
     return BytecodeCompiler.compile(
             parseResult.registry(),
             parseResult.fileSet(),
-            /*developmentMode=*/ false,
             ErrorReporter.exploding(),
             parser.soyFileSuppliers(),
             parser.typeRegistry())

@@ -17,6 +17,7 @@ package com.google.template.soy.jbcsrc;
 
 import static com.google.common.truth.Truth.assertThat;
 import static com.google.template.soy.data.SoyValueConverter.EMPTY_DICT;
+import static org.junit.Assert.fail;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Strings;
@@ -24,7 +25,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.template.soy.SoyFileSetParser;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
-import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.data.LogStatement;
 import com.google.template.soy.data.LoggingFunctionInvocation;
 import com.google.template.soy.error.ErrorReporter;
@@ -39,6 +39,7 @@ import com.google.template.soy.logging.SoyLogger;
 import com.google.template.soy.logging.ValidatedLoggingConfig;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
+import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import com.google.template.soy.types.SoyTypeRegistry;
 import java.io.IOException;
 import java.util.Map;
@@ -174,6 +175,36 @@ public final class VeLoggingTest {
   }
 
   @Test
+  public void testBasicLogging_logonly_false_noLogger() throws Exception {
+    StringBuilder sb = new StringBuilder();
+    renderTemplate(
+        ImmutableMap.of("b", false),
+        OutputAppendable.create(sb, SoyLogger.NO_OP),
+        SoyLogger.NO_OP,
+        "{@param b : bool}",
+        "{velog Foo logonly=\"$b\"}<div></div>{/velog}");
+    // logonly ve's disable content generation
+    assertThat(sb.toString()).isEqualTo("<div></div>");
+  }
+
+  @Test
+  public void testBasicLogging_logonly_true_noLogger() throws Exception {
+    try {
+      renderTemplate(
+          ImmutableMap.of("b", true),
+          OutputAppendable.create(new StringBuilder(), SoyLogger.NO_OP),
+          SoyLogger.NO_OP,
+          "{@param b : bool}",
+          "{velog Foo logonly=\"$b\"}<div></div>{/velog}");
+      fail();
+    } catch (IllegalStateException expected) {
+      assertThat(expected)
+          .hasMessageThat()
+          .isEqualTo("Cannot set logonly=\"true\" unless there is a logger configured");
+    }
+  }
+
+  @Test
   public void testLogging_letVariables() throws Exception {
     StringBuilder sb = new StringBuilder();
     TestLogger testLogger = new TestLogger();
@@ -278,7 +309,6 @@ public final class VeLoggingTest {
         BytecodeCompiler.compile(
                 parseResult.registry(),
                 parseResult.fileSet(),
-                false,
                 ErrorReporter.exploding(),
                 parser.soyFileSuppliers(),
                 typeRegistry)

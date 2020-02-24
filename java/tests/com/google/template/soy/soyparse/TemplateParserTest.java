@@ -25,7 +25,6 @@ import static org.junit.Assert.assertTrue;
 import com.google.common.base.Ascii;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
-import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.base.internal.SanitizedContentKind;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyError;
@@ -36,7 +35,6 @@ import com.google.template.soy.exprtree.OperatorNodes.GreaterThanOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.PlusOpNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.VarRefNode;
-import com.google.template.soy.shared.SharedTestUtils;
 import com.google.template.soy.soytree.CallBasicNode;
 import com.google.template.soy.soytree.CallDelegateNode;
 import com.google.template.soy.soytree.CallNode;
@@ -72,6 +70,8 @@ import com.google.template.soy.soytree.SwitchNode;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateSubject;
 import com.google.template.soy.soytree.defn.TemplateParam;
+import com.google.template.soy.testing.SharedTestUtils;
+import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import java.util.List;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -887,7 +887,7 @@ public final class TemplateParserTest {
 
     String templateHeaderAndBody =
         ""
-            + "  {@param boo: string}  // Something scary. (Becomes a SoyDoc comment.)\n"
+            + "  {@param boo: string}  // Something scary. (Not doc comment.)\n"
             + "  {@param foo: list<int>}  /** Something random. */\n"
             + "  {@param goo: string}/** Something\n"
             + "      slimy. */\n"
@@ -906,12 +906,12 @@ public final class TemplateParserTest {
     assertFalse(declInfos.get(0).isInjected());
     assertEquals("boo", declInfos.get(0).name());
     assertEquals("string", declInfos.get(0).type().toString());
-    assertEquals("Something scary. (Becomes a SoyDoc comment.)", declInfos.get(0).desc());
+    assertEquals(null, declInfos.get(0).desc());
     assertEquals("foo", declInfos.get(1).name());
     assertEquals("list<int>", declInfos.get(1).type().toString());
     assertEquals(null, declInfos.get(1).desc());
     assertEquals("Something random.", declInfos.get(2).desc());
-    assertEquals("{@param commentedOut: string}", declInfos.get(3).desc());
+    assertEquals("Something\n      slimy.", declInfos.get(3).desc());
     assertEquals("too", declInfos.get(4).name());
     assertEquals(null, declInfos.get(4).desc());
     assertEquals("woo", declInfos.get(5).name());
@@ -1240,7 +1240,7 @@ public final class TemplateParserTest {
     TemplateSubject.assertThatTemplateContent("{let $alpha: $boo.foo}{/let}")
         .causesError(
             "parse error at '}': expected /}, ?, '?:', or, and, ==, !=, <, >, <=, >=, +, -, *, /, "
-                + "%, ., ?., [, or ?[")
+                + "%, ., ?., [, ?[, or (")
         .at(1, 22);
   }
 

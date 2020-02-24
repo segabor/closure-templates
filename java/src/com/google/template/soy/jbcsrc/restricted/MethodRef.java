@@ -104,7 +104,7 @@ public abstract class MethodRef {
       create(SoyMapImpl.class, "forProviderMap", Map.class).asNonNullable();
 
   public static final MethodRef DOUBLE_TO_STRING =
-      create(Double.class, "toString", double.class).asNonNullable();
+      create(FloatData.class, "toString", double.class).asNonNullable();
 
   public static final MethodRef EQUALS = create(Object.class, "equals", Object.class);
 
@@ -249,6 +249,9 @@ public abstract class MethodRef {
 
   public static final MethodRef RUNTIME_APPLY_ESCAPERS =
       create(JbcSrcRuntime.class, "applyEscapers", CompiledTemplate.class, ImmutableList.class);
+
+  public static final MethodRef GET_KEY_OBJECT =
+      MethodRef.create(JbcSrcRuntime.class, "getKeyObject", SoyValue.class).asCheap();
 
   public static final MethodRef RUNTIME_RANGE_LOOP_LENGTH =
       create(JbcSrcRuntime.class, "rangeLoopLength", int.class, int.class, int.class).asCheap();
@@ -427,7 +430,7 @@ public abstract class MethodRef {
 
   public static final MethodRef CREATE_LOG_STATEMENT =
       MethodRef.create(
-          JbcSrcRuntime.class, "createLogStatement", SoyVisualElementData.class, boolean.class);
+          JbcSrcRuntime.class, "createLogStatement", boolean.class, SoyVisualElementData.class);
 
   public static final MethodRef CLOSEABLE_CLOSE = MethodRef.create(Closeable.class, "close");
 
@@ -601,7 +604,7 @@ public abstract class MethodRef {
         // This is for whether the methods owner is an interface.  This is mostly to handle java8
         // default methods on interfaces.  We don't care about those currently, but ASM requires
         // this.
-        opcode() == Opcodes.INVOKEINTERFACE);
+        owner().isInterface());
   }
 
   private void doInvoke(CodeBuilder mv, Iterable<? extends Expression> args) {

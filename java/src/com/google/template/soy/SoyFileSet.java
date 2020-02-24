@@ -17,6 +17,8 @@
 package com.google.template.soy;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.collect.ImmutableSet.toImmutableSet;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -25,7 +27,6 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
-import com.google.common.collect.Maps;
 import com.google.common.io.ByteSink;
 import com.google.common.io.CharSource;
 import com.google.protobuf.Descriptors.GenericDescriptor;
@@ -47,7 +48,6 @@ import com.google.template.soy.invocationbuilders.passes.GenInvocationBuildersVi
 import com.google.template.soy.jbcsrc.BytecodeCompiler;
 import com.google.template.soy.jbcsrc.api.SoySauce;
 import com.google.template.soy.jbcsrc.api.SoySauceImpl;
-import com.google.template.soy.jbcsrc.shared.CompiledTemplate;
 import com.google.template.soy.jbcsrc.shared.CompiledTemplates;
 import com.google.template.soy.jssrc.SoyJsSrcOptions;
 import com.google.template.soy.jssrc.internal.JsSrcMain;
@@ -91,10 +91,8 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.logging.Logger;
 import javax.annotation.Nullable;
-import javax.inject.Inject;
 
 /**
  * Represents a complete set of Soy files for compilation as one bundle. The files may depend on
@@ -112,26 +110,7 @@ public final class SoyFileSet {
    * call {@link Builder#addSourceFunction(SoySourceFunction)}.
    */
   public static Builder builder() {
-    return new Builder(
-        new CoreDependencies(new SoySimpleScope(), ImmutableMap.of(), ImmutableMap.of()));
-  }
-
-  // Implementation detail of SoyFileSet.Builder.
-  // having it as its own 'parameter' class removes a small amount of boilerplate.
-  static final class CoreDependencies {
-    private final SoyScopedData scopedData;
-    private final ImmutableMap<String, SoyFunction> pluginFunctions;
-    private final ImmutableMap<String, SoyPrintDirective> pluginDirectives;
-
-    @Inject
-    CoreDependencies(
-        SoyScopedData scopedData,
-        ImmutableMap<String, ? extends SoyFunction> pluginFunctions,
-        ImmutableMap<String, ? extends SoyPrintDirective> pluginDirectives) {
-      this.scopedData = scopedData;
-      this.pluginFunctions = ImmutableMap.copyOf(pluginFunctions);
-      this.pluginDirectives = ImmutableMap.copyOf(pluginDirectives);
-    }
+    return new Builder(/* ignored= */ true);
   }
 
   /**
@@ -149,12 +128,10 @@ public final class SoyFileSet {
         ImmutableList.builder();
 
     /** Optional AST cache. */
-    private SoyAstCache cache;
+    private SoyAstCache cache = null;
 
     /** The general compiler options. */
-    private SoyGeneralOptions lazyGeneralOptions;
-
-    private final CoreDependencies coreDependencies;
+    private SoyGeneralOptions lazyGeneralOptions = null;
 
     /** The SoyProtoTypeProvider builder that will be built for local type registry. */
     private final SoyTypeRegistry.Builder typeRegistryBuilder = new SoyTypeRegistry.Builder();
@@ -169,16 +146,16 @@ public final class SoyFileSet {
 
     private boolean skipPluginValidation = false;
 
-    private final ImmutableSet.Builder<SoyFunction> extraSoyFunctions = ImmutableSet.builder();
-    private final ImmutableSet.Builder<SoyPrintDirective> extraSoyPrintDirectives =
-        ImmutableSet.builder();
-    private final ImmutableSet.Builder<SoySourceFunction> extraSourceFunctions =
-        ImmutableSet.builder();
+    private boolean optimize = true;
 
-    Builder(CoreDependencies coreDependencies) {
-      this.coreDependencies = coreDependencies;
-      this.cache = null;
-      this.lazyGeneralOptions = null;
+    private final ImmutableSet.Builder<SoyFunction> soyFunctions = ImmutableSet.builder();
+    private final ImmutableSet.Builder<SoyPrintDirective> soyPrintDirectives =
+        ImmutableSet.builder();
+    private final ImmutableSet.Builder<SoySourceFunction> sourceFunctions = ImmutableSet.builder();
+
+    private Builder(boolean ignored) {
+      // we use an ignored parameter to prevent guice from creating implicit bindings for this
+      // object.
     }
 
     /**
@@ -215,23 +192,23 @@ public final class SoyFileSet {
      * @return The new {@code SoyFileSet}.
      */
     public SoyFileSet build() {
+      SoyScopedData data = new SoySimpleScope();
       return new SoyFileSet(
-          coreDependencies.scopedData,
+          data,
           typeRegistryBuilder.build(),
-          ImmutableMap.<String, SoyFunction>builder()
-              .putAll(InternalPlugins.internalLegacyFunctionMap())
-              .putAll(coreDependencies.pluginFunctions)
-              .putAll(InternalPlugins.fromLegacyFunctions(extraSoyFunctions.build()))
+          ImmutableList.<SoyFunction>builder()
+              .addAll(InternalPlugins.internalLegacyFunctions())
+              .addAll(soyFunctions.build())
               .build(),
-          ImmutableMap.<String, SoyPrintDirective>builder()
-              .putAll(InternalPlugins.internalDirectiveMap(coreDependencies.scopedData))
-              .putAll(coreDependencies.pluginDirectives)
-              .putAll(InternalPlugins.fromDirectives(extraSoyPrintDirectives.build()))
+          ImmutableList.<SoyPrintDirective>builder()
+              .addAll(InternalPlugins.internalDirectives(data))
+              .addAll(soyPrintDirectives.build())
               .build(),
-          ImmutableMap.<String, SoySourceFunction>builder()
-              .putAll(InternalPlugins.internalFunctionMap())
-              .putAll(InternalPlugins.fromFunctions(extraSourceFunctions.build()))
+          ImmutableList.<SoySourceFunction>builder()
+              .addAll(InternalPlugins.internalFunctions())
+              .addAll(sourceFunctions.build())
               .build(),
+          ImmutableList.copyOf(InternalPlugins.internalMethods()),
           filesBuilder.build(),
           compilationUnitsBuilder.build(),
           getGeneralOptions(),
@@ -240,43 +217,52 @@ public final class SoyFileSet {
           loggingConfig,
           warningSink,
           pluginRuntimeJars,
-          skipPluginValidation);
+          skipPluginValidation,
+          optimize);
     }
 
     /** Adds one {@link SoySourceFunction} to the functions used by this SoyFileSet. */
     public Builder addSourceFunction(SoySourceFunction function) {
-      extraSourceFunctions.add(function);
+      sourceFunctions.add(function);
       return this;
     }
 
     /** Adds many {@link SoySourceFunction}s to the functions used by this SoyFileSet. */
     public Builder addSourceFunctions(Iterable<? extends SoySourceFunction> function) {
-      extraSourceFunctions.addAll(function);
+      sourceFunctions.addAll(function);
       return this;
     }
 
     /** Adds one {@link SoyFunction} to the functions used by this SoyFileSet. */
     public Builder addSoyFunction(SoyFunction function) {
-      extraSoyFunctions.add(function);
+      soyFunctions.add(function);
       return this;
     }
 
     /** Adds many {@link SoyFunction}s to the functions used by this SoyFileSet. */
     public Builder addSoyFunctions(Iterable<? extends SoyFunction> function) {
-      extraSoyFunctions.addAll(function);
+      soyFunctions.addAll(function);
       return this;
     }
 
     /** Adds one {@link SoyPrintDirective} to the print directives used by this SoyFileSet. */
     public Builder addSoyPrintDirective(SoyPrintDirective function) {
-      extraSoyPrintDirectives.add(function);
+      soyPrintDirectives.add(function);
       return this;
     }
 
     /** Adds many {@link SoyPrintDirective}s to the print directives used by this SoyFileSet. */
     public Builder addSoyPrintDirectives(Iterable<? extends SoyPrintDirective> function) {
-      extraSoyPrintDirectives.addAll(function);
+      soyPrintDirectives.addAll(function);
       return this;
+    }
+
+    /**
+     * Adds an input Soy file, given a {@code CharSource} for the file content, as well as the
+     * desired file path for messages.
+     */
+    public Builder add(SoyFileSupplier soyFileSupplier) {
+      return addFile(soyFileSupplier);
     }
 
     /**
@@ -402,7 +388,7 @@ public final class SoyFileSet {
      * @return This builder.
      */
     public Builder disableOptimizer() {
-      getGeneralOptions().disableOptimizer();
+      optimize = false;
       return this;
     }
 
@@ -583,11 +569,14 @@ public final class SoyFileSet {
   private final ValidatedLoggingConfig loggingConfig;
   private final ImmutableList<File> pluginRuntimeJars;
 
-  private final ImmutableMap<String, SoyFunction> soyFunctionMap;
-  private final ImmutableMap<String, SoyPrintDirective> printDirectives;
-  private final ImmutableMap<String, SoySourceFunction> soySourceFunctionMap;
+  private final ImmutableList<SoyFunction> soyFunctions;
+  private final ImmutableList<SoyPrintDirective> printDirectives;
+  private final ImmutableList<SoySourceFunction> soySourceFunctions;
+  private final ImmutableList<SoySourceFunction> soyMethods;
 
   private final boolean skipPluginValidation;
+
+  private final boolean optimize;
 
   /** For reporting errors during parsing. */
   private ErrorReporter errorReporter;
@@ -597,9 +586,10 @@ public final class SoyFileSet {
   SoyFileSet(
       SoyScopedData apiCallScopeProvider,
       SoyTypeRegistry typeRegistry,
-      ImmutableMap<String, SoyFunction> soyFunctionMap,
-      ImmutableMap<String, SoyPrintDirective> printDirectives,
-      ImmutableMap<String, SoySourceFunction> soySourceFunctionMap,
+      ImmutableList<SoyFunction> soyFunctions,
+      ImmutableList<SoyPrintDirective> printDirectives,
+      ImmutableList<SoySourceFunction> soySourceFunctions,
+      ImmutableList<SoySourceFunction> soyMethods,
       ImmutableMap<String, SoyFileSupplier> soyFileSuppliers,
       ImmutableList<CompilationUnitAndKind> compilationUnits,
       SoyGeneralOptions generalOptions,
@@ -608,21 +598,24 @@ public final class SoyFileSet {
       ValidatedLoggingConfig loggingConfig,
       @Nullable Appendable warningSink,
       ImmutableList<File> pluginRuntimeJars,
-      boolean skipPluginValidation) {
+      boolean skipPluginValidation,
+      boolean optimize) {
     this.scopedData = apiCallScopeProvider;
     this.typeRegistry = typeRegistry;
     this.soyFileSuppliers = soyFileSuppliers;
     this.compilationUnits = compilationUnits;
     this.cache = cache;
     this.generalOptions = generalOptions.clone();
-    this.soyFunctionMap = soyFunctionMap;
-    this.printDirectives = printDirectives;
-    this.soySourceFunctionMap = soySourceFunctionMap;
+    this.soyFunctions = InternalPlugins.filterDuplicateFunctions(soyFunctions);
+    this.printDirectives = InternalPlugins.filterDuplicateDirectives(printDirectives);
+    this.soySourceFunctions = soySourceFunctions;
+    this.soyMethods = soyMethods;
     this.conformanceConfig = checkNotNull(conformanceConfig);
     this.loggingConfig = checkNotNull(loggingConfig);
     this.warningSink = warningSink;
     this.pluginRuntimeJars = pluginRuntimeJars;
     this.skipPluginValidation = skipPluginValidation;
+    this.optimize = optimize;
   }
 
   /** Returns the list of suppliers for the input Soy files. For testing use only! */
@@ -720,16 +713,25 @@ public final class SoyFileSet {
           // First resolve all the plugins to ensure they're well-formed (no bad names, etc.).
           new PluginResolver(
               PluginResolver.Mode.REQUIRE_DEFINITIONS,
-              getSoyPrintDirectives(),
-              getSoyFunctions(),
-              getSoySourceFunctions(),
+              printDirectives,
+              soyFunctions,
+              soySourceFunctions,
+              soyMethods,
               errorReporter);
-          // Then validate the user-specified source functions.
-          Set<String> internalFunctionNames = InternalPlugins.internalFunctionMap().keySet();
+          // if constructing the resolver found an error, bail out now.
+          throwIfErrorsPresent();
+          // Then validate the user-specified source functions by filtering out the builtin ones
+          // TODO(lukes): maybe we should store internal functions and plugins in separate lists to
+          // avoid this filtering...
+          ImmutableSet<Class<?>> internalFunctionNames =
+              InternalPlugins.internalFunctions().stream()
+                  .map(f -> f.getClass())
+                  .collect(toImmutableSet());
           new PluginValidator(errorReporter, typeRegistry, pluginRuntimeJars)
               .validate(
-                  Maps.filterKeys(
-                      getSoySourceFunctions(), name -> !internalFunctionNames.contains(name)));
+                  soySourceFunctions.stream()
+                      .filter(fn -> !internalFunctionNames.contains(fn.getClass()))
+                      .collect(toImmutableList()));
           throwIfErrorsPresent();
         });
   }
@@ -798,6 +800,9 @@ public final class SoyFileSet {
                     .allowUnknownGlobals()
                     .allowV1Expression()
                     .allowUnknownJsGlobals()
+                    // necessary because we are using an invalid type registry, also we don't really
+                    // need to run the optimizer anyway.
+                    .optimize(false)
                     .desugarHtmlAndStateNodes(false)
                     .setTypeRegistry(SoyTypeRegistry.DEFAULT_UNKNOWN)
                     // TODO(lukes): consider changing this to pass a null resolver instead of the
@@ -806,8 +811,9 @@ public final class SoyFileSet {
                         new PluginResolver(
                             PluginResolver.Mode.ALLOW_UNDEFINED,
                             printDirectives,
-                            soyFunctionMap,
-                            soySourceFunctionMap,
+                            soyFunctions,
+                            soySourceFunctions,
+                            soyMethods,
                             errorReporter))
                     .disableAllTypeChecking(),
                 // override the type registry so that the parser doesn't report errors when it
@@ -858,9 +864,9 @@ public final class SoyFileSet {
    *
    * <p>This is useful for implementing 'edit refresh' workflows. Most production usecases should
    * use the command line interface to 'ahead of time' compile templates to jar files and then use
-   * {@code PrecompiledSoyModule} or {@code SoySauceBuilder} to get access to a {@link SoySauce}
-   * object without invoking the compiler. This will allow applications to avoid invoking the soy
-   * compiler at runtime which can be relatively slow.
+   * {@code SoySauceBuilder} to get access to a {@link SoySauce} object without invoking the
+   * compiler. This will allow applications to avoid invoking the soy compiler at runtime which can
+   * be relatively slow.
    *
    * @return A set of compiled templates
    * @throws SoyCompilationException If compilation fails.
@@ -874,9 +880,9 @@ public final class SoyFileSet {
    *
    * <p>This is useful for implementing 'edit refresh' workflows. Most production usecases should
    * use the command line interface to 'ahead of time' compile templates to jar files and then use
-   * {@code PrecompiledSoyModule} or {@code SoySauceBuilder} to get access to a {@link SoySauce}
-   * object without invoking the compiler. This will allow applications to avoid invoking the soy
-   * compiler at runtime which can be relatively slow.
+   * {@code SoySauceBuilder} to get access to a {@link SoySauce} object without invoking the
+   * compiler. This will allow applications to avoid invoking the soy compiler at runtime which can
+   * be relatively slow.
    *
    * @return A set of compiled templates
    * @throws SoyCompilationException If compilation fails.
@@ -884,6 +890,7 @@ public final class SoyFileSet {
   public SoySauce compileTemplates(Map<String, Supplier<Object>> pluginInstances) {
     return entryPoint(
         () -> {
+          disallowExternalCalls();
           ServerCompilationPrimitives primitives = compileForServerRendering();
           throwIfErrorsPresent();
           return doCompileSoySauce(primitives, pluginInstances);
@@ -891,8 +898,9 @@ public final class SoyFileSet {
   }
 
   /**
-   * Compiles this Soy file set into a set of java classes implementing the {@link CompiledTemplate}
-   * interface and writes them out to the given ByteSink as a JAR file.
+   * Compiles this Soy file set into a set of java classes implementing the {@link
+   * com.google.template.soy.jbcsrc.shared.CompiledTemplate} interface and writes them out to the
+   * given ByteSink as a JAR file.
    *
    * @throws SoyCompilationException If compilation fails.
    */
@@ -921,8 +929,6 @@ public final class SoyFileSet {
         BytecodeCompiler.compile(
             primitives.registry,
             primitives.soyTree,
-            // if there is an AST cache, assume we are in 'dev mode' and trigger lazy compilation.
-            cache != null,
             errorReporter,
             soyFileSuppliers,
             typeRegistry);
@@ -932,7 +938,7 @@ public final class SoyFileSet {
     return new SoySauceImpl(
         templates.get(),
         scopedData.enterable(),
-        soyFunctionMap,
+        soyFunctions,
         printDirectives,
         ImmutableMap.copyOf(pluginInstances));
   }
@@ -1108,18 +1114,6 @@ public final class SoyFileSet {
         });
   }
 
-  ImmutableMap<String, SoyFunction> getSoyFunctions() {
-    return soyFunctionMap;
-  }
-
-  ImmutableMap<String, SoyPrintDirective> getSoyPrintDirectives() {
-    return printDirectives;
-  }
-
-  ImmutableMap<String, SoySourceFunction> getSoySourceFunctions() {
-    return soySourceFunctionMap;
-  }
-
   /**
    * Parses the file set with the options we need for writing generated java *SoyInfo and invocation
    * builders.
@@ -1168,7 +1162,8 @@ public final class SoyFileSet {
   private PassManager.Builder passManagerBuilder() {
     return new PassManager.Builder()
         .setGeneralOptions(generalOptions)
-        .setSoyPrintDirectiveMap(printDirectives)
+        .optimize(optimize)
+        .setSoyPrintDirectives(printDirectives)
         .setErrorReporter(errorReporter)
         .setConformanceConfig(conformanceConfig)
         .setLoggingConfig(loggingConfig)
@@ -1178,8 +1173,9 @@ public final class SoyFileSet {
                     ? PluginResolver.Mode.ALLOW_UNDEFINED
                     : PluginResolver.Mode.REQUIRE_DEFINITIONS,
                 printDirectives,
-                soyFunctionMap,
-                soySourceFunctionMap,
+                soyFunctions,
+                soySourceFunctions,
+                soyMethods,
                 errorReporter));
   }
 

@@ -23,7 +23,6 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
-import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.exprtree.StringNode;
@@ -40,7 +39,9 @@ import com.google.template.soy.soytree.TemplateBasicNode;
 import com.google.template.soy.soytree.TemplateElementNode;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.soytree.defn.TemplateStateVar;
+import com.google.template.soy.testing.Example;
 import com.google.template.soy.testing.ExampleExtendable;
+import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import com.google.template.soy.types.AnyType;
 import com.google.template.soy.types.BoolType;
 import com.google.template.soy.types.IntType;
@@ -261,6 +262,27 @@ public final class ResolveExpressionTypesPassTest {
     assertResolveExpressionTypesFails(
         "Undefined field 'c' for record type [a: int, bb: float]. Did you mean 'a'?",
         constructTemplateSource("{@param pa: [a:int, bb:float]}", "{$pa.c}"));
+  }
+
+  @Test
+  public void testGetExtensionMethodTyping() {
+    SoyTypeRegistry typeRegistry =
+        new SoyTypeRegistry.Builder()
+            .addDescriptors(ImmutableList.of(Example.getDescriptor()))
+            .build();
+
+    SoyFileSetNode soyTree =
+        SoyFileSetParserBuilder.forFileContents(
+                constructTemplateSource(
+                    "{@param proto: example.ExampleExtendable}",
+                    "{assertType('bool', $proto.getExtension(example.someBoolExtension))}",
+                    "{assertType('int',"
+                        + " $proto.getExtension(example.SomeExtension.someExtensionField).someExtensionNum)}"))
+            .addSoyFunction(ASSERT_TYPE_FUNCTION)
+            .typeRegistry(typeRegistry)
+            .parse()
+            .fileSet();
+    assertTypes(soyTree);
   }
 
   @Test

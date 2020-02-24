@@ -23,7 +23,6 @@ import static com.google.template.soy.jssrc.internal.JsSrcSubject.expr;
 
 import com.google.common.collect.ImmutableList;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
-import com.google.template.soy.SoyFileSetParserBuilder;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
 import com.google.template.soy.jssrc.SoyJsSrcOptions;
@@ -34,6 +33,7 @@ import com.google.template.soy.testing.KvPair;
 import com.google.template.soy.testing.Proto3Message;
 import com.google.template.soy.testing.SomeExtension;
 import com.google.template.soy.testing.SomeNestedExtension;
+import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import com.google.template.soy.types.SoyTypeRegistry;
 import java.util.List;
 import org.junit.Test;
@@ -121,6 +121,20 @@ public final class JspbTest {
         .withTypeRegistry(REGISTRY)
         .generatesCode("opt_data.msg.getAnotherMessageField().getField() * 5;")
         .withPrecedence(TIMES);
+  }
+
+  @Test
+  public void testGetExtension() {
+    assertThatSoyExpr(
+            expr("$proto.getExtension(example.someIntExtension)")
+                .withParam("{@param proto: example.ExampleExtendable}"))
+        .withTypeRegistry(REGISTRY)
+        .generatesCode("opt_data.proto.getExtension(proto.example.someIntExtension);");
+    assertThatSoyExpr(
+            expr("$proto.getExtension(example.listExtensionList)")
+                .withParam("{@param proto: example.ExampleExtendable}"))
+        .withTypeRegistry(REGISTRY)
+        .generatesCode("opt_data.proto.getExtension(proto.example.listExtensionList);");
   }
 
   // Proto initialization tests
@@ -218,6 +232,40 @@ public final class JspbTest {
                 + " opt_data.l);");
   }
 
+  @Test
+  public void testProtoInit_fullyQualifiedExtensionField() {
+    assertThatSoyExpr("example.ExampleExtendable(example.someIntExtension: 1000)")
+        .withTypeRegistry(REGISTRY)
+        .generatesCode(
+            "new proto.example.ExampleExtendable().setExtension(proto.example.someIntExtension,"
+                + " 1000);");
+
+    assertThatSoyExpr(
+            expr("example.ExampleExtendable(example.someIntExtension: $i)")
+                .withParam("{@param i: int}"))
+        .withTypeRegistry(REGISTRY)
+        .generatesCode(
+            "new proto.example.ExampleExtendable().setExtension(proto.example.someIntExtension,"
+                + " opt_data.i);");
+  }
+
+  @Test
+  public void testProtoInit_fullyQualifiedExtensionRepeatedField() {
+    assertThatSoyExpr("example.ExampleExtendable(example.listExtensionList: [1000, 2000, 3000])")
+        .withTypeRegistry(REGISTRY)
+        .generatesCode(
+            "new proto.example.ExampleExtendable().setExtension(proto.example.listExtensionList,"
+                + " [1000, 2000, 3000]);");
+
+    assertThatSoyExpr(
+            expr("example.ExampleExtendable(example.listExtensionList: $l)")
+                .withParam("{@param l: list<int>}"))
+        .withTypeRegistry(REGISTRY)
+        .generatesCode(
+            "new proto.example.ExampleExtendable().setExtension(proto.example.listExtensionList,"
+                + " opt_data.l);");
+  }
+
   // Proto import tests
 
   /**
@@ -270,7 +318,7 @@ public final class JspbTest {
             + "\n"
             + "\n"
             + "/**\n"
-            + " * @param {boo.foo.goo.Params} opt_data\n"
+            + " * @param {!boo.foo.goo.Params} opt_data\n"
             + " * @param {(?goog.soy.IjData|?Object<string, *>)=} opt_ijData\n"
             + " * @param {(?goog.soy.IjData|?Object<string, *>)=} opt_ijData_deprecated\n"
             + " * @return {!goog.soy.data.SanitizedHtml}\n"

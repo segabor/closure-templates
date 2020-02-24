@@ -30,6 +30,7 @@ import com.google.template.soy.types.ast.GenericTypeNode;
 import com.google.template.soy.types.ast.NamedTypeNode;
 import com.google.template.soy.types.ast.RecordTypeNode;
 import com.google.template.soy.types.ast.RecordTypeNode.Property;
+import com.google.template.soy.types.ast.TemplateTypeNode;
 import com.google.template.soy.types.ast.TypeNode;
 import com.google.template.soy.types.ast.TypeNodeVisitor;
 import com.google.template.soy.types.ast.UnionTypeNode;
@@ -41,7 +42,7 @@ import com.google.template.soy.types.ast.UnionTypeNode;
  * <p>This class determines if explicit type declarations are legal, whereas {@link
  * ResolveExpressionTypesPass} calculates implicit types and determines if they're legal.
  */
-final class CheckDeclaredTypesPass extends CompilerFilePass {
+final class CheckDeclaredTypesPass implements CompilerFilePass {
 
   private static final SoyErrorKind VE_BAD_DATA_TYPE =
       SoyErrorKind.of("Illegal VE metadata type ''{0}''. The metadata must be a proto.");
@@ -129,6 +130,15 @@ final class CheckDeclaredTypesPass extends CompilerFilePass {
       for (Property property : node.properties()) {
         property.type().accept(this);
       }
+      return null;
+    }
+
+    @Override
+    public Void visit(TemplateTypeNode node) {
+      for (TemplateTypeNode.Argument argument : node.arguments()) {
+        argument.type().accept(this);
+      }
+      node.returnType().accept(this);
       return null;
     }
   }

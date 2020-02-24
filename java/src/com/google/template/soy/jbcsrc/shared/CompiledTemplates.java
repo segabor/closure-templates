@@ -94,13 +94,6 @@ public final class CompiledTemplates {
     return factory;
   }
 
-  /** Eagerly load all the given templates. */
-  public void loadAll(Iterable<String> templateNames) {
-    for (String templateName : templateNames) {
-      getTemplateData(templateName);
-    }
-  }
-
   /**
    * Returns the transitive closure of all the injected params that might be used by this template.
    */
@@ -187,7 +180,8 @@ public final class CompiledTemplates {
           Class.forName(templateName, /* initialize= */ true, loader)
               .asSubclass(CompiledTemplate.class);
     } catch (ClassNotFoundException e) {
-      throw new IllegalArgumentException("No class was compiled for template: " + name, e);
+      String format = "No class was compiled for template: %s.";
+      throw new IllegalArgumentException(String.format(format, name), e);
     }
     return new TemplateData(templateClass);
   }

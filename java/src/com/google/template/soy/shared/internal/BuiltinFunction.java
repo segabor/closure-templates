@@ -19,7 +19,6 @@ package com.google.template.soy.shared.internal;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.shared.restricted.SoyFunction;
-import com.google.template.soy.shared.restricted.SoyPureFunction;
 import java.util.Set;
 import javax.annotation.Nullable;
 
@@ -42,6 +41,7 @@ public enum BuiltinFunction implements SoyFunction {
    */
   CSS("css"),
   XID("xid"),
+  SOY_SERVER_KEY("$soyServerKey"),
   V1_EXPRESSION("v1Expression"),
   UNKNOWN_JS_GLOBAL("unknownJsGlobal"),
   REMAINDER("remainder"),
@@ -99,6 +99,7 @@ public enum BuiltinFunction implements SoyFunction {
         return ImmutableSet.of(3);
       case DEBUG_SOY_TEMPLATE_INFO:
         return ImmutableSet.of(0);
+      case SOY_SERVER_KEY:
       case IS_FIRST:
       case IS_LAST:
       case INDEX:
@@ -117,8 +118,10 @@ public enum BuiltinFunction implements SoyFunction {
   /**
    * Whether or not this function is pure.
    *
-   * <p>This is equivalent to annotating a function with {@link SoyPureFunction}. See {@link
-   * SoyPureFunction} for the definition of a pure function.
+   * <p>This is equivalent to annotating a function with {@link
+   * com.google.template.soy.shared.restricted.SoyPureFunction}. See {@link
+   * com.google.template.soy.shared.restricted.SoyPureFunction} for the definition of a pure
+   * function.
    */
   public boolean isPure() {
     switch (this) {
@@ -132,6 +135,7 @@ public enum BuiltinFunction implements SoyFunction {
       case INDEX: // implicitly depends on loop index
       case CSS: // implicitly depends on a renaming map or js compiler flag
       case XID: // implicitly depends on a renaming map or js compiler flag
+      case SOY_SERVER_KEY: // Relies on call stack dependent on rendering
       case UNKNOWN_JS_GLOBAL: // this is a black box from the compiler perspective
       case V1_EXPRESSION: // this is a black box from the compiler perspective
       case REMAINDER: // implicitly depends on a plural value

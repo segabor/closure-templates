@@ -65,8 +65,6 @@ public final class TranslateExprNodeVisitorTest {
 
   @Test
   public void testRecordLiteral() {
-    assertThatSoyExpr("record()").generatesCode("{};");
-
     assertThatSoyExpr("record(aaa: 123, bbb: 'blah')").generatesCode("{aaa: 123, bbb: 'blah'};");
     assertThatSoyExpr("record(aaa: $foo, bbb: 'blah')")
         .generatesCode("{aaa: opt_data.foo, bbb: 'blah'};");
@@ -231,7 +229,7 @@ public final class TranslateExprNodeVisitorTest {
             + "{/template}";
     String expectedJs =
         "/**\n"
-            + " * @param {ns.foo.Params} opt_data\n"
+            + " * @param {!ns.foo.Params} opt_data\n"
             + " * @param {(?goog.soy.IjData|?Object<string, *>)=} opt_ijData\n"
             + " * @param {(?goog.soy.IjData|?Object<string, *>)=} opt_ijData_deprecated\n"
             + " * @return {!goog.soy.data.SanitizedHtml}\n"

@@ -100,6 +100,8 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
           return visitDebugSoyTemplateInfoFunction(node);
         case VE_DATA:
           return visitVeDataFunction(node);
+        case SOY_SERVER_KEY:
+          return visitSoyServerKeyFunction(node);
         case MSG_WITH_ID:
         case REMAINDER:
           // should have been removed earlier in the compiler
@@ -150,6 +152,10 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
   }
 
   T visitXidFunction(FunctionNode node) {
+    return visitExprNode(node);
+  }
+
+  T visitSoyServerKeyFunction(FunctionNode node) {
     return visitExprNode(node);
   }
 

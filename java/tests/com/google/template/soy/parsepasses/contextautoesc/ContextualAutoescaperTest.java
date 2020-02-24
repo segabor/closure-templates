@@ -24,9 +24,6 @@ import static org.junit.Assert.fail;
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import com.google.template.soy.SoyFileSetParserBuilder;
-import com.google.template.soy.data.SanitizedContent;
-import com.google.template.soy.data.SanitizedContentOperator;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyError;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
@@ -35,9 +32,9 @@ import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateNode;
+import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import java.util.List;
 import java.util.Set;
-import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import junit.framework.ComparisonFailure;
 import org.junit.Test;
@@ -60,8 +57,7 @@ public final class ContextualAutoescaperTest {
             public Set<Integer> getValidArgsSizes() {
               return ImmutableSet.of(0);
             }
-          },
-          new FakeBidiSpanWrapDirective());
+          });
 
   @Test
   public void testTrivialTemplate() throws Exception {
@@ -717,7 +713,7 @@ public final class ContextualAutoescaperTest {
     assertRewriteFails(
         "Slash (/) cannot follow the preceding branches since it is unclear whether the slash"
             + " is a RegExp literal or division operator."
-            + "  Please add parentheses in the branches leading to `/ 2  `",
+            + "  Consider adding parentheses to disambiguate",
         join(
             "{namespace ns}\n\n",
             "{template .foo}\n",
@@ -2004,15 +2000,46 @@ public final class ContextualAutoescaperTest {
             "{/template}"));
   }
 
-  // TODO: Tests for dynamic attributes: <a on{$name}="...">,
-  // <div data-{$name}={$value}>
+  @Test
+  public void testScriptPhrasingData() {
+    assertContextualRewriting(
+        join(
+            "{namespace ns}\n\n",
+            "{template .main}\n",
+            "  {@param untrusted: ?}\n",
+            "<script>{$untrusted |escapeJsValue}</script>",
+            "<script type='text/svg'>{$untrusted |filterHtmlScriptPhrasingData}</script>\n",
+            "{/template}"),
+        join(
+            "{namespace ns}\n\n",
+            "{template .main}\n",
+            "  {@param untrusted: ?}\n",
+            "<script>{$untrusted}</script>",
+            "<script type='text/svg'>{$untrusted}</script>\n",
+            "{/template}"));
+  }
+
+  @Test
+  public void testJsonScript() {
+    assertContextualRewriting(
+        join(
+            "{namespace ns}\n\n",
+            "{template .main}\n",
+            "  {@param untrusted: ?}\n",
+            "<script type='text/json'>{$untrusted |escapeJsValue}</script>",
+            "<script type='text/json'>{lb} 'foo': '{$untrusted |escapeJsString}'{rb}</script>\n",
+            "{/template}"),
+        join(
+            "{namespace ns}\n\n",
+            "{template .main}\n",
+            "  {@param untrusted: ?}\n",
+            "<script type='text/json'>{$untrusted}</script>",
+            "<script type='text/json'>{lb} 'foo': '{$untrusted}'{rb}</script>\n",
+            "{/template}"));
+  }
 
   private static String join(String... lines) {
     return Joiner.on("").join(lines);
-  }
-
-  private static String normalizeContextualNames(String s) {
-    return s.replaceAll("__C\\d+", "__C");
   }
 
   private void assertContextualRewriting(String expectedOutput, String... inputs) {
@@ -2020,7 +2047,7 @@ public final class ContextualAutoescaperTest {
     // remove the nonce, it is just distracting
     source = source.replace(NONCE_DECLARATION, "");
     source = source.replace(NONCE, "");
-    assertThat(normalizeContextualNames(source.trim())).isEqualTo(expectedOutput);
+    assertThat(source.trim()).isEqualTo(expectedOutput);
   }
 
   public SoyFileNode rewrite(String... inputs) {
@@ -2083,31 +2110,11 @@ public final class ContextualAutoescaperTest {
       rewrite(inputs);
       fail();
     } catch (RewriteError ex) {
-      String origMessage = normalizeContextualNames(ex.origMessage);
-      if (msg != null && !msg.equals(origMessage)) {
-        ComparisonFailure comparisonFailure = new ComparisonFailure("", msg, origMessage);
+      if (msg != null && !msg.equals(ex.origMessage)) {
+        ComparisonFailure comparisonFailure = new ComparisonFailure("", msg, ex.origMessage);
         comparisonFailure.initCause(ex);
         throw comparisonFailure;
       }
-    }
-  }
-
-  static final class FakeBidiSpanWrapDirective
-      implements SoyPrintDirective, SanitizedContentOperator {
-    @Override
-    public String getName() {
-      return "|bidiSpanWrap";
-    }
-
-    @Override
-    public Set<Integer> getValidArgsSizes() {
-      return ImmutableSet.of(0);
-    }
-
-    @Override
-    @Nonnull
-    public SanitizedContent.ContentKind getContentKind() {
-      return SanitizedContent.ContentKind.HTML;
     }
   }
 }

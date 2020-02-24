@@ -21,12 +21,12 @@ import com.google.common.collect.ImmutableMap;
 import com.google.inject.AbstractModule;
 import com.google.inject.Key;
 import com.google.inject.Provides;
+import com.google.inject.multibindings.Multibinder;
 import com.google.inject.multibindings.OptionalBinder;
-import com.google.template.soy.shared.internal.SharedModule;
-import com.google.template.soy.shared.internal.SoyScopedData;
 import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
 import java.util.Optional;
+import java.util.Set;
 import javax.inject.Singleton;
 
 /**
@@ -36,11 +36,16 @@ import javax.inject.Singleton;
  * full set of deltemplates that should be rendered.
  *
  * <p>Can be installed multiple times.
+ *
+ * @deprecated Use SoySauceBuilder instead
  */
+@Deprecated
 public final class PrecompiledSoyModule extends AbstractModule {
   @Override
   protected void configure() {
-    install(new SharedModule());
+    // Create empty multibinders so we can inject user-supplied ones.
+    Multibinder.newSetBinder(binder(), SoyFunction.class);
+    Multibinder.newSetBinder(binder(), SoyPrintDirective.class);
     OptionalBinder.newOptionalBinder(
         binder(), new Key<ImmutableMap<String, Supplier<Object>>>(PluginInstances.class) {});
   }
@@ -49,12 +54,10 @@ public final class PrecompiledSoyModule extends AbstractModule {
   @Singleton
   @Precompiled
   SoySauce provideSoySauce(
-      SoyScopedData scopedData,
-      ImmutableMap<String, ? extends SoyFunction> pluginFunctions,
-      ImmutableMap<String, ? extends SoyPrintDirective> pluginDirectives,
+      Set<SoyFunction> pluginFunctions,
+      Set<SoyPrintDirective> pluginDirectives,
       @PluginInstances Optional<ImmutableMap<String, Supplier<Object>>> pluginInstances) {
     return new SoySauceBuilder()
-        .withScope(scopedData)
         .withFunctions(pluginFunctions)
         .withDirectives(pluginDirectives)
         .withPluginInstances(pluginInstances.orElse(ImmutableMap.of()))

@@ -24,6 +24,7 @@ import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.FunctionNode;
+import com.google.template.soy.exprtree.MethodNode;
 import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.plugin.restricted.SoySourceFunction;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
@@ -39,7 +40,7 @@ import java.util.Optional;
  * Populates the {@link FunctionNode} and {@link PrintDirectiveNode} with their plugin instances and
  * rewrites some ambiguous function nodes to {@link ProtoInitNode}.
  */
-final class ResolvePluginsPass extends CompilerFilePass {
+final class ResolvePluginsPass implements CompilerFilePass {
 
   private static final SoyErrorKind NOT_FIRST_PRINT_DIRECTIVE =
       SoyErrorKind.of(
@@ -95,6 +96,12 @@ final class ResolvePluginsPass extends CompilerFilePass {
             resolver.lookupPrintDirective(
                 name, directiveNode.getExprList().size(), directiveNode.getSourceLocation()));
       }
+    }
+
+    for (MethodNode methodNode : SoyTreeUtils.getAllNodesOfType(file, MethodNode.class)) {
+      methodNode.setSoyMethods(
+          resolver.lookupSoyMethod(
+              methodNode.getMethodName().identifier(), methodNode.getSourceLocation()));
     }
   }
 
