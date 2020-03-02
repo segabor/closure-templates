@@ -293,7 +293,6 @@ goog.ENABLE_CHROME_APP_SAFE_SCRIPT_LOADING =
  * @see goog.module
  * @param {string} name Namespace provided by this file in the form
  *     "goog.package.part".
- * @deprecated Use `goog.module` instead.
  */
 goog.provide = function(name) {
   if (goog.isInModuleLoader_()) {
@@ -1318,8 +1317,8 @@ goog.typeOf = function(value) {
       // Check these first, so we can avoid calling Object.prototype.toString if
       // possible.
       //
-      // IE improperly marshals typeof across execution contexts, but a
-      // cross-context object will still return false for "instanceof Object".
+      // IE9 and below improperly marshals typeof across execution contexts, but
+      // a cross-context object will still return false for "instanceof Object".
       if (value instanceof Array) {
         return 'array';
       } else if (value instanceof Object) {
@@ -1408,6 +1407,7 @@ goog.typeOf = function(value) {
  * Returns true if the specified value is an array.
  * @param {?} val Variable to test.
  * @return {boolean} Whether variable is an array.
+ * @deprecated Use Array.isArray instead.
  */
 goog.isArray = function(val) {
   return goog.typeOf(val) == 'array';
