@@ -16,6 +16,7 @@
 
 package com.google.template.soy.soytree.defn;
 
+import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.VarDefn;
@@ -29,6 +30,8 @@ import javax.annotation.Nullable;
  */
 public interface TemplateHeaderVarDefn extends VarDefn {
 
+  SourceLocation getSourceLocation();
+
   /** Returns whether the param is required. */
   boolean isRequired();
 
@@ -40,6 +43,9 @@ public interface TemplateHeaderVarDefn extends VarDefn {
 
   @Nullable
   TypeNode getTypeNode();
+
+  @Nullable
+  TypeNode getOriginalTypeNode();
 
   /**
    * The variable description, provided via Soy doc comments. {@see

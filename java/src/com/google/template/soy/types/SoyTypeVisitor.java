@@ -1,5 +1,5 @@
 /*
- * Copyright 2013 Google Inc.
+ * Copyright 2020 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -13,22 +13,31 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package com.google.template.soy.types;
 
-package com.google.template.soy.data.internal;
+/** Visitor for {@link SoyType}. */
+public interface SoyTypeVisitor<T> {
+  T visit(ErrorType type);
 
-import com.google.common.base.Function;
-import com.google.common.base.Preconditions;
-import com.google.template.soy.data.SoyValue;
-import com.google.template.soy.data.SoyValueProvider;
+  T visit(LegacyObjectMapType type);
 
-/**
- * Transforms on value types used in the implementation.
- *
- */
-final class Transforms {
-  static final Function<SoyValueProvider, SoyValue> RESOLVE_FUNCTION =
-      provider -> {
-        Preconditions.checkNotNull(provider);
-        return provider.resolve();
-      };
+  T visit(ListType type);
+
+  T visit(MapType type);
+
+  T visit(NamedTemplateType type);
+
+  T visit(PrimitiveType type);
+
+  T visit(RecordType type);
+
+  T visit(SoyProtoEnumType type);
+
+  T visit(SoyProtoType type);
+
+  T visit(TemplateType type);
+
+  T visit(UnionType type);
+
+  T visit(VeType type);
 }
