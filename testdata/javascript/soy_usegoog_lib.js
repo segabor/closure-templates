@@ -11039,7 +11039,7 @@ goog.html.SafeUrl.isSafeMimeType = function(mimeType) {
  *   as a SafeUrl.
  */
 goog.html.SafeUrl.fromBlob = function(blob) {
-  var url = goog.html.SAFE_MIME_TYPE_PATTERN_.test(blob.type) ?
+  var url = goog.html.SafeUrl.isSafeMimeType(blob.type) ?
       goog.fs.url.createObjectUrl(blob) :
       goog.html.SafeUrl.INNOCUOUS_STRING;
   return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(url);
@@ -11074,7 +11074,7 @@ goog.html.SafeUrl.fromDataUrl = function(dataUrl) {
   // of the page with the link. It seems unlikely that both of these will
   // happen, particularly in not really old IEs.
   var match = filteredDataUrl.match(goog.html.DATA_URL_PATTERN_);
-  var valid = match && goog.html.SAFE_MIME_TYPE_PATTERN_.test(match[1]);
+  var valid = match && goog.html.SafeUrl.isSafeMimeType(match[1]);
   return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(
       valid ? filteredDataUrl : goog.html.SafeUrl.INNOCUOUS_STRING);
 };
@@ -39097,10 +39097,14 @@ goog.userAgent.isDocumentMode = goog.userAgent.isDocumentModeOrHigher;
  */
 goog.userAgent.DOCUMENT_MODE = (function() {
   var doc = goog.global['document'];
-  if (!doc || !goog.userAgent.IE) {
-    return undefined;
-  }
-  return goog.userAgent.getDocumentMode_();
+  if (!doc || !goog.userAgent.IE) return undefined;
+  // This must be an IE user agent.
+  var documentMode = goog.userAgent.getDocumentMode_();
+  if (documentMode) return documentMode;
+  // The user agent version string begins with the major version.
+  // Parse the major version and truncate anything following.
+  var ieVersion = parseInt(goog.userAgent.VERSION, 10);
+  return ieVersion || undefined;
 })();
 
 //third_party/javascript/closure/debug/debug.js

@@ -73,6 +73,7 @@ import com.google.template.soy.exprtree.OperatorNodes.TimesOpNode;
 import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
+import com.google.template.soy.exprtree.TemplateLiteralNode;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.exprtree.VeLiteralNode;
 import com.google.template.soy.logging.LoggingFunction;
@@ -372,6 +373,16 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
             headerVar.setType(actualType);
           }
         }
+      }
+
+      for (ExprRootNode expr : node.getExprList()) {
+        if (expr.getType() != null) {
+          continue; // must be a default value
+        }
+        // any other expression in a template declaration
+        // currently this is just variant expressions, but might be other things in the future.
+        new ResolveTypesExprVisitor(/* isDefaultInitializerForInferredParam=*/ false, node)
+            .exec(expr);
       }
 
       visitChildren(node);
@@ -807,7 +818,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
               node.getBaseExprChild().getType(),
               node.getKeyExprChild().getType(),
               node.isNullSafe(),
-              node.getSourceLocation(),
+              node.getAccessSourceLocation(),
               node.getKeyExprChild().getSourceLocation());
       node.setType(itemType);
       tryApplySubstitution(node);
@@ -965,7 +976,8 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       if (SoyTypes.isNumericOrUnknown(childType)) {
         node.setType(childType);
       } else {
-        errorReporter.report(node.getSourceLocation(), INCOMPATIBLE_ARITHMETIC_OP_UNARY, childType);
+        errorReporter.report(
+            node.getOperatorLocation(), INCOMPATIBLE_ARITHMETIC_OP_UNARY, childType);
         node.setType(UnknownType.getInstance());
       }
       tryApplySubstitution(node);
@@ -1000,7 +1012,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       SoyType result =
           SoyTypes.getSoyTypeForBinaryOperator(left, right, new SoyTypes.SoyTypePlusOperator());
       if (result == null) {
-        errorReporter.report(node.getSourceLocation(), INCOMPATIBLE_ARITHMETIC_OP, left, right);
+        errorReporter.report(node.getOperatorLocation(), INCOMPATIBLE_ARITHMETIC_OP, left, right);
         result = UnknownType.getInstance();
       }
       node.setType(result);
@@ -1069,7 +1081,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       ExprNode lhs = node.getChild(0);
       if (SoyTreeUtils.isConstantExpr(lhs)) {
         errorReporter.warn(
-            node.getSourceLocation(), OR_OPERATOR_HAS_CONSTANT_OPERAND, lhs.toSourceString());
+            node.getOperatorLocation(), OR_OPERATOR_HAS_CONSTANT_OPERAND, lhs.toSourceString());
       }
       visit(lhs); // Assign normal types to left child
 
@@ -1087,7 +1099,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       visit(rhs);
       if (SoyTreeUtils.isConstantExpr(rhs)) {
         errorReporter.warn(
-            node.getSourceLocation(), OR_OPERATOR_HAS_CONSTANT_OPERAND, rhs.toSourceString());
+            node.getOperatorLocation(), OR_OPERATOR_HAS_CONSTANT_OPERAND, rhs.toSourceString());
       }
 
       // Restore substitutions to previous state
@@ -1484,6 +1496,13 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       node.setType(type);
     }
 
+    @Override
+    protected void visitTemplateLiteralNode(TemplateLiteralNode node) {
+      // Template literal nodes are instantiated with a temporary type because we don't have enough
+      // information to give them a type at the time this pass is run -- we need to know the
+      // signature of the referenced template. The type is resolved and checked in a later pass.
+    }
+
     private void visitComparisonOpNode(AbstractOperatorNode node) {
       visitChildren(node);
       SoyType left = node.getChild(0).getType();
@@ -1491,7 +1510,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       SoyType result =
           SoyTypes.getSoyTypeForBinaryOperator(left, right, new SoyTypes.SoyTypeComparisonOp());
       if (result == null) {
-        errorReporter.report(node.getSourceLocation(), TYPE_MISMATCH, left, right);
+        errorReporter.report(node.getOperatorLocation(), TYPE_MISMATCH, left, right);
       }
       node.setType(BoolType.getInstance());
     }
@@ -1504,7 +1523,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
           SoyTypes.getSoyTypeForBinaryOperator(
               left, right, new SoyTypes.SoyTypeEqualComparisonOp());
       if (result == null) {
-        errorReporter.report(node.getSourceLocation(), TYPE_MISMATCH, left, right);
+        errorReporter.report(node.getOperatorLocation(), TYPE_MISMATCH, left, right);
       }
       node.setType(BoolType.getInstance());
     }
@@ -1518,7 +1537,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
           SoyTypes.getSoyTypeForBinaryOperator(
               left, right, new SoyTypes.SoyTypeArithmeticOperator());
       if (result == null) {
-        errorReporter.report(node.getSourceLocation(), INCOMPATIBLE_ARITHMETIC_OP, left, right);
+        errorReporter.report(node.getOperatorLocation(), INCOMPATIBLE_ARITHMETIC_OP, left, right);
         result = UnknownType.getInstance();
       }
       // Division is special. it is always coerced to a float. For other operators, use the value
@@ -1670,6 +1689,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         case FLOAT:
         case TRUSTED_RESOURCE_URI:
         case MAP:
+        case NAMED_TEMPLATE:
         case PROTO_ENUM:
         case TEMPLATE:
         case VE:
@@ -1776,6 +1796,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         case RECORD:
         case PROTO:
         case PROTO_ENUM:
+        case NAMED_TEMPLATE:
         case TEMPLATE:
         case VE:
         case VE_DATA:

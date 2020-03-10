@@ -82,6 +82,7 @@ import com.google.template.soy.exprtree.Operator;
 import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
+import com.google.template.soy.exprtree.TemplateLiteralNode;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.exprtree.VeLiteralNode;
 import com.google.template.soy.soytree.AliasDeclaration;
@@ -530,8 +531,6 @@ public class SoyFileParser {
   /** The header info for the file we are parsing. */
   private SoyFileHeaderInfo headerInfo;
 
-  private Set<SourceLocation> handledDocComments = new HashSet<SourceLocation>();
-
   /**
    * Constructor that takes a reader object providing the input.
    *
@@ -693,17 +692,9 @@ public class SoyFileParser {
   private ImmutableList<Comment> buildComments(SoyFileParserTokenManager manager) {
     ImmutableList.Builder<Comment> comments = ImmutableList.builder();
     for (Comment comment : manager.comments) {
-      if (handledDocComments.contains(comment.getSourceLocation())) {
-        comments.add(comment.withType(Comment.Type.DOC_HANDLED));
-      } else {
-        comments.add(comment);
-      }
+      comments.add(comment);
     }
     return comments.build();
-  }
-
-  private void handleDocComment(Token token) {
-    handledDocComments.add(createSrcLoc(token));
   }
 
   // An error that can be thrown to abort parsing.  This is useful if an error has been reported
@@ -1651,7 +1642,6 @@ private void TemplateOpenTagHelper(
     Token soyDoc = open.specialToken;
     if (soyDoc != null && soyDoc.kind == SOYDOC) {
       builder.setSoyDoc(soyDoc.image, createSrcLoc(soyDoc));
-      handleDocComment(soyDoc);
     }
   }
   close = <CMD_END>
@@ -1863,9 +1853,6 @@ private RawTextNode TemplateHeader(TemplateNodeBuilder<?> templateBuilder, boole
       (
         param = ParamDecl(soyDoc)
         {
-          if (soyDocToken != null) {
-            handleDocComment(soyDocToken);
-          }
           switch (param.kind()) {
           case PARAM:
             // we just parsed a param, preceding whitespace/doc comments are not important
@@ -1911,6 +1898,7 @@ private RawTextNode TemplateHeader(TemplateNodeBuilder<?> templateBuilder, boole
 private TemplateHeaderVarDefn ParamDecl(@Nullable String desc) :
 {
   Token tagBegin, name;
+  Token tagEnd = null;
   TypeNode paramTypeNode = null;
   ExprNode value = null;
   boolean optional = false;
@@ -1929,7 +1917,6 @@ private TemplateHeaderVarDefn ParamDecl(@Nullable String desc) :
   // was passed to us.
   { if (tagBegin.specialToken != null) {
       desc = tagBegin.specialToken.image;
-      handleDocComment(tagBegin.specialToken);
     }
   }
 
@@ -1947,7 +1934,7 @@ private TemplateHeaderVarDefn ParamDecl(@Nullable String desc) :
       <CMD_COLON_EQ>
       value = Expr()
     )
-    <CMD_END>
+    tagEnd = <CMD_END>
   } catch (ParseException parseException) {
     reportTemplateBodyErrorAndSkipTo(parseException, CMD_END);
   }
@@ -1967,32 +1954,9 @@ private TemplateHeaderVarDefn ParamDecl(@Nullable String desc) :
           paramTypeNode,
           value,
           desc,
-          createSrcLoc(name));
+          createSrcLoc(name),
+          tagEnd == null? createSrcLoc(tagBegin) : createSrcLoc(tagBegin, tagEnd));
     } else {
-      boolean isNullable = false;
-      if (paramTypeNode instanceof UnionTypeNode) {
-        UnionTypeNode utn = (UnionTypeNode) paramTypeNode;
-        for (TypeNode tn : utn.candidates()) {
-          if (tn instanceof NamedTypeNode && ((NamedTypeNode) tn).name().equals("null")) {
-            isNullable = true;
-            break;
-          }
-        }
-      } else if (paramTypeNode instanceof NamedTypeNode
-          && ((NamedTypeNode) paramTypeNode).name().equals("null")) {
-        isNullable = true;
-      }
-      // Optional params become nullable
-      if (optional && !isNullable && paramTypeNode != null) {
-        NamedTypeNode nullType = NamedTypeNode.create(paramTypeNode.sourceLocation(), "null");
-        paramTypeNode = paramTypeNode instanceof UnionTypeNode
-            ? UnionTypeNode.create(
-                ImmutableList.<TypeNode>builder()
-                    .addAll(((UnionTypeNode) paramTypeNode).candidates())
-                    .add(nullType)
-                    .build())
-            : UnionTypeNode.create(ImmutableList.of(paramTypeNode, nullType));
-      }
       if (value != null) {
         if (inject) {
           errorReporter.report(createSrcLoc(tagBegin), INJECT_DEFAULT_PARAM);
@@ -2003,12 +1967,10 @@ private TemplateHeaderVarDefn ParamDecl(@Nullable String desc) :
       return new TemplateParam(
           name.image,
           createSrcLoc(name),
-          // Optional params become nullable
+          tagEnd == null? createSrcLoc(tagBegin) : createSrcLoc(tagBegin, tagEnd),
           paramTypeNode,
-          // the param is required if there isn't a default value, it isn't optional and the parsed
-          // type isn't nullable.
-          value == null && !optional && !isNullable,
           inject,
+          optional,
           desc,
           value);
     }
@@ -2159,12 +2121,13 @@ private MsgFallbackGroupNode MsgStmt() :
 
   {
     SourceLocation msgLocation = createSrcLoc(tagBegin, tagEnd);
+    SourceLocation srcLocation = msgLocation;
     SourceLocation blockLocation = createSrcLoc(templateBlock);
     // Makes sure that the error message for empty message does have a known location.
     if (blockLocation.isKnown()) {
-      msgLocation = msgLocation.extend(blockLocation);
+      srcLocation = msgLocation.extend(blockLocation);
     }
-    MsgNode msg = new MsgNode(nodeIdGen.genId(), msgLocation, "msg", attributes, errorReporter);
+    MsgNode msg = new MsgNode(nodeIdGen.genId(), srcLocation, msgLocation, "msg", attributes, errorReporter);
     msg.addChildren(templateBlock);
   }
 
@@ -2181,13 +2144,14 @@ private MsgFallbackGroupNode MsgStmt() :
     fallbackTemplateBlock = TemplateBlockForMsg()
     {
       msgLocation = createSrcLoc(fallbackTagBegin, tagEnd);
+      SourceLocation openTag = msgLocation;
       blockLocation = createSrcLoc(fallbackTemplateBlock);
       // Makes sure that the error message for empty message does have a known location.
       if (blockLocation.isKnown()) {
         msgLocation = msgLocation.extend(blockLocation);
       }
       fallback =
-          new MsgNode(nodeIdGen.genId(), msgLocation, "fallbackmsg", attributes, errorReporter);
+          new MsgNode(nodeIdGen.genId(), msgLocation, openTag, "fallbackmsg", attributes, errorReporter);
       fallback.addChildren(fallbackTemplateBlock);
     }
   ]
@@ -2306,7 +2270,7 @@ private List<StandaloneNode> TemplateBlockForMsg() :
  */
 private MsgPluralNode MsgPlural() :
 {
-  Token tagBegin, caseBeginTag, tagClose;
+  Token tagBegin, tagEnd, caseBeginTag, tagClose;
   ExprNode pluralExpr;
   ExprNode caseExpr;
   CommandTagAttribute offsetAttr = null;
@@ -2317,10 +2281,10 @@ private MsgPluralNode MsgPlural() :
   try {
     pluralExpr = Expr()
     [ offsetAttr = Attribute() ]
-    <CMD_END>
+    tagEnd = <CMD_END>
   } catch (ParseException e) {
     pluralExpr = errorExpr(tagBegin);
-    reportTemplateBodyErrorAndSkipTo(e, CMD_END);
+    tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
   }
 
   {
@@ -2421,7 +2385,13 @@ private MsgPluralNode MsgPlural() :
 
   {
     MsgPluralNode pluralNode =
-        new MsgPluralNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose), pluralExpr, offset);
+        new MsgPluralNode(
+            nodeIdGen.genId(),
+            createSrcLoc(tagBegin, tagClose),
+            createSrcLoc(tagBegin, tagEnd),
+            pluralExpr,
+            offsetAttr == null ? ImmutableList.of() : ImmutableList.of(offsetAttr),
+            offset);
     pluralNode.addChildren(caseNodes);
     return pluralNode;
   }
@@ -3030,11 +3000,11 @@ private CallNode CallStmt() :
       Identifier name =
           SoyParseUtils.calculateFullCalleeName(calleeName, headerInfo, errorReporter);
 
-
+      SourceLocation loc = createSrcLoc(tagBegin, tagClose);
       CallBasicNode node = new CallBasicNode(
           nodeIdGen.genId(),
           createSrcLoc(tagBegin, tagClose),
-          (tagBeginEnd != null) ? createSrcLoc(tagBegin, tagBeginEnd) : null,
+          (tagBeginEnd != null) ? createSrcLoc(tagBegin, tagBeginEnd) : loc,
           name,
           attributes,
           errorReporter);
@@ -3066,11 +3036,11 @@ private CallNode CallStmt() :
       if (calleeName.type() == Identifier.Type.DOT_IDENT) {
         errorReporter.report(calleeName.location(), INVALID_CALLEE_NAME, calleeName.identifier());
       }
-
+      SourceLocation tag = createSrcLoc(tagBegin, tagClose);
       CallDelegateNode node = new CallDelegateNode(
           nodeIdGen.genId(),
-          createSrcLoc(tagBegin, tagClose),
-          (tagBeginEnd != null) ? createSrcLoc(tagBeginEnd) : null,
+          tag,
+          (tagBeginEnd != null) ? createSrcLoc(tagBeginEnd) : tag,
           calleeName,
           attributes,
           errorReporter);
@@ -3613,6 +3583,7 @@ private ExprNode PrecExpr9() :
             Identifier.create(ident.image, createSrcLoc(ident)),
             createSrcLoc(op, close),
             op.kind == QDOT);
+        params = ImmutableList.of(); // Reset params after consuming.
       }
     |
       { // TODO(lukes):  add the source location of the ident as a separate field.  This would be
@@ -3740,6 +3711,11 @@ private ExprNode GlobalOrFunctionCallLike() :
       {
         return VeLiteral(ident);
       }
+    |
+      LOOKAHEAD( {ident.identifier().equals("template")} )
+     {
+        return TemplateLiteral(ident);
+     }
     |
       [
         // this can be any expr, for a function call; for proto init or record literal, must be a
@@ -4098,6 +4074,35 @@ private StringNode StringLiteral() :
     String unescaped = SoyParseUtils.unescapeString(rawString, errorReporter, loc);
     return new StringNode(unescaped, quoteStyle, loc);
   }
+}
+
+private TemplateLiteralNode TemplateLiteral(Identifier ident) :
+{
+    Identifier templateName;
+    Token closeParen;
+}
+{
+  (
+    templateName = PartialTemplateNameInExpression()
+  |
+    templateName = Identifier()
+  )
+  closeParen = <RPAREN>
+  {
+    return new TemplateLiteralNode(
+        SoyParseUtils.calculateFullCalleeName(templateName, headerInfo, errorReporter),
+        ident.location().extend(createSrcLoc(closeParen)));
+  }
+}
+
+private Identifier PartialTemplateNameInExpression() :
+{
+  Token dot, name;
+}
+{
+  dot = <DOT>
+  name = <IDENT>
+  { return Identifier.create("." + name.image, createSrcLoc(dot, name)); }
 }
 
 /**

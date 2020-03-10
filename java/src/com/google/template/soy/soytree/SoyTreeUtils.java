@@ -88,7 +88,11 @@ public final class SoyTreeUtils {
 
   /** Returns the next sibling of {@code node} or {@code null} if none exists. */
   public static SoyNode nextSibling(SoyNode node) {
-    ParentSoyNode<?> parent = node.getParent();
+    return (SoyNode) nextSiblingNode(node);
+  }
+
+  public static Node nextSiblingNode(Node node) {
+    ParentNode<?> parent = node.getParent();
     if (parent == null) {
       return null;
     }
@@ -396,7 +400,48 @@ public final class SoyTreeUtils {
   // Miscellaneous.
 
   /** Returns true if {@code node} is a descendant of {@code ancestor}. */
-  public static boolean isDescendantOf(Node node, SoyNode ancestor) {
+  public static boolean isDescendantOf(Node node, Node ancestor) {
+    if (node instanceof ExprNode) {
+      ExprNode nodeAsExpr = (ExprNode) node;
+      if (ancestor instanceof ExprNode) {
+        return isDescendantOf(nodeAsExpr, (ExprNode) ancestor);
+      }
+      return isDescendantOf(nodeAsExpr, (SoyNode) ancestor);
+    }
+    if (ancestor instanceof ExprNode) {
+      return false;
+    }
+    return isDescendantOf((SoyNode) node, (SoyNode) ancestor);
+  }
+
+  /** Returns true if {@code node} is a descendant of {@code ancestor}. */
+  public static boolean isDescendantOf(SoyNode node, SoyNode ancestor) {
+    return doIsDescendantOf(node, ancestor);
+  }
+
+  /** Returns true if {@code node} is a descendant of {@code ancestor}. */
+  public static boolean isDescendantOf(ExprNode node, ExprNode ancestor) {
+    return doIsDescendantOf(node, ancestor);
+  }
+
+  /** Returns true if {@code node} is a descendant of {@code ancestor}. */
+  public static boolean isDescendantOf(ExprNode node, SoyNode ancestor) {
+    // first find the root of the expression tree
+    while (node.getParent() != null) {
+      node = node.getParent();
+    }
+    // compare against all reachable expr roots.
+    for (ExprHolderNode holder : getAllNodesOfType(ancestor, ExprHolderNode.class)) {
+      for (ExprRootNode root : holder.getExprList()) {
+        if (root == node) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private static boolean doIsDescendantOf(Node node, Node ancestor) {
     for (; node != null; node = node.getParent()) {
       if (ancestor == node) {
         return true;
