@@ -331,7 +331,20 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
 
   @Override
   protected SwiftExpr visitOperatorNode(OperatorNode node) {
-    return genSwiftExprUsingSoySyntax(node, null);
+    String opToOverride = null;
+    
+    switch (node.getOperator()) {
+      case OR:
+        opToOverride = "||";
+        break;
+      case AND:
+        opToOverride = "&&";
+        break;
+      default:
+        break;
+    }
+    
+    return genSwiftExprUsingSoySyntax(node, opToOverride);
   }
 
   @Override
