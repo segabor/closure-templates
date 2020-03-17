@@ -20,11 +20,14 @@ import static com.google.common.truth.Truth.assertThat;
 import static com.google.common.truth.Truth.assertWithMessage;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertThrows;
 import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 import com.google.common.base.Joiner;
 import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.base.SourceLocation.Point;
+import com.google.template.soy.base.internal.IncrementingIdGenerator;
 import com.google.template.soy.base.internal.SoyFileSupplier;
 import com.google.template.soy.basetree.Node;
 import com.google.template.soy.error.ErrorReporter;
@@ -56,6 +59,7 @@ public final class SourceLocationTest {
   @Test
   public void testLocationsInParsedContent() throws Exception {
     assertSourceRanges(
+        true,
         JOINER.join(
             "SoyFileSetNode",
             "  SoyFileNode",
@@ -89,6 +93,7 @@ public final class SourceLocationTest {
   @Test
   public void testTemplateCall() throws Exception {
     assertSourceRanges(
+        true,
         JOINER.join(
             "SoyFileSetNode",
             "  SoyFileNode",
@@ -143,6 +148,7 @@ public final class SourceLocationTest {
   @Test
   public void testSwitches() throws Exception {
     assertSourceRanges(
+        true,
         JOINER.join(
             "SoyFileSetNode",
             "  SoyFileNode",
@@ -190,6 +196,7 @@ public final class SourceLocationTest {
   @Test
   public void testVeid() throws Exception {
     assertSourceRanges(
+        true,
         JOINER.join(
             "SoyFileSetNode",
             "  SoyFileNode",
@@ -197,7 +204,11 @@ public final class SourceLocationTest {
             "      VeLogNode                {velog $veData}<h1>Hello</h1>{/velog}",
             "        ExprRootNode           $veData",
             "          VarRefNode           $veData",
-            "        RawTextNode            <h1>Hello</h1>",
+            "        HtmlOpenTagNode        <h1>",
+            "          RawTextNode          h1",
+            "        RawTextNode            Hello",
+            "        HtmlCloseTagNode       </h1>",
+            "          RawTextNode          h1",
             ""),
         JOINER.join(
             "{namespace ns}",
@@ -213,6 +224,7 @@ public final class SourceLocationTest {
   @Test
   public void testForLoop() throws Exception {
     assertSourceRanges(
+        true,
         JOINER.join(
             "SoyFileSetNode",
             "  SoyFileNode",
@@ -251,6 +263,7 @@ public final class SourceLocationTest {
   @Test
   public void testConditional() throws Exception {
     assertSourceRanges(
+        true,
         JOINER.join(
             "SoyFileSetNode",
             "  SoyFileNode",
@@ -290,6 +303,7 @@ public final class SourceLocationTest {
   @Test
   public void testLet() throws Exception {
     assertSourceRanges(
+        true,
         JOINER.join(
             "SoyFileSetNode",
             "  SoyFileNode",
@@ -325,6 +339,7 @@ public final class SourceLocationTest {
   @Test
   public void testLiteral() throws Exception {
     assertSourceRanges(
+        true,
         JOINER.join(
             "SoyFileSetNode",
             "  SoyFileNode",
@@ -344,6 +359,7 @@ public final class SourceLocationTest {
   @Test
   public void testI18nNodes() throws Exception {
     assertSourceRanges(
+        false,
         JOINER.join(
             "SoyFileSetNode",
             "  SoyFileNode",
@@ -428,6 +444,7 @@ public final class SourceLocationTest {
   @Test
   public void testExpressions() throws Exception {
     assertSourceRanges(
+        true,
         JOINER.join(
             "SoyFileSetNode",
             "  SoyFileNode",
@@ -512,8 +529,33 @@ public final class SourceLocationTest {
   }
 
   @Test
+  public void testHtmlComment() {
+    assertSourceRanges(
+        true,
+        JOINER.join(
+            "SoyFileSetNode",
+            "  SoyFileNode",
+            "    TemplateBasicNode          {template .foo}<!-- some [...]-><div></div>{/template}",
+            "      HtmlCommentNode          <!-- some html comment -",
+            "        RawTextNode            some html comment",
+            "      HtmlOpenTagNode          <div>",
+            "        RawTextNode            div",
+            "      HtmlCloseTagNode         </div>",
+            "        RawTextNode            div",
+            ""),
+        JOINER.join(
+            "{namespace ns}",
+            "{template .foo}",
+            "  <!-- some html comment -->",
+            "  <div></div>",
+            "{/template}",
+            ""));
+  }
+
+  @Test
   public void testTrailingCommentsInNonClosingNodes() {
     assertSourceRanges(
+        true,
         JOINER.join(
             "SoyFileSetNode",
             "  SoyFileNode",
@@ -666,6 +708,132 @@ public final class SourceLocationTest {
   }
 
   @Test
+  public void testIsAdjacentOrOverlappingWith() throws Exception {
+    String template =
+        JOINER.join(
+            "{namespace ns}",
+            "{template .t}",
+            "{@param foo : ?}",
+            "{@param bar : ?}",
+            "  {$foo}{$bar}", // pair 1
+            "  {$foo} {$bar}", // pair 2
+            "  {$foo}", // pair 3
+            "  {$bar}",
+            "{/template}");
+    TemplateNode templateNode =
+        SoyFileSetParserBuilder.forFileContents(template).parse().fileSet().getChild(0).getChild(0);
+    List<PrintNode> nodes = SoyTreeUtils.getAllNodesOfType(templateNode, PrintNode.class);
+    assertThat(nodes).hasSize(6);
+
+    // Next to each other
+    PrintNode foo1 = nodes.get(0);
+    PrintNode bar1 = nodes.get(1);
+    assertTrue(foo1.getSourceLocation().isAdjacentOrOverlappingWith(bar1.getSourceLocation()));
+    assertTrue(bar1.getSourceLocation().isAdjacentOrOverlappingWith(foo1.getSourceLocation()));
+
+    // Not quite adjacent.
+    PrintNode foo2 = nodes.get(2);
+    PrintNode bar2 = nodes.get(3);
+    assertFalse(foo2.getSourceLocation().isAdjacentOrOverlappingWith(bar2.getSourceLocation()));
+    assertFalse(bar2.getSourceLocation().isAdjacentOrOverlappingWith(foo2.getSourceLocation()));
+
+    // Definitely not adjacent.
+    PrintNode foo3 = nodes.get(4);
+    PrintNode bar3 = nodes.get(5);
+    assertFalse(foo3.getSourceLocation().isAdjacentOrOverlappingWith(bar3.getSourceLocation()));
+    assertFalse(bar3.getSourceLocation().isAdjacentOrOverlappingWith(foo3.getSourceLocation()));
+
+    // Overlapping ranges.
+    SourceLocation overlappingLoc1 =
+        new SourceLocation(
+            foo1.getSourceLocation().getFilePath(), Point.create(1, 3), Point.create(8, 7));
+    SourceLocation overlappingLoc2 =
+        new SourceLocation(
+            foo1.getSourceLocation().getFilePath(), Point.create(5, 4), Point.create(10, 7));
+    assertTrue(overlappingLoc1.isAdjacentOrOverlappingWith(overlappingLoc2));
+    assertTrue(overlappingLoc2.isAdjacentOrOverlappingWith(overlappingLoc1));
+
+    // One is a subset of another.
+    SourceLocation outerRange =
+        new SourceLocation(
+            foo1.getSourceLocation().getFilePath(), Point.create(1, 3), Point.create(8, 7));
+    SourceLocation innerRange =
+        new SourceLocation(
+            foo1.getSourceLocation().getFilePath(), Point.create(2, 4), Point.create(5, 7));
+    assertTrue(outerRange.isAdjacentOrOverlappingWith(innerRange));
+    assertTrue(innerRange.isAdjacentOrOverlappingWith(outerRange));
+  }
+
+  @Test
+  public void testUnion() throws Exception {
+    String template =
+        JOINER.join(
+            "{namespace ns}",
+            "{template .t}",
+            "{@param foo : ?}",
+            "{@param bar : ?}",
+            "  {$foo}{$bar}", // pair 1
+            "  {$foo} {$bar}", // pair 2
+            "  {$foo}", // pair 3
+            "  {$bar}",
+            "{/template}");
+    TemplateNode templateNode =
+        SoyFileSetParserBuilder.forFileContents(template).parse().fileSet().getChild(0).getChild(0);
+    List<PrintNode> nodes = SoyTreeUtils.getAllNodesOfType(templateNode, PrintNode.class);
+    assertThat(nodes).hasSize(6);
+
+    // Next to each other
+    PrintNode foo1 = nodes.get(0);
+    PrintNode bar1 = nodes.get(1);
+    SourceLocation expectedUnion =
+        new SourceLocation(
+            foo1.getSourceLocation().getFilePath(), Point.create(5, 3), Point.create(5, 14));
+    assertThat(foo1.getSourceLocation().unionWith(bar1.getSourceLocation()))
+        .isEqualTo(expectedUnion);
+    assertThat(bar1.getSourceLocation().unionWith(foo1.getSourceLocation()))
+        .isEqualTo(expectedUnion);
+
+    // Not adjacent.
+    PrintNode foo2 = nodes.get(2);
+    PrintNode bar2 = nodes.get(3);
+    Exception e =
+        assertThrows(
+            IllegalStateException.class,
+            () -> foo2.getSourceLocation().unionWith(bar2.getSourceLocation()));
+    assertThat(e)
+        .hasMessageThat()
+        .contains(
+            "Cannot compute union of nonadjacent source locations: 6:3 - 6:8 and 6:10 - 6:15");
+    assertThrows(
+        IllegalStateException.class,
+        () -> bar2.getSourceLocation().unionWith(foo2.getSourceLocation()));
+
+    // Overlapping ranges.
+    SourceLocation overlappingLoc1 =
+        new SourceLocation(
+            foo1.getSourceLocation().getFilePath(), Point.create(1, 3), Point.create(8, 7));
+    SourceLocation overlappingLoc2 =
+        new SourceLocation(
+            foo1.getSourceLocation().getFilePath(), Point.create(5, 4), Point.create(10, 7));
+    expectedUnion =
+        new SourceLocation(
+            foo1.getSourceLocation().getFilePath(), Point.create(1, 3), Point.create(10, 7));
+    assertThat(overlappingLoc1.unionWith(overlappingLoc2)).isEqualTo(expectedUnion);
+    assertThat(overlappingLoc2.unionWith(overlappingLoc1)).isEqualTo(expectedUnion);
+
+    // One is a subset of another.
+    SourceLocation outerRange =
+        new SourceLocation(
+            foo1.getSourceLocation().getFilePath(), Point.create(1, 3), Point.create(8, 7));
+    SourceLocation innerRange =
+        new SourceLocation(
+            foo1.getSourceLocation().getFilePath(), Point.create(2, 4), Point.create(5, 7));
+
+    assertThat(outerRange.unionWith(innerRange)).isEqualTo(outerRange);
+    assertThat(innerRange.unionWith(outerRange)).isEqualTo(outerRange);
+  }
+
+  @Test
   public void testRawTextSourceLocations() throws Exception {
     // RawTextNode has some special methods to calculating the source location of characters within
     // the strings, test those
@@ -765,7 +933,8 @@ public final class SourceLocationTest {
     }
   }
 
-  private static void assertSourceRanges(String asciiArtExpectedOutput, String soySourceCode) {
+  private static void assertSourceRanges(
+      boolean rewriteHtml, String asciiArtExpectedOutput, String soySourceCode) {
     SoyFileSetNode soyTree =
         SoyFileSetParserBuilder.forSuppliers(
                 SoyFileSupplier.Factory.create(soySourceCode, "/example/file.soy"))
@@ -774,6 +943,9 @@ public final class SourceLocationTest {
 
     assertThat(soyTree.numChildren()).isEqualTo(1);
     SoyFileNode soyFile = soyTree.getChild(0);
+    if (rewriteHtml) {
+      HtmlRewriter.rewrite(soyFile, new IncrementingIdGenerator(), ErrorReporter.createForTest());
+    }
     assertThat(soyFile.numChildren()).isGreaterThan(0);
     // Verify that the filename is correctly stored in the SourceLocation of each node.
     for (TemplateNode templateNode : soyFile.getChildren()) {

@@ -25,15 +25,17 @@ import static com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils.
 import static com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils.INJECTED_P;
 import static com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils.OPTIONAL_P;
 import static com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils.REQUIRED_P;
-import static com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils.SET_PARAM;
-import static com.google.template.soy.shared.internal.gencode.JavaGenerationUtils.appendImmutableListInline;
+import static com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils.SET_PARAM_INTERNAL;
+import static com.google.template.soy.shared.internal.gencode.JavaGenerationUtils.appendFunctionCallWithParamsOnNewLines;
 import static com.google.template.soy.shared.internal.gencode.JavaGenerationUtils.appendJavadoc;
 import static com.google.template.soy.shared.internal.gencode.JavaGenerationUtils.makeLowerCamelCase;
+import static java.util.stream.Collectors.counting;
+import static java.util.stream.Collectors.groupingBy;
+import static java.util.stream.Collectors.toList;
 
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
-import com.google.template.soy.base.internal.BaseUtils;
 import com.google.template.soy.base.internal.IndentedLinesBuilder;
 import com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils;
 import com.google.template.soy.invocationbuilders.javatypes.FutureJavaType;
@@ -56,7 +58,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
 
 /**
  * Visitor for generating Java template parameter builders (see {@link
@@ -75,6 +76,7 @@ public final class GenInvocationBuildersVisitor
 
   private static final String TEMPLATE_NAME_FIELD = "__NAME__";
   private static final String PARAMS_FIELD = "__PARAMS__";
+  private static final String DEFAULT_INSTANCE_FIELD = "__DEFAULT_INSTANCE__";
 
   private final SoyFileNodeTransformer transformer;
 
@@ -114,12 +116,14 @@ public final class GenInvocationBuildersVisitor
     // Start of *FooTemplates class.
     appendJavadoc(
         ilb,
-        "Wrapper class containing {@link BaseSoyTemplateImpl} builders for each template in: "
+        "Wrapper class containing {@link com.google.template.soy.data.SoyTemplate} builders for"
+            + " each template in: "
             + fileInfo.soyFileName()
             + ".",
         /* forceMultiline= */ false,
         /* wrapAt100Chars= */ true);
-    ilb.appendLine("@Generated(\"com.google.template.soy.SoyParseInfoGenerator\")");
+    ilb.appendLine(
+        "@javax.annotation.Generated(\"com.google.template.soy.SoyParseInfoGenerator\")");
     ilb.appendLine("public final class " + javaClassNameForSoyFile + " {");
 
     ilb.increaseIndent();
@@ -150,12 +154,6 @@ public final class GenInvocationBuildersVisitor
                 case NAME_COLLISION:
                   logDuplicateTemplateNameWarning(t.templateName(), t.className());
                   break;
-                case RESERVED_NAME:
-                  logger.warning(
-                      "When generating soy java invocation builders, soy template: "
-                          + t.templateNameForUserMsgs()
-                          + " generated a Java UpperCamelCase that is reserved.");
-                  break;
               }
             });
   }
@@ -178,11 +176,14 @@ public final class GenInvocationBuildersVisitor
             + (templateDescription != null ? ": " + templateDescription : "."),
         /* forceMultiline= */ false,
         /* wrapAt100Chars= */ true);
-    ilb.appendLine("public static final class " + paramsClass + " extends BaseSoyTemplateImpl {");
+    ilb.appendLine(
+        "public static final class "
+            + paramsClass
+            + " extends com.google.template.soy.data.BaseSoyTemplateImpl {");
     ilb.increaseIndent();
     ilb.appendLine();
     ilb.appendLine(
-        "private static final String "
+        "private static final java.lang.String "
             + TEMPLATE_NAME_FIELD
             + " = \""
             + template.templateName()
@@ -192,13 +193,26 @@ public final class GenInvocationBuildersVisitor
     appendFutureWrapperMethod(paramsClass);
 
     // Constructor for Foo.
-    ilb.appendLine("private " + paramsClass + "(java.util.Map<String, SoyValueProvider> data) {");
+    ilb.appendLine(
+        "private "
+            + paramsClass
+            + "(com.google.common.collect.ImmutableMap<java.lang.String,"
+            + " com.google.template.soy.data.SoyValueProvider> data) {");
     ilb.increaseIndent();
-    ilb.appendLine("super(" + TEMPLATE_NAME_FIELD + ", data);");
+    ilb.appendLine("super(data);");
     ilb.decreaseIndent();
     ilb.appendLine("}");
 
     ilb.appendLine();
+
+    ilb.appendLine("@java.lang.Override");
+    ilb.appendLine("public final java.lang.String getTemplateName() {");
+    ilb.increaseIndent();
+    ilb.appendLine("return " + TEMPLATE_NAME_FIELD + ";");
+    ilb.decreaseIndent();
+    ilb.appendLine("}");
+    ilb.appendLine();
+
     appendParamsBuilderClass(template, paramsClass);
 
     // End of Foo class.
@@ -225,14 +239,16 @@ public final class GenInvocationBuildersVisitor
         false,
         true);
     ilb.appendLine(
-        "public static SoyTemplate.AsyncWrapper<"
+        "public static com.google.template.soy.data.SoyTemplate.AsyncWrapper<"
             + paramsClass
-            + "> wrapFuture(ListenableFuture<"
+            + "> wrapFuture(com.google.common.util.concurrent.ListenableFuture<"
             + paramsClass
             + "> paramsFuture) {");
     ilb.increaseIndent();
     ilb.appendLine(
-        "return new SoyTemplate.AsyncWrapper<>(" + TEMPLATE_NAME_FIELD + ", paramsFuture);");
+        "return new com.google.template.soy.data.SoyTemplate.AsyncWrapper<>("
+            + TEMPLATE_NAME_FIELD
+            + ", paramsFuture);");
     ilb.decreaseIndent();
     ilb.appendLine("}");
     ilb.appendLine();
@@ -284,11 +300,23 @@ public final class GenInvocationBuildersVisitor
                   }
                   return false;
                 })
-            .collect(Collectors.toList());
+            .collect(toList());
     List<ParamInfo> nonInjectedParams =
-        combinedParams.stream().filter(p -> !p.injected()).collect(Collectors.toList());
+        combinedParams.stream().filter(p -> !p.injected()).collect(toList());
 
     if (nonInjectedParams.stream().map(ParamInfo::param).noneMatch(Parameter::isRequired)) {
+      // Invoke the constructor directly. For these templates it could allow callers to avoid
+      // loading the builder completely.
+      ilb.appendLine(
+          "private static final "
+              + templateParamsClassname
+              + " "
+              + DEFAULT_INSTANCE_FIELD
+              + " = new "
+              + templateParamsClassname
+              + "(com.google.common.collect.ImmutableMap.of());");
+      ilb.appendLine();
+
       appendJavadoc(
           ilb,
           "Creates a new instance of "
@@ -299,17 +327,28 @@ public final class GenInvocationBuildersVisitor
           true);
       ilb.appendLine("public static " + templateParamsClassname + " getDefaultInstance() {");
       ilb.increaseIndent();
-      ilb.appendLine("return builder().build();");
+      ilb.appendLine("return " + DEFAULT_INSTANCE_FIELD + ";");
       ilb.decreaseIndent();
       ilb.appendLine("}");
       ilb.appendLine();
     }
     appendParamConstants(ilb, combinedParams);
 
+    boolean anyAccumulatorParameters =
+        nonInjectedParams.stream()
+            .flatMap(param -> param.javaTypes().stream())
+            .anyMatch(
+                javaType ->
+                    javaType instanceof RecordJavaType && ((RecordJavaType) javaType).isList());
     // Start of Foo.Builder class.
-    ilb.appendLine("@CanIgnoreReturnValue");
+    ilb.appendLine("@com.google.errorprone.annotations.CanIgnoreReturnValue");
     ilb.appendLine(
-        "public static class Builder extends AbstractBuilder<Builder, "
+        "public static final class Builder extends"
+            + " com.google.template.soy.data.BaseSoyTemplateImpl."
+            + (anyAccumulatorParameters
+                ? "AbstractBuilderWithAccumulatorParameters"
+                : "AbstractBuilder")
+            + "<Builder, "
             + templateParamsClassname
             + "> {");
     ilb.appendLine();
@@ -318,18 +357,30 @@ public final class GenInvocationBuildersVisitor
     // Constructor for Foo.Builder.
     ilb.appendLine("private Builder() {");
     ilb.increaseIndent();
-    ilb.appendLine("super(" + TEMPLATE_NAME_FIELD + ", " + PARAMS_FIELD + ");");
     appendRecordListInitializations(ilb, nonInjectedParams);
     ilb.decreaseIndent();
     ilb.appendLine("}");
     ilb.appendLine();
 
+    // #allParams() for FooTemplate.Builder.
+    ilb.appendLine("@java.lang.Override");
+    ilb.appendLine(
+        "protected"
+            + " com.google.common.collect.ImmutableSet<com.google.template.soy.data.SoyTemplateParam<?>>"
+            + " allParams() {");
+    ilb.increaseIndent();
+    ilb.appendLine("return " + PARAMS_FIELD + ";");
+    ilb.decreaseIndent();
+    ilb.appendLine("}");
+    ilb.appendLine();
+
     // #buildInternal() for FooTemplate.Builder.
-    ilb.appendLine("@Override");
+    ilb.appendLine("@java.lang.Override");
     ilb.appendLine(
         "protected "
             + templateParamsClassname
-            + " buildInternal(String name, ImmutableMap<String, SoyValueProvider> data) {");
+            + " buildInternal(com.google.common.collect.ImmutableMap<java.lang.String,"
+            + " com.google.template.soy.data.SoyValueProvider> data) {");
     ilb.increaseIndent();
     ilb.appendLine("return new " + templateParamsClassname + "(data);");
     ilb.decreaseIndent();
@@ -351,7 +402,7 @@ public final class GenInvocationBuildersVisitor
     Set<String> usedNames = new LinkedHashSet<>();
     List<String> nonInjected = new ArrayList<>();
     for (ParamInfo param : params) {
-      String fieldName = BaseUtils.convertToUpperUnderscore(param.name());
+      String fieldName = param.constantFieldName();
       // Naming collisions should not occur, but guard anyway.
       if (!usedNames.add(fieldName)) {
         continue;
@@ -387,24 +438,37 @@ public final class GenInvocationBuildersVisitor
 
       String typeToken =
           "?".equals(genericType)
-              ? "TypeToken.of(Object.class)" // TODO(user): this should probably be a wildcard type
-              : (genericType.matches("\\w+")
-                  ? "TypeToken.of(" + genericType + ".class" + ")"
-                  : "new TypeToken<" + genericType + ">() {}");
+              // TODO(user): this should probably be a wildcard type
+              ? "com.google.common.reflect.TypeToken.of(java.lang.Object.class)"
+              : (genericType.matches("(\\.|\\w)+")
+                  ? "com.google.common.reflect.TypeToken.of(" + genericType + ".class" + ")"
+                  : "new com.google.common.reflect.TypeToken<" + genericType + ">() {}");
       ilb.appendLine(
           String.format("/** {@%s %s} */", param.injected() ? "inject" : "param", param.name()));
       ilb.appendLine(
           String.format(
-              "%s static final SoyTemplateParam<%s> %s =", visibility, genericType, fieldName));
-      ilb.appendLine(
-          String.format("    SoyTemplateParam.%s(\"%s\", %s);", factory, param.name(), typeToken));
+              "%s static final com.google.template.soy.data.SoyTemplateParam<%s>",
+              visibility, genericType));
+      ilb.increaseIndent(2);
+      ilb.appendLine(fieldName, " =");
+      ilb.increaseIndent(2);
+      ilb.appendLine(factory, "(");
+      ilb.increaseIndent(2);
+      ilb.appendLine("\"", param.name(), "\",");
+      ilb.appendLine(typeToken, ");");
+      ilb.decreaseIndent(6);
       ilb.appendLine();
     }
 
     ilb.appendLineStart(
-        "private static final ImmutableList<SoyTemplateParam<?>> " + PARAMS_FIELD + " = ");
+        "private static final"
+            + " com.google.common.collect.ImmutableSet<com.google.template.soy.data.SoyTemplateParam<?>>"
+            + " "
+            + PARAMS_FIELD
+            + " = ");
     // Omit injected params from the list of params passed to the builder.
-    appendImmutableListInline(ilb, "<SoyTemplateParam<?>>", nonInjected);
+    appendFunctionCallWithParamsOnNewLines(
+        ilb, "com.google.common.collect.ImmutableSet.of", nonInjected);
     ilb.appendLineEnd(";");
     ilb.appendLine();
   }
@@ -419,7 +483,7 @@ public final class GenInvocationBuildersVisitor
         if (types.size() == 1
             && types.get(0) instanceof RecordJavaType
             && ((RecordJavaType) types.get(0)).isList()) {
-          ilb.appendLine(String.format("%s(\"%s\");", INIT_LIST_PARAM, param.name()));
+          ilb.appendLine(String.format("%s(%s);", INIT_LIST_PARAM, param.constantFieldName()));
         }
       }
     }
@@ -434,32 +498,11 @@ public final class GenInvocationBuildersVisitor
     ilb.appendLine();
     ilb.appendLine("package " + soyFile.packageName() + ";");
     ilb.appendLine();
+    ilb.appendLine();
 
-    // Imports.
-    ilb.appendLine("import static com.google.common.base.Preconditions.checkNotNull;");
-    ilb.appendLine("import static com.google.template.soy.data.SoyValueConverter.markAsSoyMap;");
-    ilb.appendLine();
-    ilb.appendLine("import com.google.common.collect.ImmutableList;");
-    ilb.appendLine("import com.google.common.collect.ImmutableMap;");
-    ilb.appendLine("import com.google.common.html.types.SafeHtml;");
-    ilb.appendLine("import com.google.common.html.types.SafeScript;");
-    ilb.appendLine("import com.google.common.html.types.SafeStyle;");
-    ilb.appendLine("import com.google.common.html.types.SafeStyleSheet;");
-    ilb.appendLine("import com.google.common.html.types.SafeUrl;");
-    ilb.appendLine("import com.google.common.html.types.TrustedResourceUrl;");
-    ilb.appendLine("import com.google.common.reflect.TypeToken;");
-    ilb.appendLine("import com.google.common.util.concurrent.ListenableFuture;");
-    ilb.appendLine("import com.google.errorprone.annotations.CanIgnoreReturnValue;");
-    ilb.appendLine("import com.google.template.soy.data.BaseSoyTemplateImpl;");
-    ilb.appendLine("import com.google.template.soy.data.SanitizedContent;");
-    ilb.appendLine("import com.google.template.soy.data.SoyTemplate;");
-    ilb.appendLine("import com.google.template.soy.data.SoyTemplateParam;");
-    ilb.appendLine("import com.google.template.soy.data.SoyValueProvider;");
-    ilb.appendLine("import java.util.concurrent.Future;");
-    ilb.appendLine("import javax.annotation.Generated;");
-    ilb.appendLine("import javax.annotation.Nullable;");
-    ilb.appendLine();
-    ilb.appendLine();
+    // No Imports!
+    // It is annoying and verbose but by fully qualifying all type names we can avoid conflicts
+    // with user defined symbols
   }
 
   /**
@@ -494,13 +537,12 @@ public final class GenInvocationBuildersVisitor
 
   /** Writes a setter method for the given param and java type. */
   private static void writeSetter(IndentedLinesBuilder ilb, ParamInfo param, JavaType javaType) {
-    String paramName = param.name();
     String paramDescription = param.param().getDescription();
     ilb.appendLine();
     appendJavadoc(
         ilb,
         "Sets "
-            + paramName
+            + param.name()
             + (Strings.isNullOrEmpty(paramDescription) ? "." : ": " + paramDescription),
         /* forceMultiline= */ false,
         /* wrapAt100Chars= */ true);
@@ -515,13 +557,18 @@ public final class GenInvocationBuildersVisitor
           "public Builder "
               + param.setterName()
               + "("
-              + (nullable ? "@Nullable " : "")
+              + (nullable ? "@javax.annotation.Nullable " : "")
               + javaTypeString
               + " value) {");
       ilb.increaseIndent();
 
       String newVariableName = javaType.asInlineCast("value");
-      ilb.appendLine("return " + SET_PARAM + "(\"", paramName, "\", ", newVariableName, ");");
+      ilb.appendLine(
+          "return " + SET_PARAM_INTERNAL + "(",
+          param.constantFieldName(),
+          ", ",
+          newVariableName,
+          ");");
       ilb.decreaseIndent();
       ilb.appendLine("}");
     }
@@ -545,7 +592,7 @@ public final class GenInvocationBuildersVisitor
       }
       JavaType paramType = entry.getValue();
       if (paramType.isNullable()) {
-        ilb.append("@Nullable ");
+        ilb.append("@javax.annotation.Nullable ");
       }
       ilb.append(paramType.toJavaTypeString()).append(" ").append(paramName);
       first = false;
@@ -553,9 +600,10 @@ public final class GenInvocationBuildersVisitor
     ilb.appendLineEnd(") {");
     ilb.increaseIndent();
 
-    CodeGenUtils.Member delegate = type.isList() ? ADD_TO_LIST_PARAM : SET_PARAM;
+    CodeGenUtils.Member delegate = type.isList() ? ADD_TO_LIST_PARAM : SET_PARAM_INTERNAL;
 
-    ilb.appendLineStart("return ", delegate, "(\"", param.name(), "\", " + AS_RECORD + "(");
+    ilb.appendLineStart(
+        "return ", delegate, "(", param.constantFieldName(), ", " + AS_RECORD + "(");
     int numParams = paramNames.size();
     for (int i = 0; i < numParams; i++) {
       if (i != 0) {
@@ -594,7 +642,13 @@ public final class GenInvocationBuildersVisitor
     ilb.increaseIndent();
 
     ilb.appendLine(
-        "return " + SET_PARAM + "(\"" + param.name() + "\", " + CHECK_NOT_NULL + "(future));");
+        "return "
+            + SET_PARAM_INTERNAL
+            + "("
+            + param.constantFieldName()
+            + ", "
+            + CHECK_NOT_NULL
+            + "(future));");
     ilb.decreaseIndent();
     ilb.appendLine("}");
   }
@@ -648,10 +702,7 @@ public final class GenInvocationBuildersVisitor
   /** Logs a warning if two soy files mapped to the same generated java file name. */
   private static void logWarningIfFilenamesNotUnique(ImmutableList<GeneratedFile> files) {
     ImmutableList<String> duplicateFilenames =
-        files.stream()
-            .collect(Collectors.groupingBy(GeneratedFile::fileName, Collectors.counting()))
-            .entrySet()
-            .stream()
+        files.stream().collect(groupingBy(GeneratedFile::fileName, counting())).entrySet().stream()
             .filter(e -> e.getValue() > 1) // We only care about duplicate filenames.
             .map(e -> e.getKey())
             .collect(toImmutableList());

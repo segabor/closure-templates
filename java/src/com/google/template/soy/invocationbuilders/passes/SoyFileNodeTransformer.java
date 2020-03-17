@@ -27,6 +27,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Streams;
+import com.google.template.soy.base.internal.BaseUtils;
 import com.google.template.soy.invocationbuilders.javatypes.JavaType;
 import com.google.template.soy.passes.IndirectParamsCalculator;
 import com.google.template.soy.passes.IndirectParamsCalculator.IndirectParamsInfo;
@@ -105,7 +106,6 @@ public class SoyFileNodeTransformer {
   public enum TemplateStatus {
     HANDLED,
     NAME_COLLISION,
-    RESERVED_NAME
   }
 
   /** The transformed {@link TemplateNode}. */
@@ -216,6 +216,10 @@ public class SoyFileNodeTransformer {
       return param().getName();
     }
 
+    public String constantFieldName() {
+      return BaseUtils.convertToUpperUnderscore(name());
+    }
+
     public String setterName() {
       return "set" + makeUpperCamelCase(name());
     }
@@ -243,8 +247,6 @@ public class SoyFileNodeTransformer {
     }
   }
 
-  private static final ImmutableSet<String> RESERVED_NAMES =
-      ImmutableSet.of("String", "Override", "Number", "Integer", "Long", "Future");
 
   private final String javaPackage;
   private final IndirectParamsCalculator indirectParamsCalculator;
@@ -265,9 +267,7 @@ public class SoyFileNodeTransformer {
           && template.getKind() != SoyNode.Kind.TEMPLATE_DELEGATE_NODE) {
 
         String templateClassName = generateTemplateClassName(template);
-        if (RESERVED_NAMES.contains(templateClassName)) {
-          templates.add(TemplateInfo.error(template, TemplateStatus.RESERVED_NAME));
-        } else if (uniqueTemplateClassNames.add(templateClassName)) {
+        if (uniqueTemplateClassNames.add(templateClassName)) {
           templates.add(transform(template, fqClassName + "." + templateClassName));
         } else {
           templates.add(TemplateInfo.error(template, TemplateStatus.NAME_COLLISION));

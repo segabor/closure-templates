@@ -396,7 +396,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
 
     if (isTextTemplate) {
       VariableDeclaration declare =
-          VariableDeclaration.builder("output").setRhs(LITERAL_EMPTY_STRING).build();
+          VariableDeclaration.builder("output").setMutable().setRhs(LITERAL_EMPTY_STRING).build();
       jsCodeBuilder.popOutputVar();
       body =
           Statement.of(declare, body, returnValue(sanitize(declare.ref(), node.getContentKind())));
@@ -636,6 +636,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
           templateTranslationContext
               .codeGenerator()
               .declarationBuilder()
+              .setMutable()
               .setRhs(value)
               .build()
               .ref();
@@ -720,7 +721,10 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
       // TODO(b/246994962): Skip this definition for SanitizedContentKind.TEXT.
       definition =
           Statement.of(
-              VariableDeclaration.builder(outputVarName).setRhs(LITERAL_EMPTY_STRING).build(),
+              VariableDeclaration.builder(outputVarName)
+                  .setMutable()
+                  .setRhs(LITERAL_EMPTY_STRING)
+                  .build(),
               visitChildrenReturningCodeChunk(node),
               builder
                   .setRhs(
@@ -892,7 +896,11 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
   protected void visitHtmlCommentNode(HtmlCommentNode node) {
     String id = "html_comment_" + node.getId();
     getJsCodeBuilder()
-        .append(VariableDeclaration.builder(id).setRhs(Expression.LITERAL_EMPTY_STRING).build());
+        .append(
+            VariableDeclaration.builder(id)
+                .setMutable()
+                .setRhs(Expression.LITERAL_EMPTY_STRING)
+                .build());
     getJsCodeBuilder().pushOutputVar(id).setOutputVarInited();
     SanitizedContentKind prev = getJsCodeBuilder().getContentKind();
     getJsCodeBuilder().setContentKind(SanitizedContentKind.TEXT);
@@ -979,7 +987,10 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
       getJsCodeBuilder().setContentKind(SanitizedContentKind.TEXT);
       IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
       jsCodeBuilder.append(
-          VariableDeclaration.builder(outputVar).setRhs(Expression.LITERAL_EMPTY_STRING).build());
+          VariableDeclaration.builder(outputVar)
+              .setMutable()
+              .setRhs(Expression.LITERAL_EMPTY_STRING)
+              .build());
       visit(value);
       getJsCodeBuilder().popOutputVar();
       getJsCodeBuilder().setContentKind(prev);
@@ -1153,6 +1164,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
   @Override
   protected void visitHtmlOpenTagNode(HtmlOpenTagNode node) {
     IncrementalDomCodeBuilder jsCodeBuilder = getJsCodeBuilder();
+    getJsCodeBuilder().appendLine("// " + node.getSourceLocation());
     if (!node.isSkipRoot()) {
       if (node.getKeyNode() != null) {
         // Push key BEFORE emitting `elementOpen`. Later, for `elementOpen` calls of keyed elements,
@@ -1210,6 +1222,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
     // This case occurs in the case where we encounter the end of a keyed element. If the open tag
     // mapped to this close tag contains a key node, pop the keyCounterStack to return
     // to the state before entering the keyed node.
+    getJsCodeBuilder().appendLine("// " + node.getSourceLocation());
     if (node.getTaggedPairs().size() == 1) {
       HtmlOpenTagNode openTag = (HtmlOpenTagNode) node.getTaggedPairs().get(0);
       if (openTag.getKeyNode() != null && !(openTag.getParent() instanceof SkipNode)) {
