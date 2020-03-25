@@ -760,12 +760,23 @@ TOKEN_MGR_DECLS: {
     prevState = -1;
   }
 
+  void addBlankLines(Token blankLinesToken) {
+    comments.add(
+        Comment.create(
+            Comment.Type.BLANK_LINES,
+            blankLinesToken.image,
+            // SourceLocation for the blank line starts at the end of the previous line.
+            parser.createSrcLoc(blankLinesToken)));
+  }
+
   void addLineComment(Token commentToken) {
-    comments.add(Comment.create(Comment.Type.LINE, commentToken.image, parser.createSrcLoc(commentToken)));
+    comments.add(
+        Comment.create(Comment.Type.LINE, commentToken.image, parser.createSrcLoc(commentToken)));
   }
 
   void addRangeComment(Token commentToken) {
-    comments.add(Comment.create(Comment.Type.RANGE, commentToken.image, parser.createSrcLoc(commentToken)));
+    comments.add(
+        Comment.create(Comment.Type.RANGE, commentToken.image, parser.createSrcLoc(commentToken)));
   }
 
   void trimTokenBegin(Token token, int by) {
@@ -799,6 +810,13 @@ TOKEN_MGR_DECLS: {
 
 // -------------------------------------------------------------------------------------------------
 // Whitespace and comments.
+
+// This only matches blank lines that are not swallowed by SkipWhitespace.
+// TODO(b/151747854): Preserve blank lines in other locations.
+// TODO(b/151747854): Add TEMPLATE_DEFAULT.
+<DEFAULT, IN_CMD_TAG, EXPR, EXPR_NO_DOUBLE_QUOTE, EXPR_NO_SINGLE_QUOTE> SPECIAL_TOKEN: {
+  < <BLANK_LINES> > { addBlankLines(matchedToken); }
+}
 
 <DEFAULT, IN_CMD_TAG, EXPR, EXPR_NO_DOUBLE_QUOTE, EXPR_NO_SINGLE_QUOTE> SKIP: {
   < <WS> >
@@ -1224,6 +1242,7 @@ TOKEN_MGR_DECLS: {
 
 <*> TOKEN: {
   < #WS: [" ", "\t", "\n", "\r"] | "\r\n" >
+| < #BLANK_LINES: ( (" ")* ("\r")? "\n" ){2,} > // One or more consecutive blank lines.
 | < #RAW_IDENT: ["a"-"z","A"-"Z","_"] ( ["a"-"z","A"-"Z","_","0"-"9"] )* >
 | < #DEC_DIGITS: ( ["0"-"9"] )+ >
 | < #HEX_DIGIT: ["0"-"9","A"-"F","a"-"f"] >
@@ -1335,7 +1354,7 @@ private AliasDeclaration Alias() :
     if (alias == null) {  // Implicit alias is the last part of the namespace.
       alias = namespace.extractPartAfterLastDot();
     }
-    return AliasDeclaration.create(namespace, alias);
+    return AliasDeclaration.create(srcLoc, namespace, alias);
   }
 }
 
@@ -1920,7 +1939,7 @@ private TemplateHeaderVarDefn ParamDecl(@Nullable String desc) :
   )
   // If there is a special token directly attached to the {@param, use that instead of whatever
   // was passed to us.
-  { if (tagBegin.specialToken != null) {
+  { if (tagBegin.specialToken != null && tagBegin.specialToken.kind == SOYDOC) {
       desc = tagBegin.specialToken.image;
     }
   }
@@ -2275,7 +2294,7 @@ private List<StandaloneNode> TemplateBlockForMsg() :
  */
 private MsgPluralNode MsgPlural() :
 {
-  Token tagBegin, tagEnd, caseBeginTag, tagClose;
+  Token tagBegin, tagEnd, caseBeginTag, caseBeginEnd, tagClose;
   ExprNode pluralExpr;
   ExprNode caseExpr;
   CommandTagAttribute offsetAttr = null;
@@ -2332,7 +2351,7 @@ private MsgPluralNode MsgPlural() :
     (
       caseBeginTag = <CMD_BEGIN_CASE>
       caseExpr = Expr()
-      tagEnd = <CMD_END>
+      caseBeginEnd = <CMD_END>
       {
         int value;
         if (!(caseExpr instanceof IntegerNode)) {
@@ -2359,7 +2378,7 @@ private MsgPluralNode MsgPlural() :
             new MsgPluralCaseNode(
                 nodeIdGen.genId(),
                 createSrcLoc(caseBeginTag, templateBlock),
-                createSrcLoc(caseBeginTag, tagEnd),
+                createSrcLoc(caseBeginTag, caseBeginEnd),
                 value);
         caseNode.addChildren(templateBlock);
         caseNodes.add(caseNode);
@@ -2412,8 +2431,8 @@ private MsgPluralNode MsgPlural() :
  */
 private MsgSelectNode MsgSelect() :
 {
-  Token tagBegin, caseTagBegin, tagClose;
-  Token tagEnd = null;
+  Token tagBegin, caseTagBegin, caseTagEnd, tagClose, tagEnd;
+  Token tagBeginEnd = null;
   ExprNode selectExpr;
   ExprNode caseExpr;
   List<StandaloneNode> templateBlock;
@@ -2422,7 +2441,7 @@ private MsgSelectNode MsgSelect() :
   tagBegin = <CMD_BEGIN_SELECT>
   try {
     selectExpr = Expr()
-    <CMD_END>
+    tagBeginEnd = <CMD_END>
   } catch (ParseException e) {
     selectExpr = errorExpr(tagBegin);
     reportTemplateBodyErrorAndSkipTo(e, CMD_END);
@@ -2440,14 +2459,14 @@ private MsgSelectNode MsgSelect() :
     (
       caseTagBegin = <CMD_BEGIN_CASE>
       caseExpr = Expr()
-      tagEnd = <CMD_END>
+      caseTagEnd = <CMD_END>
       templateBlock = TemplateBlockForMsg()
 
       {
         String value = ParseErrors.validateSelectCaseLabel(caseExpr, errorReporter);
         MsgSelectCaseNode caseNode =
             new MsgSelectCaseNode(nodeIdGen.genId(), createSrcLoc(caseTagBegin, templateBlock),
-                createSrcLoc(caseTagBegin, tagEnd), value);
+                createSrcLoc(caseTagBegin, caseTagEnd), value);
         caseNodes.add(caseNode);
         caseNode.addChildren(templateBlock);
       }
@@ -2471,7 +2490,9 @@ private MsgSelectNode MsgSelect() :
 
   {
     MsgSelectNode selectNode =
-        new MsgSelectNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose), selectExpr);
+        new MsgSelectNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose),
+            tagBeginEnd == null ? createSrcLoc(tagBegin) : createSrcLoc(tagBegin, tagBeginEnd),
+            selectExpr);
     selectNode.addChildren(caseNodes);
     return selectNode;
   }
@@ -2839,8 +2860,8 @@ private VeLogNode VeLogStmt() :
  */
 private SwitchNode SwitchStmt() :
 {
-  Token tagBegin, caseTag, defaultTag, tagClose;
-  Token tagEnd = null;
+  Token tagBegin, caseTag, caseTagEnd, defaultTag, tagClose;
+  Token tagBeginEnd = null;
   ExprNode switchExpr;
   ImmutableList<ExprNode> caseExprs;
   List<StandaloneNode> templateBlock;
@@ -2849,7 +2870,7 @@ private SwitchNode SwitchStmt() :
   tagBegin = <CMD_BEGIN_SWITCH>
   try {
     switchExpr = Expr()
-    tagEnd = <CMD_END>
+    tagBeginEnd = <CMD_END>
   } catch (ParseException e) {
     switchExpr = errorExpr(tagBegin);
     reportTemplateBodyErrorAndSkipTo(e, CMD_END);
@@ -2868,13 +2889,13 @@ private SwitchNode SwitchStmt() :
     (
       caseTag = <CMD_BEGIN_CASE>
       caseExprs = ExprList()
-      tagEnd = <CMD_END>
+      caseTagEnd = <CMD_END>
       templateBlock = TemplateBlock()
       {
         SwitchCaseNode caseNode = new SwitchCaseNode(
             nodeIdGen.genId(),
             createSrcLoc(caseTag, templateBlock),
-            createSrcLoc(caseTag, tagEnd),
+            createSrcLoc(caseTag, caseTagEnd),
             caseExprs);
         caseNode.addChildren(templateBlock);
         cases.add(caseNode);
@@ -2900,7 +2921,9 @@ private SwitchNode SwitchStmt() :
 
   {
     SwitchNode switchNode =
-        new SwitchNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose), switchExpr);
+        new SwitchNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose),
+            tagBeginEnd == null ? createSrcLoc(tagBegin) : createSrcLoc(tagBegin, tagBeginEnd),
+            switchExpr);
     switchNode.addChildren(cases);
     return switchNode;
   }

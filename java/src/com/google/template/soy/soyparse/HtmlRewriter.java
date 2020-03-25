@@ -693,6 +693,43 @@ final class HtmlRewriter {
       // about them.
       if (currentRawTextNode.isEmpty() && !currentRawTextNode.isNilCommandChar()) {
         edits.remove(currentRawTextNode);
+      } else {
+        maybeReparentNilNode(node);
+      }
+    }
+
+    /** Reparents {nil} nodes in states where we've inserted new ast nodes (like HTML_OPEN_TAG). */
+    protected void maybeReparentNilNode(RawTextNode node) {
+      if (!node.isNilCommandChar()) {
+        return;
+      }
+
+      switch (context.getState()) {
+        case DOUBLE_QUOTED_ATTRIBUTE_VALUE:
+        case SINGLE_QUOTED_ATTRIBUTE_VALUE:
+          context.addAttributeValuePart(node);
+          break;
+        case HTML_COMMENT:
+          context.addCommentChild(node);
+          break;
+        case NONE:
+        case PCDATA:
+        case BEFORE_ATTRIBUTE_VALUE:
+        case AFTER_TAG_NAME_OR_ATTRIBUTE:
+        case BEFORE_ATTRIBUTE_NAME:
+        case UNQUOTED_ATTRIBUTE_VALUE:
+        case AFTER_ATTRIBUTE_NAME:
+        case HTML_TAG_NAME:
+        case RCDATA_STYLE:
+        case RCDATA_TITLE:
+        case RCDATA_XMP:
+        case RCDATA_SCRIPT:
+        case RCDATA_TEXTAREA:
+        case CDATA:
+        case XML_DECLARATION:
+        case DOUBLE_QUOTED_XML_ATTRIBUTE_VALUE:
+        case SINGLE_QUOTED_XML_ATTRIBUTE_VALUE:
+          break;
       }
     }
 
@@ -813,10 +850,10 @@ final class HtmlRewriter {
             // TODO(b/144050436): upgrade to error
             if (matchPrefixIgnoreCase("<script", /* advance= */ false)
                 || matchPrefixIgnoreCase("<!--", /* advance= */ false)) {
-              errorReporter.warn(currentLocation(), DISALLOWED_SCRIPT_SEQUENCE);
+              errorReporter.report(currentLocation(), DISALLOWED_SCRIPT_SEQUENCE);
             } else if (matchPrefixIgnoreCasePastEnd("<script")
                 || matchPrefixIgnoreCasePastEnd("<!--")) {
-              errorReporter.warn(
+              errorReporter.report(
                   currentLocation().extend(currentRawTextNode.getSourceLocation().getEndLocation()),
                   DISALLOWED_SCRIPT_SEQUENCE_PREFIX);
             }
@@ -849,21 +886,27 @@ final class HtmlRewriter {
      */
     void handleHtmlComment() {
       boolean foundHyphen = advanceWhileMatches(NOT_HYPHEN);
-      // consume all raw text preceding the hyphen (or end)
-      RawTextNode remainingTextNode = consumeAsRawText();
-      SourceLocation.Point point = currentPointOrEnd();
-      if (remainingTextNode != null) {
-        context.addCommentChild(remainingTextNode);
-      }
       if (foundHyphen) {
-        if (matchPrefix("-->", true)) {
+        if (matchPrefix("-->", false)) {
+          // consume all raw text preceding the hyphen (or end)
+          RawTextNode remainingTextNode = consumeAsRawText();
+          SourceLocation.Point point = currentPointOrEnd();
+          if (remainingTextNode != null) {
+            context.addCommentChild(remainingTextNode);
+          }
           // Consume the suffix here.
+          advance(3);
           consume();
           // At this point we haven't remove the current raw text node (which contains -->) yet.
           edits.remove(currentRawTextNode);
           context.setState(context.createHtmlComment(point), point);
         } else {
           advance();
+        }
+      } else {
+        RawTextNode remainingTextNode = consumeAsRawText();
+        if (remainingTextNode != null) {
+          context.addCommentChild(remainingTextNode);
         }
       }
     }
