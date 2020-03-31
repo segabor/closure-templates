@@ -761,12 +761,15 @@ TOKEN_MGR_DECLS: {
   }
 
   void addBlankLines(Token blankLinesToken) {
-    comments.add(
-        Comment.create(
-            Comment.Type.BLANK_LINES,
-            blankLinesToken.image,
-            // SourceLocation for the blank line starts at the end of the previous line.
-            parser.createSrcLoc(blankLinesToken)));
+    SourceLocation tokenLocation = parser.createSrcLoc(blankLinesToken);
+    // SourceLocation for the blank line token starts at the end of the previous line.
+    // Manually setting it at the beginning of the first blank line.
+    SourceLocation loc =
+        new SourceLocation(
+            tokenLocation.getFilePath(),
+            SourceLocation.Point.create(tokenLocation.getBeginLine() + 1, 1),
+            tokenLocation.getEndPoint());
+    comments.add(Comment.create(Comment.Type.BLANK_LINES, blankLinesToken.image, loc));
   }
 
   void addLineComment(Token commentToken) {
@@ -1375,7 +1378,7 @@ private NamespaceDeclaration Namespace() :
   name = DottedIdent()
   attributes = Attributes()
   close = <CMD_END>
-  { return new NamespaceDeclaration(name, attributes, errorReporter); }
+  { return new NamespaceDeclaration(name, attributes, errorReporter, createSrcLoc(open, close)); }
 }
 
 
@@ -2740,6 +2743,8 @@ private IfNode IfStmt() :
   Token tagBeginEnd = null;
   ExprNode ifExpr;
   List<StandaloneNode> templateBlock;
+  IfCondNode lastIfCondNode = null;
+  IfElseNode ifElseNode = null;
 }
 {
   tagBegin = <CMD_BEGIN_IF>
@@ -2762,6 +2767,7 @@ private IfNode IfStmt() :
         ifExpr);
     condNodes.add(ifCondNode);
     ifCondNode.addChildren(templateBlock);
+    lastIfCondNode = ifCondNode;
   }
 
   (
@@ -2784,6 +2790,11 @@ private IfNode IfStmt() :
           ifExpr);
       condNodes.add(ifCondNode);
       ifCondNode.addChildren(templateBlock);
+      lastIfCondNode.setSourceLocation(
+          lastIfCondNode
+              .getSourceLocation()
+              .extend(Tokens.getPreviousPointOrBeginOfLine(condTagBegin)));
+      lastIfCondNode = ifCondNode;
     }
   )*
 
@@ -2791,10 +2802,12 @@ private IfNode IfStmt() :
     elseTag = <CMD_FULL_ELSE>
     templateBlock = TemplateBlock()
     {
-      IfElseNode ifElseNode =
+      ifElseNode =
           new IfElseNode(nodeIdGen.genId(), createSrcLoc(elseTag, templateBlock),
               createSrcLoc(elseTag));
       condNodes.add(ifElseNode);
+      lastIfCondNode.setSourceLocation(lastIfCondNode.getSourceLocation().extend(
+                                           Tokens.getPreviousPointOrBeginOfLine(elseTag)));
       ifElseNode.addChildren(templateBlock);
     }
   ]
@@ -2802,6 +2815,13 @@ private IfNode IfStmt() :
   tagClose = <CMD_CLOSE_IF>
 
   {
+    if (ifElseNode != null) {
+      ifElseNode.setSourceLocation(ifElseNode.getSourceLocation().extend(
+                                       Tokens.getPreviousPointOrBeginOfLine(tagClose)));
+    } else {
+      lastIfCondNode.setSourceLocation(lastIfCondNode.getSourceLocation().extend(
+                                           Tokens.getPreviousPointOrBeginOfLine(tagClose)));
+    }
     IfNode ifNode = new IfNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose));
     ifNode.addChildren(condNodes);
     return ifNode;
@@ -2865,6 +2885,8 @@ private SwitchNode SwitchStmt() :
   ExprNode switchExpr;
   ImmutableList<ExprNode> caseExprs;
   List<StandaloneNode> templateBlock;
+  SwitchDefaultNode defaultNode = null;
+  SwitchCaseNode lastCaseNode = null;
 }
 {
   tagBegin = <CMD_BEGIN_SWITCH>
@@ -2892,12 +2914,19 @@ private SwitchNode SwitchStmt() :
       caseTagEnd = <CMD_END>
       templateBlock = TemplateBlock()
       {
+        if (lastCaseNode != null) {
+          lastCaseNode.setSourceLocation(
+              lastCaseNode
+                  .getSourceLocation()
+                  .extend(Tokens.getPreviousPointOrBeginOfLine(caseTag)));
+        }
         SwitchCaseNode caseNode = new SwitchCaseNode(
             nodeIdGen.genId(),
             createSrcLoc(caseTag, templateBlock),
             createSrcLoc(caseTag, caseTagEnd),
             caseExprs);
         caseNode.addChildren(templateBlock);
+        lastCaseNode = caseNode;
         cases.add(caseNode);
       }
     )+
@@ -2906,7 +2935,13 @@ private SwitchNode SwitchStmt() :
       defaultTag = <CMD_FULL_DEFAULT>
       templateBlock = TemplateBlock()
       {
-        SwitchDefaultNode defaultNode =
+        if (lastCaseNode != null) {
+          lastCaseNode.setSourceLocation(
+              lastCaseNode
+                  .getSourceLocation()
+                  .extend(Tokens.getPreviousPointOrBeginOfLine(defaultTag)));
+        }
+        defaultNode =
             new SwitchDefaultNode(nodeIdGen.genId(), createSrcLoc(defaultTag, templateBlock),
                 createSrcLoc(defaultTag));
         defaultNode.addChildren(templateBlock);
@@ -2920,6 +2955,17 @@ private SwitchNode SwitchStmt() :
   }
 
   {
+    if (defaultNode != null) {
+      defaultNode.setSourceLocation(
+          defaultNode
+              .getSourceLocation()
+              .extend(Tokens.getPreviousPointOrBeginOfLine(tagClose)));
+    } else if (lastCaseNode != null) {
+      lastCaseNode.setSourceLocation(
+          lastCaseNode
+              .getSourceLocation()
+              .extend(Tokens.getPreviousPointOrBeginOfLine(tagClose)));
+    }
     SwitchNode switchNode =
         new SwitchNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose),
             tagBeginEnd == null ? createSrcLoc(tagBegin) : createSrcLoc(tagBegin, tagBeginEnd),
@@ -3729,10 +3775,12 @@ private ExprNode GlobalOrFunctionCallLike() :
 {
   Identifier ident, paramName;
   Token openParen = null, closeParen = null, recordKey;
+  Token comma;
   ExprNode key, val;
   List<ExprNode> params = new ArrayList<ExprNode>();
   Set<String> paramNames;
   List<Identifier> paramIds;
+  List<SourceLocation.Point> commaLocations = new ArrayList<SourceLocation.Point>();
 }
 {
   ident = Identifier()
@@ -3855,16 +3903,19 @@ private ExprNode GlobalOrFunctionCallLike() :
           { params.add(key); }
 
           (
-            <COMMA>
+            comma = <COMMA>
             val = Expr()
-            { params.add(val); }
+            {
+              params.add(val);
+              commaLocations.add(SourceLocation.Point.create(comma.beginLine, comma.beginColumn));
+            }
           )*
 
           closeParen = <RPAREN>
 
           {
             SourceLocation loc = ident.location().extend(createSrcLoc(closeParen));
-            FunctionNode fnNode = new FunctionNode(ident, loc);
+            FunctionNode fnNode = new FunctionNode(ident, loc, commaLocations);
             fnNode.addChildren(params);
             return fnNode;
           }
@@ -3887,7 +3938,7 @@ private ExprNode GlobalOrFunctionCallLike() :
       errorReporter.report(ident.location(), EMPTY_RECORD_LITERAL);
       return new RecordLiteralNode(ident, ImmutableList.of(), loc);
     }
-    return new FunctionNode(ident, loc);
+    return new FunctionNode(ident, loc, commaLocations);
   }
 }
 
@@ -3958,7 +4009,7 @@ private ExprNode List() :
   (
       // Empty [] case.
       end = <RBRACKET>
-      { return new ListLiteralNode(new ArrayList<ExprNode>(), createSrcLoc(begin, end)); }
+      { return new ListLiteralNode(new ArrayList<ExprNode>(), createSrcLoc(begin, end), ImmutableList.of()); }
     |
       firstExpr = Expr()
       ( // After the first expr, we have enough info to branch: list comprehensions will have "FOR"
@@ -4024,7 +4075,9 @@ private ExprNode ListLiteral(Token begin, ExprNode firstItem) :
 {
   Token end;
   ExprNode itemExpr;
+  Token comma;
   List<ExprNode> items = ImmutableList.of();
+  List<SourceLocation.Point> commaLocations = new ArrayList<SourceLocation.Point>();
 }
 {
   (
@@ -4037,13 +4090,16 @@ private ExprNode ListLiteral(Token begin, ExprNode firstItem) :
     // The next item will be a comma for a list
     ( // this lookahead is necessary to make this loop unambiguous with the trailing comma
       LOOKAHEAD( { getToken(1).kind == COMMA && getToken(2).kind != RBRACKET } )
-      <COMMA>
+      comma = <COMMA>
       itemExpr = Expr()
-      { items.add(itemExpr); }
+      {
+        items.add(itemExpr);
+        commaLocations.add(SourceLocation.Point.create(comma.beginLine, comma.beginColumn));
+      }
     )*
     [ <COMMA> ]  // trailing comma
     end = <RBRACKET>
-    { return new ListLiteralNode(items, createSrcLoc(begin, end)); }
+    { return new ListLiteralNode(items, createSrcLoc(begin, end), commaLocations); }
   )
 }
 

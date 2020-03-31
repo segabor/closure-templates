@@ -31,6 +31,7 @@ import com.google.template.soy.base.internal.BaseUtils;
 import com.google.template.soy.invocationbuilders.javatypes.JavaType;
 import com.google.template.soy.passes.IndirectParamsCalculator;
 import com.google.template.soy.passes.IndirectParamsCalculator.IndirectParamsInfo;
+import com.google.template.soy.shared.internal.gencode.JavaGenerationUtils;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.TemplateMetadata;
@@ -41,6 +42,7 @@ import com.google.template.soy.soytree.Visibility;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyType.Kind;
+import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.SoyTypes;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -66,6 +68,8 @@ public class SoyFileNodeTransformer {
   /** The transformed {@link SoyFileNode}. */
   @AutoValue
   public abstract static class FileInfo {
+
+    abstract SoyFileNode fileNode();
 
     abstract Path soyFilePath();
 
@@ -99,6 +103,10 @@ public class SoyFileNodeTransformer {
 
     public TemplateInfo findTemplate(TemplateNode node) {
       return templates().stream().filter(t -> t.template().equals(node)).findFirst().get();
+    }
+
+    public Set<String> getProtoTypes(SoyTypeRegistry typeRegistry) {
+      return JavaGenerationUtils.getProtoTypes(fileNode(), typeRegistry);
     }
   }
 
@@ -247,7 +255,6 @@ public class SoyFileNodeTransformer {
     }
   }
 
-
   private final String javaPackage;
   private final IndirectParamsCalculator indirectParamsCalculator;
 
@@ -276,7 +283,7 @@ public class SoyFileNodeTransformer {
     }
 
     return new AutoValue_SoyFileNodeTransformer_FileInfo(
-        path, fqClassName, ImmutableList.copyOf(templates));
+        node, path, fqClassName, ImmutableList.copyOf(templates));
   }
 
   private TemplateInfo transform(TemplateNode template, String className) {

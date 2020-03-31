@@ -242,6 +242,10 @@ public final class SoyProtoValue extends SoyAbstractValue implements SoyLegacyOb
     return clazz().fields.get(name).interpretField(proto).resolve();
   }
 
+  @Override
+  public final ImmutableMap<String, SoyValueProvider> recordAsMap() {
+    throw new UnsupportedOperationException();
+  }
   // -----------------------------------------------------------------------------------------------
   // SoyMap.
 
@@ -331,7 +335,8 @@ public final class SoyProtoValue extends SoyAbstractValue implements SoyLegacyOb
           String.format(
               "Accessing a proto of type %s as a %s is deprecated. Add static types to fix."
                   + "\n\t%s",
-              fullName, type, locationKey));
+              fullName, type, locationKey),
+          new Exception("bad proto access @" + locationKey));
     }
     return Flags.allowReflectiveProtoAccess();
   }

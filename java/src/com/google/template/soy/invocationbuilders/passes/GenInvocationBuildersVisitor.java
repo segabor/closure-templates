@@ -22,9 +22,8 @@ import static com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils.
 import static com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils.INDIRECT_P;
 import static com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils.INIT_LIST_PARAM;
 import static com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils.INJECTED_P;
-import static com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils.OPTIONAL_P;
-import static com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils.REQUIRED_P;
 import static com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils.SET_PARAM_INTERNAL;
+import static com.google.template.soy.invocationbuilders.javatypes.CodeGenUtils.STANDARD_P;
 import static com.google.template.soy.shared.internal.gencode.JavaGenerationUtils.appendFunctionCallWithParamsOnNewLines;
 import static com.google.template.soy.shared.internal.gencode.JavaGenerationUtils.appendJavadoc;
 import static com.google.template.soy.shared.internal.gencode.JavaGenerationUtils.makeLowerCamelCase;
@@ -51,6 +50,7 @@ import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.TemplateMetadata.Parameter;
 import com.google.template.soy.soytree.TemplateRegistry;
+import com.google.template.soy.types.SoyTypeRegistry;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -75,14 +75,19 @@ public final class GenInvocationBuildersVisitor
 
   private static final String TEMPLATE_NAME_FIELD = "__NAME__";
   private static final String PARAMS_FIELD = "__PARAMS__";
+  private static final String ALL_PARAMS_FIELD = "__ALL_PARAMS__";
+  private static final String PROTOS_FIELD = "__PROTOS__";
   private static final String DEFAULT_INSTANCE_FIELD = "__DEFAULT_INSTANCE__";
 
+  private final SoyTypeRegistry typeRegistry;
   private final SoyFileNodeTransformer transformer;
 
   private IndentedLinesBuilder ilb; // Line formatter for the generated code.
   private ImmutableList.Builder<GeneratedFile> generatedFiles; // The generated Java files to write.
 
-  public GenInvocationBuildersVisitor(String javaPackage, TemplateRegistry templateRegistry) {
+  public GenInvocationBuildersVisitor(
+      String javaPackage, TemplateRegistry templateRegistry, SoyTypeRegistry typeRegistry) {
+    this.typeRegistry = typeRegistry;
     this.transformer = new SoyFileNodeTransformer(javaPackage, templateRegistry);
   }
 
@@ -126,6 +131,8 @@ public final class GenInvocationBuildersVisitor
     ilb.appendLine("public final class " + javaClassNameForSoyFile + " {");
 
     ilb.increaseIndent();
+
+    appendProtoDescriptors(fileInfo);
 
     // Add FooParams subclasses for the templates in this file.
     generateParamsClassesForEachTemplate(fileInfo);
@@ -218,6 +225,33 @@ public final class GenInvocationBuildersVisitor
     ilb.decreaseIndent();
     ilb.appendLine("}");
     ilb.appendLine();
+  }
+
+  private void appendProtoDescriptors(FileInfo fileInfo) {
+    List<String> protoTypes =
+        fileInfo.getProtoTypes(typeRegistry).stream().sorted().collect(toList());
+
+    if (protoTypes.isEmpty()) {
+      return;
+    }
+
+    ilb.appendLine();
+    appendJavadoc(
+        ilb,
+        "The list of protos used by all templates (public and private) in this Soy file, which are "
+            + "used by 1) the edit-refresh development compiler and 2) the java compiler to "
+            + "enforce strict proto deps.",
+        false,
+        true);
+    ilb.appendLineStart(
+        "private static final com.google.common.collect.ImmutableList<"
+            + "com.google.protobuf.Descriptors.FileDescriptor> "
+            + PROTOS_FIELD
+            + " = ");
+    // Omit injected params from the list of params passed to the builder.
+    appendFunctionCallWithParamsOnNewLines(
+        ilb, "com.google.common.collect.ImmutableList.of", protoTypes);
+    ilb.appendLineEnd(";");
   }
 
   /**
@@ -356,6 +390,7 @@ public final class GenInvocationBuildersVisitor
     // Constructor for Foo.Builder.
     ilb.appendLine("private Builder() {");
     ilb.increaseIndent();
+    ilb.appendLine("super(", nonInjectedParams.size(), ");");
     appendRecordListInitializations(ilb, nonInjectedParams);
     ilb.decreaseIndent();
     ilb.appendLine("}");
@@ -427,11 +462,9 @@ public final class GenInvocationBuildersVisitor
       String visibility = !"?".equals(genericType) ? "public" : "private";
 
       // These values correspond to static factory methods on SoyTemplateParam.
-      CodeGenUtils.Member factory = OPTIONAL_P;
+      CodeGenUtils.Member factory = STANDARD_P;
       if (param.injected()) {
         factory = INJECTED_P;
-      } else if (param.param().isRequired()) {
-        factory = REQUIRED_P;
       } else if (param.indirect()) {
         factory = INDIRECT_P;
       }
@@ -455,6 +488,7 @@ public final class GenInvocationBuildersVisitor
       ilb.appendLine(factory, "(");
       ilb.increaseIndent(2);
       ilb.appendLine("\"", param.name(), "\",");
+      ilb.appendLine("/* required= */ ", param.param().isRequired(), ",");
       ilb.appendLine(typeToken, ");");
       ilb.decreaseIndent(6);
       ilb.appendLine();
@@ -469,6 +503,21 @@ public final class GenInvocationBuildersVisitor
     // Omit injected params from the list of params passed to the builder.
     appendFunctionCallWithParamsOnNewLines(
         ilb, "com.google.common.collect.ImmutableSet.of", nonInjected);
+    ilb.appendLineEnd(";");
+    ilb.appendLine();
+
+    ilb.appendLineStart(
+        "private static final"
+            + " com.google.common.collect.ImmutableSet<com.google.template.soy.data.SoyTemplateParam<?>>"
+            + " "
+            + ALL_PARAMS_FIELD
+            + " = ");
+    if (usedNames.size() == nonInjected.size()) {
+      ilb.append(PARAMS_FIELD);
+    } else {
+      appendFunctionCallWithParamsOnNewLines(
+          ilb, "com.google.common.collect.ImmutableSet.of", usedNames);
+    }
     ilb.appendLineEnd(";");
     ilb.appendLine();
   }
