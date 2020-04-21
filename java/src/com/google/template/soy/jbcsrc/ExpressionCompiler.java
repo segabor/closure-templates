@@ -42,6 +42,7 @@ import com.google.template.soy.exprtree.AbstractReturningExprNodeVisitor;
 import com.google.template.soy.exprtree.BooleanNode;
 import com.google.template.soy.exprtree.DataAccessNode;
 import com.google.template.soy.exprtree.ExprNode;
+import com.google.template.soy.exprtree.ExprNode.AccessChainComponentNode;
 import com.google.template.soy.exprtree.ExprNode.OperatorNode;
 import com.google.template.soy.exprtree.ExprNode.ParentExprNode;
 import com.google.template.soy.exprtree.ExprNode.PrimitiveNode;
@@ -56,10 +57,11 @@ import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.ListComprehensionNode.ComprehensionVarDefn;
 import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
-import com.google.template.soy.exprtree.MethodNode;
+import com.google.template.soy.exprtree.MethodCallNode;
 import com.google.template.soy.exprtree.NullNode;
 import com.google.template.soy.exprtree.NullSafeAccessNode;
 import com.google.template.soy.exprtree.OperatorNodes.AndOpNode;
+import com.google.template.soy.exprtree.OperatorNodes.AssertNonNullOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.ConditionalOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.DivideByOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.EqualOpNode;
@@ -969,7 +971,7 @@ final class ExpressionCompiler {
       switch (node.getKind()) {
         case FIELD_ACCESS_NODE:
         case ITEM_ACCESS_NODE:
-        case METHOD_NODE:
+        case METHOD_CALL_NODE:
           SoyExpression baseExpr =
               visitDataAccessNodeRecurse(((DataAccessNode) node).getBaseExprChild());
           // Mark non nullable.
@@ -1006,8 +1008,9 @@ final class ExpressionCompiler {
                       case ITEM_ACCESS_NODE:
                         accessType = "element " + ((ItemAccessNode) node).getSourceStringSuffix();
                         break;
-                      case METHOD_NODE:
-                        accessType = "method " + ((MethodNode) node).getMethodName().identifier();
+                      case METHOD_CALL_NODE:
+                        accessType =
+                            "method " + ((MethodCallNode) node).getMethodName().identifier();
                         break;
                       default:
                         throw new AssertionError();
@@ -1018,26 +1021,38 @@ final class ExpressionCompiler {
                   }
                 });
           }
-          return visitDataAccess((DataAccessNode) node, baseExpr);
+          return visitDataAccess((DataAccessNode) node, baseExpr, /* hasAssertNonNull= */ false);
         default:
           return visit(node);
       }
     }
 
-    private SoyExpression visitDataAccess(DataAccessNode node, SoyExpression baseExpr) {
+    private SoyExpression visitDataAccess(
+        DataAccessNode node, SoyExpression baseExpr, boolean hasAssertNonNull) {
+      SoyExpression result;
       switch (node.getKind()) {
         case FIELD_ACCESS_NODE:
-          return visitFieldAccess(baseExpr, (FieldAccessNode) node)
-              .withSourceLocation(node.getSourceLocation());
+          result =
+              visitFieldAccess(baseExpr, (FieldAccessNode) node)
+                  .withSourceLocation(node.getSourceLocation());
+          break;
         case ITEM_ACCESS_NODE:
-          return visitItemAccess(baseExpr, (ItemAccessNode) node)
-              .withSourceLocation(node.getSourceLocation());
-        case METHOD_NODE:
-          return visitMethod(baseExpr, (MethodNode) node)
-              .withSourceLocation(node.getSourceLocation());
+          result =
+              visitItemAccess(baseExpr, (ItemAccessNode) node)
+                  .withSourceLocation(node.getSourceLocation());
+          break;
+        case METHOD_CALL_NODE:
+          result =
+              visitMethodCall(baseExpr, (MethodCallNode) node)
+                  .withSourceLocation(node.getSourceLocation());
+          break;
         default:
           throw new AssertionError();
       }
+      if (hasAssertNonNull) {
+        result = assertNonNull(result, node);
+      }
+      return result;
     }
 
     private SoyExpression visitFieldAccess(SoyExpression baseExpr, FieldAccessNode node) {
@@ -1102,14 +1117,14 @@ final class ExpressionCompiler {
       return SoyExpression.forSoyValue(node.getType(), soyValue);
     }
 
-    private static SoyExpression visitMethod(SoyExpression baseExpr, MethodNode node) {
+    private static SoyExpression visitMethodCall(SoyExpression baseExpr, MethodCallNode node) {
       // All null safe accesses should've already been converted to NullSafeAccessNodes.
       checkArgument(!node.isNullSafe());
       // TODO(b/147372851): Handle case when the implementation of the method cannot be determined
       // from the base type during compile time and the node has multiple SoySourceFunctions.
       checkArgument(node.isMethodResolved());
 
-      if (GetExtensionMethod.isGetExtensionMethod(node)) {
+      if (GetExtensionMethod.isGetExtensionMethodCall(node)) {
         SoyProtoType protoType = (SoyProtoType) baseExpr.soyType();
         return ProtoUtils.accessExtensionField(protoType, baseExpr, node);
       }
@@ -1129,11 +1144,15 @@ final class ExpressionCompiler {
         NullSafeAccessNode node = (NullSafeAccessNode) dataAccess;
         accumulator =
             accumulateNullSafeDataAccess(
-                (DataAccessNode) node.getBase(), accumulator, nullSafeExit);
+                (DataAccessNode) node.getBase(),
+                accumulator,
+                nullSafeExit,
+                /* hasAssertNonNull= */ false);
         dataAccess = node.getDataAccess();
       }
       accumulator =
-          accumulateNullSafeDataAccess((DataAccessNode) dataAccess, accumulator, nullSafeExit);
+          accumulateNullSafeDataAccessTail(
+              (AccessChainComponentNode) dataAccess, accumulator, nullSafeExit);
       if (BytecodeUtils.isPrimitive(accumulator.resultType())) {
         // proto accessors will return primitives, so in order to allow it to be compatible with
         // a nullable expression we need to box.
@@ -1157,17 +1176,35 @@ final class ExpressionCompiler {
           .asNonNullable();
     }
 
+    private SoyExpression accumulateNullSafeDataAccessTail(
+        AccessChainComponentNode dataAccessNode, SoyExpression baseExpr, Label nullSafeExit) {
+      boolean hasAssertNonNull = false;
+      if (dataAccessNode.getKind() == ExprNode.Kind.ASSERT_NON_NULL_OP_NODE) {
+        AssertNonNullOpNode assertNonNull = (AssertNonNullOpNode) dataAccessNode;
+        dataAccessNode = (AccessChainComponentNode) assertNonNull.getChild(0);
+        hasAssertNonNull = true;
+      }
+      return accumulateNullSafeDataAccess(
+          (DataAccessNode) dataAccessNode, baseExpr, nullSafeExit, hasAssertNonNull);
+    }
+
     private SoyExpression accumulateNullSafeDataAccess(
-        DataAccessNode dataAccessNode, SoyExpression baseExpr, Label nullSafeExit) {
+        DataAccessNode dataAccessNode,
+        SoyExpression baseExpr,
+        Label nullSafeExit,
+        boolean hasAssertNonNull) {
       baseExpr = addNullSafetyCheck(baseExpr, nullSafeExit);
-      return accumulateDataAccess(dataAccessNode, baseExpr);
+      return accumulateDataAccess(dataAccessNode, baseExpr, hasAssertNonNull);
     }
 
     private SoyExpression accumulateDataAccess(
-        DataAccessNode dataAccessNode, SoyExpression baseExpr) {
+        DataAccessNode dataAccessNode, SoyExpression baseExpr, boolean hasAssertNonNull) {
       if (dataAccessNode.getBaseExprChild() instanceof DataAccessNode) {
         baseExpr =
-            accumulateDataAccess((DataAccessNode) dataAccessNode.getBaseExprChild(), baseExpr)
+            accumulateDataAccess(
+                    (DataAccessNode) dataAccessNode.getBaseExprChild(),
+                    baseExpr,
+                    /* hasAssertNonNull= */ false)
                 // Mark non nullable.
                 // Dereferencing for access below may require unboxing and there is no point in
                 // adding null safety checks to the unboxing code.  So we just mark non nullable.
@@ -1176,7 +1213,7 @@ final class ExpressionCompiler {
                 // dereference.
                 .asNonNullable();
       }
-      return visitDataAccess(dataAccessNode, baseExpr);
+      return visitDataAccess(dataAccessNode, baseExpr, hasAssertNonNull);
     }
 
     // Builtin functions
@@ -1249,22 +1286,32 @@ final class ExpressionCompiler {
     }
 
     @Override
+    protected SoyExpression visitAssertNonNullOpNode(AssertNonNullOpNode node) {
+      return assertNonNull(Iterables.getOnlyElement(node.getChildren()));
+    }
+
+    @Override
     SoyExpression visitCheckNotNullFunction(FunctionNode node) {
       // there is only ever a single child
-      final ExprNode childNode = Iterables.getOnlyElement(node.getChildren());
-      final SoyExpression childExpr = visit(childNode);
-      return childExpr
-          .withSource(
-              new Expression(childExpr.resultType(), childExpr.features()) {
+      return assertNonNull(Iterables.getOnlyElement(node.getChildren()));
+    }
+
+    private SoyExpression assertNonNull(ExprNode node) {
+      return assertNonNull(visit(node), node);
+    }
+
+    private static SoyExpression assertNonNull(SoyExpression expr, ExprNode node) {
+      return expr.withSource(
+              new Expression(expr.resultType(), expr.features()) {
                 @Override
                 protected void doGen(CodeBuilder adapter) {
-                  childExpr.gen(adapter);
+                  expr.gen(adapter);
                   adapter.dup();
                   Label end = new Label();
                   adapter.ifNonNull(end);
                   adapter.throwException(
                       NULL_POINTER_EXCEPTION_TYPE,
-                      "'" + childNode.toSourceString() + "' evaluates to null");
+                      "'" + node.toSourceString() + "' evaluates to null");
                   adapter.mark(end);
                 }
               })

@@ -55,7 +55,7 @@ public interface ExprNode extends Node {
     VAR_REF_NODE,
     FIELD_ACCESS_NODE,
     ITEM_ACCESS_NODE,
-    METHOD_NODE,
+    METHOD_CALL_NODE,
     PROTO_EXTENSION_ID_NODE,
     NULL_SAFE_ACCESS_NODE,
 
@@ -79,6 +79,7 @@ public interface ExprNode extends Node {
     OR_OP_NODE,
     NULL_COALESCING_OP_NODE,
     CONDITIONAL_OP_NODE,
+    ASSERT_NON_NULL_OP_NODE,
 
     FUNCTION_NODE,
     PROTO_INIT_NODE,
@@ -125,4 +126,7 @@ public interface ExprNode extends Node {
     @Override
     PrimitiveNode copy(CopyState copyState);
   }
+
+  /** A marker interface for nodes that can be part of access chains, like {@code $r.a[b]!}. */
+  public static interface AccessChainComponentNode extends ParentExprNode {}
 }

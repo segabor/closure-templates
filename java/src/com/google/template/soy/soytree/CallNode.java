@@ -49,6 +49,7 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
     implements StandaloneNode,
         SplitLevelTopNode<CallParamNode>,
         StatementNode,
+        HtmlContext.HtmlContextHolder,
         ExprHolderNode,
         MsgPlaceholderInitialNode,
         CommandTagAttributesHolder {
@@ -58,6 +59,9 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
 
   /** True if this call is passing data="all". */
   private boolean isPassingAllData;
+
+  /** Used for formatting */
+  private final boolean selfClosing;
 
   /** Used for formatting */
   private final List<CommandTagAttribute> attributes;
@@ -104,6 +108,7 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
       SourceLocation openTagLocation,
       String commandName,
       List<CommandTagAttribute> attributes,
+      boolean selfClosing,
       ErrorReporter reporter) {
     super(id, location, commandName);
 
@@ -144,6 +149,7 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
     }
 
     this.attributes = attributes;
+    this.selfClosing = selfClosing;
     this.userSuppliedPlaceholderName = phname;
     this.userSuppliedPlaceholderExample = phex;
     this.openTagLocation = openTagLocation;
@@ -165,6 +171,7 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
     this.callKey = orig.callKey;
     this.isPcData = orig.getIsPcData();
     this.openTagLocation = orig.openTagLocation;
+    this.selfClosing = orig.selfClosing;
     this.attributes =
         orig.attributes.stream().map(c -> c.copy(copyState)).collect(toImmutableList());
   }
@@ -174,6 +181,7 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
    * HTML PCDATA, or plain text) which this node emits in. This affects how the node is escaped (for
    * traditional backends) or how it's passed to incremental DOM APIs.
    */
+  @Override
   public HtmlContext getHtmlContext() {
     return checkNotNull(
         htmlContext, "Cannot access HtmlContext before HtmlContextVisitor or InferenceEngine.");
@@ -197,6 +205,10 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
 
   public boolean isPassingAllData() {
     return isPassingAllData;
+  }
+
+  public boolean isSelfClosing() {
+    return this.selfClosing;
   }
 
   @Override

@@ -284,6 +284,11 @@ public final class PassManager {
       // meaning that errors reported in earlier passes do not prevent running subsequent passes.
       building = true;
       ImmutableList.Builder<CompilerFilePass> singleFilePassesBuilder = ImmutableList.builder();
+      // TOOD(b/22389927): enable the non-null assertion operator once we're ready to use for
+      // fixing proto nullability.
+      if (!options.getExperimentalFeatures().contains("enableNonNullAssertionOperator")) {
+        addPass(new BanNonNullAssertionOperatorPass(errorReporter), singleFilePassesBuilder);
+      }
       addPass(new DesugarGroupNodesPass(), singleFilePassesBuilder);
       // Needs to run after htmlrewriting, before ResolveNames, ResolveTemplateParamTypes and
       // autoescaping.
@@ -340,6 +345,9 @@ public final class PassManager {
         addPass(
             new ResolveExpressionTypesPass(registry, errorReporter, loggingConfig),
             singleFilePassesBuilder);
+        // After ResolveExpressionTypesPass because ResolveExpressionTypesPass verifies usage and
+        // types of non-null assertion operators.
+        addPass(new SimplifyAssertNonNullPass(), singleFilePassesBuilder);
         // Needs to come after types have been set.
         addPass(
             new EnforceExperimentalFeaturesPass(options.getExperimentalFeatures(), errorReporter),

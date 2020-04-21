@@ -43,6 +43,7 @@ import com.google.template.soy.exprtree.AbstractParentExprNode;
 import com.google.template.soy.exprtree.DataAccessNode;
 import com.google.template.soy.exprtree.ExprEquivalence;
 import com.google.template.soy.exprtree.ExprNode;
+import com.google.template.soy.exprtree.ExprNode.AccessChainComponentNode;
 import com.google.template.soy.exprtree.ExprNode.ParentExprNode;
 import com.google.template.soy.exprtree.ExprNode.PrimitiveNode;
 import com.google.template.soy.exprtree.ExprRootNode;
@@ -53,10 +54,11 @@ import com.google.template.soy.exprtree.ItemAccessNode;
 import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
-import com.google.template.soy.exprtree.MethodNode;
+import com.google.template.soy.exprtree.MethodCallNode;
 import com.google.template.soy.exprtree.NullNode;
 import com.google.template.soy.exprtree.NullSafeAccessNode;
 import com.google.template.soy.exprtree.OperatorNodes.AndOpNode;
+import com.google.template.soy.exprtree.OperatorNodes.AssertNonNullOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.ConditionalOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.DivideByOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.EqualOpNode;
@@ -168,11 +170,15 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
           "Union type that is nullable cannot use bracket access. To access this value, "
               + "first check for null or use null-safe (\"?[\") operations.");
   private static final SoyErrorKind CHECK_NOT_NULL_ON_COMPILE_TIME_NULL =
-      SoyErrorKind.of("Cannot call checkNotNull on a parameter with a static type of ''null''.");
+      SoyErrorKind.of("Cannot {0} on a value with a static type of ''null''.");
+  private static final SoyErrorKind REDUNDANT_NON_NULL_ASSERTION_OPERATOR =
+      SoyErrorKind.of("Found redundant non-null assertion operators (''!'').");
   private static final SoyErrorKind DOT_ACCESS_NOT_SUPPORTED =
       SoyErrorKind.of("Type {0} does not support dot access.");
   private static final SoyErrorKind DOT_ACCESS_NOT_SUPPORTED_CONSIDER_RECORD =
       SoyErrorKind.of("Type {0} does not support dot access (consider record instead of map).");
+  private static final SoyErrorKind UNNECESSARY_NULL_SAFE_ACCESS =
+      SoyErrorKind.of("This null safe access is unnecessary, it is on a value that is non-null.");
   private static final SoyErrorKind DUPLICATE_KEY_IN_MAP_LITERAL =
       SoyErrorKind.of("Map literals with duplicate keys are not allowed.  Duplicate key: ''{0}''");
   private static final SoyErrorKind KEYS_PASSED_MAP =
@@ -655,6 +661,29 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
     }
 
     @Override
+    protected void visitAssertNonNullOpNode(AssertNonNullOpNode node) {
+      visitChildren(node);
+      finishAssertNonNullOpNode(node);
+    }
+
+    private void finishAssertNonNullOpNode(AssertNonNullOpNode node) {
+      ExprNode child = node.getChild(0);
+      SoyType type = child.getType();
+      if (type.getKind() == Kind.NULL) {
+        errorReporter.report(
+            node.getSourceLocation(),
+            CHECK_NOT_NULL_ON_COMPILE_TIME_NULL,
+            "use the non-null assertion operator ('!')");
+        node.setType(ErrorType.getInstance());
+      } else if (node.getChild(0).getKind() == ExprNode.Kind.ASSERT_NON_NULL_OP_NODE) {
+        errorReporter.report(node.getSourceLocation(), REDUNDANT_NON_NULL_ASSERTION_OPERATOR);
+        node.setType(ErrorType.getInstance());
+      } else {
+        node.setType(SoyTypes.removeNull(type));
+      }
+    }
+
+    @Override
     protected void visitPrimitiveNode(PrimitiveNode node) {
       // We don't do anything here because primitive nodes already have type information.
       if (isDefaultInitializerForInferredParam && node.getKind() == ExprNode.Kind.NULL_NODE) {
@@ -810,29 +839,53 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
     }
 
     private void visitNullSafeAccessNodeRecurse(NullSafeAccessNode nullSafeAccessNode) {
+      if (nullSafeAccessNode.getBase().getKind() == ExprNode.Kind.ASSERT_NON_NULL_OP_NODE) {
+        errorReporter.report(nullSafeAccessNode.getSourceLocation(), UNNECESSARY_NULL_SAFE_ACCESS);
+      }
       if (nullSafeAccessNode.getDataAccess().getKind() == ExprNode.Kind.NULL_SAFE_ACCESS_NODE) {
         NullSafeAccessNode dataAccess = (NullSafeAccessNode) nullSafeAccessNode.getDataAccess();
         calculateAccessChainTypes(
-            nullSafeAccessNode.getBase().getType(),
-            (DataAccessNode) dataAccess.getBase(),
-            /* nullSafe= */ true);
+            nullSafeAccessNode.getBase().getType(), (DataAccessNode) dataAccess.getBase());
         visitNullSafeAccessNodeRecurse(dataAccess);
       } else {
-        calculateAccessChainTypes(
-            nullSafeAccessNode.getBase().getType(),
-            (DataAccessNode) nullSafeAccessNode.getDataAccess(),
-            /* nullSafe= */ true);
+        AccessChainComponentNode dataAccess =
+            (AccessChainComponentNode) nullSafeAccessNode.getDataAccess();
+        DataAccessNode childDataAccess = getDataAccessChild(dataAccess);
+        calculateAccessChainTypes(nullSafeAccessNode.getBase().getType(), childDataAccess);
+        finishAssertNonNullOpNodeChain(dataAccess);
       }
       // TODO(b/138252762): This should be nullable.
       nullSafeAccessNode.setType(nullSafeAccessNode.getDataAccess().getType());
       tryApplySubstitution(nullSafeAccessNode);
     }
 
-    private void calculateAccessChainTypes(
-        SoyType baseType, DataAccessNode dataAccess, boolean nullSafe) {
+    private DataAccessNode getDataAccessChild(AccessChainComponentNode expr) {
+      AccessChainComponentNode child = expr;
+      while (child.getKind() == ExprNode.Kind.ASSERT_NON_NULL_OP_NODE) {
+        child = (AccessChainComponentNode) ((AssertNonNullOpNode) child).getChild(0);
+      }
+      return (DataAccessNode) child;
+    }
+
+    private void finishAssertNonNullOpNodeChain(AccessChainComponentNode node) {
+      if (node.getKind() == ExprNode.Kind.ASSERT_NON_NULL_OP_NODE) {
+        AssertNonNullOpNode nonNullNode = (AssertNonNullOpNode) node;
+        finishAssertNonNullOpNodeChain((AccessChainComponentNode) nonNullNode.getChild(0));
+        finishAssertNonNullOpNode(nonNullNode);
+      }
+    }
+
+    private void calculateAccessChainTypes(SoyType baseType, DataAccessNode dataAccess) {
+      boolean nullSafe = true;
       if (dataAccess.getBaseExprChild() instanceof DataAccessNode) {
-        calculateAccessChainTypes(
-            baseType, (DataAccessNode) dataAccess.getBaseExprChild(), nullSafe);
+        calculateAccessChainTypes(baseType, (DataAccessNode) dataAccess.getBaseExprChild());
+        nullSafe = false;
+        baseType = dataAccess.getBaseExprChild().getType();
+      } else if (dataAccess.getBaseExprChild().getKind() == ExprNode.Kind.ASSERT_NON_NULL_OP_NODE) {
+        AssertNonNullOpNode baseExpr = (AssertNonNullOpNode) dataAccess.getBaseExprChild();
+        DataAccessNode childDataAccess = getDataAccessChild(baseExpr);
+        calculateAccessChainTypes(baseType, childDataAccess);
+        finishAssertNonNullOpNodeChain(baseExpr);
         nullSafe = false;
         baseType = dataAccess.getBaseExprChild().getType();
       }
@@ -852,8 +905,8 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         case ITEM_ACCESS_NODE:
           finishItemAccessNode((ItemAccessNode) dataAccess, nullSafe);
           break;
-        case METHOD_NODE:
-          finishMethodNode((MethodNode) dataAccess, nullSafe);
+        case METHOD_CALL_NODE:
+          finishMethodCallNode((MethodCallNode) dataAccess, nullSafe);
           break;
         default:
           throw new AssertionError(dataAccess.getKind());
@@ -897,13 +950,13 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
     }
 
     @Override
-    protected void visitMethodNode(MethodNode node) {
+    protected void visitMethodCallNode(MethodCallNode node) {
       checkState(!node.isNullSafe());
       visit(node.getBaseExprChild());
-      finishMethodNode(node, /* nullSafe= */ false);
+      finishMethodCallNode(node, /* nullSafe= */ false);
     }
 
-    private void finishMethodNode(MethodNode node, boolean nullSafe) {
+    private void finishMethodCallNode(MethodCallNode node, boolean nullSafe) {
       for (ExprNode child : node.getChildren().subList(1, node.numChildren())) {
         visit(child);
       }
@@ -924,7 +977,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       // the getExtension method.
     }
 
-    private void visitGetExtensionMethod(MethodNode node) {
+    private void visitGetExtensionMethod(MethodCallNode node) {
       SoyType baseType = SoyTypes.tryRemoveNull(node.getBaseExprChild().getType());
 
       if (baseType.getKind() != SoyType.Kind.PROTO) {
@@ -970,9 +1023,9 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
 
     @Nullable
     private SoySourceFunction resolveMethodFromBaseType(
-        MethodNode node, SoyType baseType, List<SoySourceFunction> methods, boolean nullSafe) {
+        MethodCallNode node, SoyType baseType, List<SoySourceFunction> methods, boolean nullSafe) {
       // The methods list is empty when there are no methods with a name matching the one that the
-      // method node is called with, and an error is reported during the ResolvePluginsPass.
+      // method call node is called with, and an error is reported during the ResolvePluginsPass.
       if (methods.isEmpty()) {
         node.setType(ErrorType.getInstance());
         return null;
@@ -1921,7 +1974,8 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         case CHECK_NOT_NULL:
           SoyType type = node.getChild(0).getType();
           if (type.equals(NullType.getInstance())) {
-            errorReporter.report(node.getSourceLocation(), CHECK_NOT_NULL_ON_COMPILE_TIME_NULL);
+            errorReporter.report(
+                node.getSourceLocation(), CHECK_NOT_NULL_ON_COMPILE_TIME_NULL, "call checkNotNull");
           } else {
             // Same type as its child but with nulls removed
             node.setType(SoyTypes.removeNull(type));

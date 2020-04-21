@@ -279,6 +279,11 @@ final class SimplifyExprVisitor extends AbstractExprNodeVisitor<Void> {
       }
       ExprNode dataAccessChild = node.getDataAccess();
       switch (dataAccessChild.getKind()) {
+        case ASSERT_NON_NULL_OP_NODE:
+          // This can happen for an access chain like {@code $foo?.bar!}. In this case, don't
+          // attempt to optimize chains past non-null assertion operators. This is possible, but
+          // unclear how valuable it is, especially since this is already so complex.
+          return;
         case NULL_SAFE_ACCESS_NODE:
           {
             // This null safe access is followed by another null safe access, which means the access
@@ -336,8 +341,8 @@ final class SimplifyExprVisitor extends AbstractExprNodeVisitor<Void> {
             }
             return;
           }
-        case METHOD_NODE:
-          // Can't optimize away a method node.
+        case METHOD_CALL_NODE:
+          // Can't optimize away a method call node.
           return;
         default:
           throw new AssertionError(dataAccessChild.getKind());
@@ -352,8 +357,8 @@ final class SimplifyExprVisitor extends AbstractExprNodeVisitor<Void> {
         return visitFieldAccessNode((FieldAccessNode) dataAccessChainBase, base);
       case ITEM_ACCESS_NODE:
         return visitItemAccessNode((ItemAccessNode) dataAccessChainBase, base);
-      case METHOD_NODE:
-        // Can't optimize away a method node.
+      case METHOD_CALL_NODE:
+        // Can't optimize away a method call node.
         return null;
       default:
         throw new AssertionError(dataAccessChainBase.getKind());

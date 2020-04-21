@@ -74,7 +74,7 @@ import com.google.template.soy.exprtree.IntegerNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
-import com.google.template.soy.exprtree.MethodNode;
+import com.google.template.soy.exprtree.MethodCallNode;
 import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.NullNode;
 import com.google.template.soy.exprtree.GroupNode;
@@ -86,6 +86,7 @@ import com.google.template.soy.exprtree.TemplateLiteralNode;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.exprtree.VeLiteralNode;
 import com.google.template.soy.soytree.AliasDeclaration;
+import com.google.template.soy.soytree.DelPackageDeclaration;
 import com.google.template.soy.soytree.CallBasicNode;
 import com.google.template.soy.soytree.CallDelegateNode;
 import com.google.template.soy.soytree.CallNode;
@@ -468,6 +469,8 @@ public class SoyFileParser {
       SoyErrorKind.of("Empty record literal.");
   private static final SoyErrorKind EMPTY_RECORD_TYPE =
       SoyErrorKind.of("Empty record type.");
+  private static final SoyErrorKind LEGACY_NOT_ERROR =
+      SoyErrorKind.of("Found use of ''!'' instead of the ''not'' operator.");
 
   // Error message that mimics a ParseException
   private static final SoyErrorKind PARSER_ERROR =
@@ -1212,6 +1215,7 @@ TOKEN_MGR_DECLS: {
 | < VBAR: "|" >           // an operator for type unions
 | < EQ: "=" >             // For state assignments and attribute value pairs in EXPR
 | < FORWARD_ARROW: "=>" > // Part of template type syntax.
+| < ASSERT_NON_NULL: "!" >
 }
 
 
@@ -1230,7 +1234,6 @@ TOKEN_MGR_DECLS: {
 <EXPR, EXPR_NO_DOUBLE_QUOTE, EXPR_NO_SINGLE_QUOTE> TOKEN: {
   < LEGACY_AND : "&&" >
 | < LEGACY_OR : "||" >
-| < LEGACY_NOT : "!" >
 }
 
 <TEMPLATE_DEFAULT> TOKEN: {
@@ -1274,7 +1277,7 @@ TOKEN_MGR_DECLS: {
  */
 private SoyFileNode SoyFile() :
 {
-  Identifier delpackageName = null;
+  DelPackageDeclaration delpackageDecl = null;
   NamespaceDeclaration namespace;
   AliasDeclaration alias;
   List<AliasDeclaration> aliases = ImmutableList.of();
@@ -1282,7 +1285,7 @@ private SoyFileNode SoyFile() :
   Token eof;
 }
 {
-  [ delpackageName = DelPackage() ]
+  [ delpackageDecl = DelPackage() ]
 
   namespace = Namespace()
 
@@ -1298,7 +1301,7 @@ private SoyFileNode SoyFile() :
   )*
 
   {
-    headerInfo = new SoyFileHeaderInfo(errorReporter, delpackageName, namespace, aliases);
+    headerInfo = new SoyFileHeaderInfo(errorReporter, delpackageDecl, namespace, aliases);
     List<TemplateNode> templates = new ArrayList<TemplateNode>();
   }
 
@@ -1537,15 +1540,16 @@ private CommandTagAttribute Attribute() :
  *
  * DelPackage -> DelpackageOpen DottedIdent CmdEnd
  */
-private Identifier DelPackage() :
+private DelPackageDeclaration DelPackage() :
 {
   Identifier name;
+  Token open, close;
 }
 {
-  <DELPACKAGE_OPEN>
+  open = <DELPACKAGE_OPEN>
   name = DottedIdent()
-  <CMD_END>
-  { return name; }
+  close = <CMD_END>
+  { return DelPackageDeclaration.create(createSrcLoc(open,close), name); }
 }
 
 
@@ -2838,8 +2842,7 @@ private IfNode IfStmt() :
 private VeLogNode VeLogStmt() :
 {
   ExprNode veDataExpr = null;
-  Token tagBegin, tagClose;
-  Token tagBeginEnd = null;
+  Token tagBegin, tagBeginEnd, tagClose;
   List<CommandTagAttribute> attributes = ImmutableList.of();
   List<StandaloneNode> templateBlock;
 }
@@ -2853,7 +2856,7 @@ private VeLogNode VeLogStmt() :
     if (veDataExpr == null) {
       veDataExpr = errorExpr(tagBegin);
     }
-    reportTemplateBodyErrorAndSkipTo(e, CMD_END);
+    tagBeginEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
   }
 
   templateBlock = TemplateBlock()
@@ -2864,7 +2867,7 @@ private VeLogNode VeLogStmt() :
     VeLogNode node = new VeLogNode(
         nodeIdGen.genId(),
         createSrcLoc(tagBegin, tagClose),
-        tagBeginEnd == null ? createSrcLoc(tagBegin) : createSrcLoc(tagBegin, tagBeginEnd),
+        createSrcLoc(tagBegin, tagBeginEnd),
         veDataExpr,
         attributes,
         errorReporter);
@@ -3065,6 +3068,7 @@ private CallNode CallStmt() :
   Token tagBegin, tagClose;
   Token tagBeginEnd = null;
   Identifier calleeName = null;
+  boolean selfClosing = false;
   List<CommandTagAttribute> attributes = ImmutableList.of();
   List<CallParamNode> params = ImmutableList.of();
 }
@@ -3078,6 +3082,7 @@ private CallNode CallStmt() :
       attributes = Attributes()
       (
         tagClose = <CMD_SELF_CLOSE>
+        { selfClosing = true; }
       |
         tagBeginEnd = <CMD_END>
         params = CallParams()
@@ -3101,6 +3106,7 @@ private CallNode CallStmt() :
           (tagBeginEnd != null) ? createSrcLoc(tagBegin, tagBeginEnd) : loc,
           name,
           attributes,
+          selfClosing,
           errorReporter);
       node.addChildren(params);
       return node;
@@ -3114,6 +3120,7 @@ private CallNode CallStmt() :
       attributes = Attributes()
       (
         tagClose = <CMD_SELF_CLOSE>
+        { selfClosing = true; }
       |
         tagBeginEnd = <CMD_END>
         params = CallParams()
@@ -3137,6 +3144,7 @@ private CallNode CallStmt() :
           (tagBeginEnd != null) ? createSrcLoc(tagBeginEnd) : tag,
           calleeName,
           attributes,
+          selfClosing,
           errorReporter);
       node.addChildren(params);
       return node;
@@ -3620,6 +3628,14 @@ private ExprNode PrecExpr8() :
       op = <NOT>
     |
       op = <MINUS>
+    |
+      op = <ASSERT_NON_NULL>
+      {
+        errorReporter.report(createSrcLoc(op), LEGACY_NOT_ERROR);
+        // Compilation will fail because we reported an error, but keep going the best we can,
+        // treating "!$expr" as "not $expr"
+        op.image = "not";
+      }
     )
     expr = PrecExpr8()
 
@@ -3648,7 +3664,8 @@ private ExprNode PrecExpr8() :
 /**
  * Matches expressions with precedence level 9.
  *
- * <p>This level has our data access 'operators' and is currently our highest precedence level.
+ * <p>This level has our data access 'operators' and the nonnull assertion operator and is currently
+ * our highest precedence level.
  */
 private ExprNode PrecExpr9() :
 {
@@ -3660,50 +3677,57 @@ private ExprNode PrecExpr9() :
   expr = Primary()
   (
     (
-      op = <DOT>
+      (
+        op = <DOT>
+      |
+        op = <QDOT>
+      )
+      ident = <IDENT>
+      (
+        <LPAREN>
+        [
+          params = ExprList()
+        ]
+        close = <RPAREN>
+        {
+          expr = new MethodCallNode(
+              expr,
+              params,
+              Identifier.create(ident.image, createSrcLoc(ident)),
+              createSrcLoc(op, close),
+              op.kind == QDOT);
+          params = ImmutableList.of(); // Reset params after consuming.
+        }
+      |
+        {
+          expr =
+              new FieldAccessNode(
+                  expr,
+                  ident.image,
+                  createSrcLoc(op, ident),
+                  op.kind == QDOT);
+        }
+      )
     |
-      op = <QDOT>
-    )
-    ident = <IDENT>
-    (
-      <LPAREN>
-      [
-        params = ExprList()
-      ]
-      close = <RPAREN>
-      {
-        expr = new MethodNode(
-            expr,
-            params,
-            Identifier.create(ident.image, createSrcLoc(ident)),
-            createSrcLoc(op, close),
-            op.kind == QDOT);
-        params = ImmutableList.of(); // Reset params after consuming.
-      }
-    |
-      {
-        expr =
-            new FieldAccessNode(
+      (
+        open = <LBRACKET>
+      |
+        open = <QLBRACKET>
+      )
+      keyExpr = Expr()
+      close = <RBRACKET>
+      { expr =
+            new ItemAccessNode(
                 expr,
-                ident.image,
-                createSrcLoc(op, ident),
-                op.kind == QDOT);
+                keyExpr,
+                createSrcLoc(open, close),
+                open.kind == QLBRACKET);
       }
     )
   |
-    (
-      open = <LBRACKET>
-    |
-      open = <QLBRACKET>
-    )
-    keyExpr = Expr()
-    close = <RBRACKET>
-    { expr =
-          new ItemAccessNode(
-              expr,
-              keyExpr,
-              createSrcLoc(open, close),
-              open.kind == QLBRACKET);
+    op = <ASSERT_NON_NULL>
+    {
+      expr = createOperatorNode(createSrcLoc(op), op.image, 10, expr);
     }
   )*
 
