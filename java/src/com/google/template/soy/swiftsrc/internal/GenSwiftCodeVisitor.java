@@ -213,7 +213,7 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       swiftCodeBuilder.appendLine("");
 
       // Add code for each template.
-      for (TemplateNode template : node.getChildren()) {
+      for (TemplateNode template : node.getTemplates()) {
         swiftCodeBuilder.appendLine().appendLine();
         visit(template);
       }

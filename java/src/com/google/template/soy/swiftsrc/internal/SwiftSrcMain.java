@@ -131,7 +131,7 @@ public class SwiftSrcMain {
             "fileprivate let SOY_LOOKUP: [String: SoyTemplateRenderFunc] = [\n");
 
         for (SoyFileNode soyFile : soyTree.getChildren()) {
-          for (TemplateNode template : soyFile.getChildren()) {
+          for (TemplateNode template : soyFile.getTemplates()) {
             if (Visibility.PUBLIC == template.getVisibility()) {
               // write out
               String key = template.getTemplateName();

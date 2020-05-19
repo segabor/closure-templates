@@ -19,6 +19,7 @@ import com.google.template.soy.soytree.CallParamNode;
 import com.google.template.soy.soytree.CallParamValueNode;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.TemplateBasicNode;
+import com.google.template.soy.soytree.TemplateElementNode;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.Visibility;
 import com.google.template.soy.swiftsrc.internal.GenSwiftExprsVisitor.GenSwiftExprsVisitorFactory;
@@ -266,12 +267,12 @@ public class GenSwiftCallExprVisitor extends AbstractReturningSoyNodeVisitor<Swi
   }
 
   @Nullable
-  private TemplateBasicNode getTemplateIfInSameFile(CallBasicNode callBasicNode) {
+  private TemplateNode getTemplateIfInSameFile(CallBasicNode callBasicNode) {
     SoyFileNode file = callBasicNode.getNearestAncestor(SoyFileNode.class);
-    for (TemplateNode template : file.getChildren()) {
-      if (template instanceof TemplateBasicNode
+    for (TemplateNode template : file.getTemplates()) {
+      if ((template instanceof TemplateBasicNode || template instanceof TemplateElementNode)
           && template.getTemplateName().equals(callBasicNode.getCalleeName())) {
-        return (TemplateBasicNode) template;
+        return template;
       }
     }
     return null;
