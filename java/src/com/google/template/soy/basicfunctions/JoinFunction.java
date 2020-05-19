@@ -36,6 +36,7 @@ import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
 import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory.RuntimeNamespace;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
+import com.google.template.soy.shared.restricted.SoyMethodSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import java.lang.reflect.Method;
 import java.util.List;
@@ -48,6 +49,10 @@ import java.util.List;
           parameterTypes = {"list<string|int>", "string"},
           returnType = "string"),
     })
+@SoyMethodSignature(
+    name = "join",
+    baseType = "list<string|int>",
+    value = @Signature(parameterTypes = "string", returnType = "string"))
 @SoyPureFunction
 final class JoinFunction
     implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {

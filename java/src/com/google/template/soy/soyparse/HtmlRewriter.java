@@ -55,6 +55,7 @@ import com.google.template.soy.soytree.HtmlTagNode;
 import com.google.template.soy.soytree.HtmlTagNode.TagExistence;
 import com.google.template.soy.soytree.IfCondNode;
 import com.google.template.soy.soytree.IfNode;
+import com.google.template.soy.soytree.ImportNode;
 import com.google.template.soy.soytree.KeyNode;
 import com.google.template.soy.soytree.LetContentNode;
 import com.google.template.soy.soytree.LetValueNode;
@@ -887,19 +888,24 @@ final class HtmlRewriter {
     void handleHtmlComment() {
       boolean foundHyphen = advanceWhileMatches(NOT_HYPHEN);
       if (foundHyphen) {
-        if (matchPrefix("-->", false)) {
+        if (matchPrefix("-->", /* advance= */ false)) {
           // consume all raw text preceding the hyphen (or end)
           RawTextNode remainingTextNode = consumeAsRawText();
-          SourceLocation.Point point = currentPointOrEnd();
           if (remainingTextNode != null) {
             context.addCommentChild(remainingTextNode);
           }
-          // Consume the suffix here.
-          advance(3);
+
+          // Consume the suffix here ("-->"), but keep track of the ">" location.
+          advance(2);
           consume();
+          SourceLocation.Point endBracketLocation = currentPointOrEnd();
+          advance(1);
+          consume();
+
           // At this point we haven't remove the current raw text node (which contains -->) yet.
           edits.remove(currentRawTextNode);
-          context.setState(context.createHtmlComment(point), point);
+
+          context.setState(context.createHtmlComment(endBracketLocation), currentPointOrEnd());
         } else {
           advance();
         }
@@ -1681,6 +1687,9 @@ final class HtmlRewriter {
     protected void visitSoyFileNode(SoyFileNode node) {
       visitChildren(node);
     }
+
+    @Override
+    protected void visitImportNode(ImportNode node) {}
 
     @Override
     protected void visitSoyNode(SoyNode node) {

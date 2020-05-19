@@ -57,6 +57,7 @@ import com.google.template.soy.jbcsrc.shared.CompiledTemplate;
 import com.google.template.soy.jbcsrc.shared.RenderContext;
 import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.soytree.PrintNode;
+import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.testing.SharedTestUtils;
 import com.google.template.soy.testing.SoyFileSetParserBuilder;
@@ -90,34 +91,6 @@ public class ExpressionCompilerTest {
   private final FieldManager fields = new FieldManager(null);
   private final ExpressionCompiler testExpressionCompiler =
       ExpressionCompiler.create(
-          new ExpressionDetacher.Factory() {
-            @Override
-            public ExpressionDetacher createExpressionDetacher(Label label) {
-              return new ExpressionDetacher() {
-                @Override
-                public Expression resolveSoyValueProvider(Expression soyValueProvider) {
-                  if (variables.containsValue(soyValueProvider)) {
-                    // This is hacky, but our variables are not SVPs, just SoyValues.  This is
-                    // inconsistent with reality but makes the tests easier to write.
-                    // A better solution may be to have the variables map just hold expressions for
-                    // SoyValueProviders, but that is annoying.
-                    return soyValueProvider;
-                  }
-                  return MethodRef.SOY_VALUE_PROVIDER_RESOLVE.invoke(soyValueProvider);
-                }
-
-                @Override
-                public Expression resolveSoyValueProviderList(Expression soyValueProviderList) {
-                  throw new UnsupportedOperationException();
-                }
-
-                @Override
-                public Expression resolveSoyValueProviderMap(Expression soyValueProviderMap) {
-                  throw new UnsupportedOperationException();
-                }
-              };
-            }
-          },
           new TemplateParameterLookup() {
             @Override
             public Expression getParam(TemplateParam paramName) {
@@ -645,26 +618,56 @@ public class ExpressionCompilerTest {
             "fakeFunction(" + soyExpr + ")", types.build());
     PrintNode code =
         (PrintNode)
-            SoyFileSetParserBuilder.forTemplateContents(createTemplateBody)
-                .errorReporter(ErrorReporter.explodeOnErrorsAndIgnoreWarnings())
-                .addSoyFunction(
-                    new SoyFunction() {
-                      @Override
-                      public String getName() {
-                        return "fakeFunction";
-                      }
+            ((TemplateNode)
+                    SoyFileSetParserBuilder.forTemplateContents(createTemplateBody)
+                        .errorReporter(ErrorReporter.explodeOnErrorsAndIgnoreWarnings())
+                        .addSoyFunction(
+                            new SoyFunction() {
+                              @Override
+                              public String getName() {
+                                return "fakeFunction";
+                              }
 
-                      @Override
-                      public Set<Integer> getValidArgsSizes() {
-                        return ImmutableSet.of(1);
-                      }
-                    })
-                .parse()
-                .fileSet()
-                .getChild(0)
-                .getChild(0)
+                              @Override
+                              public Set<Integer> getValidArgsSizes() {
+                                return ImmutableSet.of(1);
+                              }
+                            })
+                        .parse()
+                        .fileSet()
+                        .getChild(0)
+                        .getChild(0))
                 .getChild(0);
-    return testExpressionCompiler.compile(((FunctionNode) code.getExpr().getChild(0)).getChild(0));
+    return testExpressionCompiler.compile(
+        ((FunctionNode) code.getExpr().getChild(0)).getChild(0),
+        new ExpressionDetacher.Factory() {
+          @Override
+          public ExpressionDetacher createExpressionDetacher(Label label) {
+            return new ExpressionDetacher() {
+              @Override
+              public Expression resolveSoyValueProvider(Expression soyValueProvider) {
+                if (variables.containsValue(soyValueProvider)) {
+                  // This is hacky, but our variables are not SVPs, just SoyValues.  This is
+                  // inconsistent with reality but makes the tests easier to write.
+                  // A better solution may be to have the variables map just hold expressions for
+                  // SoyValueProviders, but that is annoying.
+                  return soyValueProvider;
+                }
+                return MethodRef.SOY_VALUE_PROVIDER_RESOLVE.invoke(soyValueProvider);
+              }
+
+              @Override
+              public Expression resolveSoyValueProviderList(Expression soyValueProviderList) {
+                throw new UnsupportedOperationException();
+              }
+
+              @Override
+              public Expression resolveSoyValueProviderMap(Expression soyValueProviderMap) {
+                throw new UnsupportedOperationException();
+              }
+            };
+          }
+        });
   }
 
   /**

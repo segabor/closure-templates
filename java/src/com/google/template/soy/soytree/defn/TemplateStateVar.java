@@ -31,7 +31,7 @@ import javax.annotation.Nullable;
  * <p>Important: Do not use outside of Soy code (treat as superpackage-private).
  */
 public final class TemplateStateVar extends AbstractVarDefn implements TemplateHeaderVarDefn {
-  private final String desc;
+  private String desc;
   private final SourceLocation sourceLocation;
   @Nullable private final TypeNode typeNode;
   private final ExprRootNode initialValue;
@@ -103,8 +103,18 @@ public final class TemplateStateVar extends AbstractVarDefn implements TemplateH
   }
 
   @Override
+  public boolean isExplicitlyOptional() {
+    return false;
+  }
+
+  @Override
   public @Nullable String desc() {
     return desc;
+  }
+
+  @Override
+  public void setDesc(String desc) {
+    this.desc = desc;
   }
 
   @Override

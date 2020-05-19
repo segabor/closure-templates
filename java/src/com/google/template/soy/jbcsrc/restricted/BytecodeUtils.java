@@ -107,6 +107,10 @@ public final class BytecodeUtils {
   public static final Type ILLEGAL_STATE_EXCEPTION_TYPE = Type.getType(IllegalStateException.class);
   public static final Type SOY_VISUAL_ELEMENT_TYPE = Type.getType(SoyVisualElement.class);
   public static final Type SOY_VISUAL_ELEMENT_DATA_TYPE = Type.getType(SoyVisualElementData.class);
+  public static final Type CLASS_TYPE = Type.getType(Class.class);
+  public static final Type INTEGER_TYPE = Type.getType(Integer.class);
+  public static final Type BOXED_LONG_TYPE = Type.getType(Long.class);
+  public static final Type BOXED_BOOLEAN_TYPE = Type.getType(Boolean.class);
 
   public static final Method CLASS_INIT = Method.getMethod("void <clinit>()");
   public static final Method NULLARY_INIT = Method.getMethod("void <init>()");
@@ -395,6 +399,15 @@ public final class BytecodeUtils {
     };
   }
 
+  public static Expression constant(Type type) {
+    return new Expression(CLASS_TYPE, Feature.CHEAP, Feature.NON_NULLABLE) {
+      @Override
+      protected void doGen(CodeBuilder mv) {
+        mv.pushType(type);
+      }
+    };
+  }
+
   /**
    * Returns an expression that does a numeric conversion cast from the given expression to the
    * given type.
@@ -658,7 +671,23 @@ public final class BytecodeUtils {
    * condition ? left : right}
    */
   public static Expression ternary(
-      final Expression condition, final Expression trueBranch, final Expression falseBranch) {
+      Expression condition, Expression trueBranch, Expression falseBranch) {
+    return ternary(condition, trueBranch, falseBranch, trueBranch.resultType());
+  }
+
+  /**
+   * Returns an expression that evaluates equivalently to a java ternary expression: {@code
+   * condition ? left : right}.
+   *
+   * <p>This allows the caller to specify the result type of the ternary expression. By default the
+   * ternary expression is typed with the type of the true branch, but the caller can specify the
+   * result type if they know more about the types of the branches.
+   */
+  public static Expression ternary(
+      final Expression condition,
+      final Expression trueBranch,
+      final Expression falseBranch,
+      Type resultType) {
     checkArgument(condition.resultType().equals(Type.BOOLEAN_TYPE));
     checkArgument(trueBranch.resultType().getSort() == falseBranch.resultType().getSort());
     Features features = Features.of();
@@ -668,7 +697,7 @@ public final class BytecodeUtils {
     if (trueBranch.isNonNullable() && falseBranch.isNonNullable()) {
       features = features.plus(Feature.NON_NULLABLE);
     }
-    return new Expression(trueBranch.resultType(), features) {
+    return new Expression(resultType, features) {
       @Override
       protected void doGen(CodeBuilder mv) {
         condition.gen(mv);

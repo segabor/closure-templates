@@ -48,11 +48,13 @@ import static com.google.common.base.Preconditions.checkState;
 import static com.google.template.soy.exprtree.Operator.createOperatorNode;
 
 import com.google.common.collect.ImmutableList;
+
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
 import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.base.SourceLocation.Point;
 import com.google.template.soy.base.internal.BaseUtils;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.base.internal.Identifier;
@@ -83,6 +85,7 @@ import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.TemplateLiteralNode;
+import com.google.template.soy.exprtree.VarDefn;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.exprtree.VeLiteralNode;
 import com.google.template.soy.soytree.AliasDeclaration;
@@ -103,6 +106,7 @@ import com.google.template.soy.soytree.ForNonemptyNode;
 import com.google.template.soy.soytree.IfCondNode;
 import com.google.template.soy.soytree.IfElseNode;
 import com.google.template.soy.soytree.IfNode;
+import com.google.template.soy.soytree.ImportNode;
 import com.google.template.soy.soytree.KeyNode;
 import com.google.template.soy.soytree.LetContentNode;
 import com.google.template.soy.soytree.LetNode;
@@ -136,6 +140,7 @@ import com.google.template.soy.soytree.TemplateNode.SoyFileHeaderInfo;
 import com.google.template.soy.soytree.TemplateNodeBuilder;
 import com.google.template.soy.soytree.VeLogNode;
 import com.google.template.soy.soytree.WhitespaceMode;
+import com.google.template.soy.soytree.defn.ImportedVar;
 import com.google.template.soy.soytree.defn.TemplateHeaderVarDefn;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.soytree.defn.TemplateStateVar;
@@ -150,6 +155,8 @@ import java.io.StringReader;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.Set;
 import javax.annotation.Nullable;
 
@@ -523,7 +530,7 @@ public class SoyFileParser {
   private IdGenerator nodeIdGen;
 
   /** Path of source being parsed. This is descriptive, not a means to refetch source. */
-  private String filePath;
+  public String filePath;
 
   /** Controls how to handle whitespaces (e.g. whether to join lines or preserve whitespace). */
   private WhitespaceMode whitespaceMode = WhitespaceMode.JOIN;
@@ -547,7 +554,7 @@ public class SoyFileParser {
       Reader input,
       String filePath,
       ErrorReporter errorReporter) {
-    this(input);
+    this(new SoyFileParserTokenManager(new SoySimpleCharStream(input)));
     this.nodeIdGen = checkNotNull(nodeIdGen);
     this.filePath = checkNotNull(filePath);
     this.errorReporter = checkNotNull(errorReporter);
@@ -561,7 +568,7 @@ public class SoyFileParser {
       ErrorReporter errorReporter) {
     // this starts the lexer in a particular state instead of DEFAULT
     this(new SoyFileParserTokenManager(
-        new SimpleCharStream(new StringReader(input), 1, 1), EXPR));
+        new SoySimpleCharStream(new StringReader(input), 1, 1), EXPR));
     this.filePath = filePath;
     this.errorReporter = checkNotNull(errorReporter);
     // Some part of the parser assume that header info is not null.
@@ -654,6 +661,15 @@ public class SoyFileParser {
         throw new AbortParsingError();
       }
     }
+  }
+
+  Point getPointJustBeforeNextToken() {
+    return ((SoySimpleCharStream) (token_source.input_stream)).getPointJustBeforeNextToken();
+  }
+
+  /** Creates a source location that starts at the token and ends at the given point. */
+  private SourceLocation createSrcLoc(Token t, Point p) {
+   return createSrcLoc(t).extend(p);
   }
 
   /** Create a SourceLocation spanning all given tokens. */
@@ -763,16 +779,55 @@ TOKEN_MGR_DECLS: {
     prevState = -1;
   }
 
-  void addBlankLines(Token blankLinesToken) {
-    SourceLocation tokenLocation = parser.createSrcLoc(blankLinesToken);
-    // SourceLocation for the blank line token starts at the end of the previous line.
-    // Manually setting it at the beginning of the first blank line.
+
+  /**
+   * If the matched whitespace token contains a blank line, stores the blank line as a "comment" for
+   * the formatter. This should not be called on a token that contains non-whitespace.
+   */
+  void maybeAddBlankLines(Token whitespaceToken) {
+     SourceLocation tokenLocation = parser.createSrcLoc(whitespaceToken);
+    maybeAddBlankLines(tokenLocation.getBeginPoint(), tokenLocation.getEndPoint(),
+        whitespaceToken.image);
+  }
+
+  /**
+   * If a stretch of whitespace contains a blank line (e.g. "\n\n"), stores the blank line for the
+   * formatter.
+   */
+  void maybeAddBlankLines(Point wsBegin, Point wsEnd, String whitespaceStr) {
+    // Since whitespace is consumed in quite a few different ways/places by the parser, regexing the
+    // whitespace tokens and/or special tokens here is a little easier than splitting out separate
+    // blank line tokens and handling them everywhere we handle whitespace (e.g. RawTextBuilder
+    // relies on WS tokens to construct text offsets).
+    Matcher blankLineMatcher = Pattern.compile("\n(\\s*\n)+").matcher(whitespaceStr);
+    // If the whitespace didn't contain any blank lines, early exit.
+    if (!blankLineMatcher.find()) {
+      return;
+    }
+
+
+    // If there was a blank line, construct a source location that starts at the first blank line
+    // and ends at the last blank line.
+
+    // The matched whitespace will always start at the "\n" at the end of the previous line. The
+    // blank line starts at the beginning of the next line.
+    SourceLocation.Point blankLineBegin =
+        SourceLocation.Point.create(wsBegin.line() + 1, 1);
+
+    // If the whitespace ends on a new line, the end point's line is blank. Otherwise, the stretch
+    // of blank lines ended on the previous line.
+    SourceLocation.Point blankLineEnd =
+        whitespaceStr.charAt(whitespaceStr.length() - 1) == '\n'
+        ? SourceLocation.Point.create(wsEnd.line(), 1)
+        : SourceLocation.Point.create(wsEnd.line() - 1, 1);
+
     SourceLocation loc =
         new SourceLocation(
-            tokenLocation.getFilePath(),
-            SourceLocation.Point.create(tokenLocation.getBeginLine() + 1, 1),
-            tokenLocation.getEndPoint());
-    comments.add(Comment.create(Comment.Type.BLANK_LINES, blankLinesToken.image, loc));
+            parser.filePath,
+            blankLineBegin,
+            blankLineEnd);
+
+    comments.add(Comment.create(Comment.Type.BLANK_LINES, whitespaceStr, loc));
   }
 
   void addLineComment(Token commentToken) {
@@ -817,15 +872,13 @@ TOKEN_MGR_DECLS: {
 // -------------------------------------------------------------------------------------------------
 // Whitespace and comments.
 
-// This only matches blank lines that are not swallowed by SkipWhitespace.
-// TODO(b/151747854): Preserve blank lines in other locations.
-// TODO(b/151747854): Add TEMPLATE_DEFAULT.
-<DEFAULT, IN_CMD_TAG, EXPR, EXPR_NO_DOUBLE_QUOTE, EXPR_NO_SINGLE_QUOTE> SPECIAL_TOKEN: {
-  < <BLANK_LINES> > { addBlankLines(matchedToken); }
-}
-
 <DEFAULT, IN_CMD_TAG, EXPR, EXPR_NO_DOUBLE_QUOTE, EXPR_NO_SINGLE_QUOTE> SKIP: {
-  < <WS> >
+  < ( <WS> )+> {
+     maybeAddBlankLines(
+         Point.create(input_stream.getBeginLine(),input_stream.getBeginColumn()),
+         Point.create(input_stream.getEndLine(),input_stream.getEndColumn()),
+         image.toString());
+  }
 }
 
 <DEFAULT, IN_CMD_TAG, EXPR, EXPR_NO_DOUBLE_QUOTE, EXPR_NO_SINGLE_QUOTE> SPECIAL_TOKEN: {
@@ -841,8 +894,21 @@ TOKEN_MGR_DECLS: {
   // preceeding whitespace. This is necessary to make this unambiguous with the TOKEN_WS definition.
   < (<WS>)+ <LINE_COMMENT> >
   {
-    int i = matchedToken.image.indexOf('/');
-    trimTokenBegin(matchedToken, i);
+    int startOfLineComment = matchedToken.image.indexOf('/');
+
+    // If the leading whitespace contained a blank line, we need to add it as a "comment" for the
+    // formatter.
+    if (startOfLineComment > 0) {
+      String whitespaceStr = matchedToken.image.substring(0, startOfLineComment);
+      Point wsBeginPoint = Point.create(matchedToken.beginLine, matchedToken.beginColumn);
+      trimTokenBegin(matchedToken, startOfLineComment - 1);
+      Point wsEndPoint =  Point.create(matchedToken.beginLine, matchedToken.beginColumn);
+
+      maybeAddBlankLines(wsBeginPoint, wsEndPoint, whitespaceStr);
+    }
+
+   // Now we can add the line comment.
+    trimTokenBegin(matchedToken, startOfLineComment == 0 ? 0 : 1);
     addLineComment(matchedToken);
   }
 }
@@ -908,6 +974,12 @@ TOKEN_MGR_DECLS: {
   < ALIAS_OPEN: "{alias" <WS> > : EXPR
 | < NAMESPACE_OPEN: "{namespace" <WS> > : IN_CMD_TAG
 | < DELPACKAGE_OPEN: "{delpackage" <WS> > : IN_CMD_TAG
+| < IMPORT_OPEN: "import" >
+| < SEMICOLON: ";"      >
+| < DEFAULT_COMMA: "," >
+| < LCURLY: "{"      >
+| < RCURLY: "}"      >
+| < FROM: "from" >
 }
 
 
@@ -1117,7 +1189,7 @@ TOKEN_MGR_DECLS: {
 
 // Tokens for supporting raw text and whitespace matching
 <TEMPLATE_DEFAULT> TOKEN: {
-  < TOKEN_WS: ( <WS> )+ >
+  < TOKEN_WS: ( <WS> )+ > { maybeAddBlankLines(matchedToken);}
   // This complex token is any sequence of non whitespace non '/' non "{" or a single '/' character
   // This ensures that it isn't ambiguous with other tokens in TEMPLATE_DEFAULT like comments,
   // TOKEN_WS or any of the command tokens.
@@ -1152,7 +1224,7 @@ TOKEN_MGR_DECLS: {
 // we use pushState/popState to make sure we pop back into the correct expr state
 //
 
-<EXPR, EXPR_NO_DOUBLE_QUOTE> TOKEN: {
+<EXPR, EXPR_NO_DOUBLE_QUOTE, DEFAULT> TOKEN: {
   < SINGLE_QUOTE: "'" >
 }
 <EXPR, EXPR_NO_SINGLE_QUOTE> TOKEN: {
@@ -1222,7 +1294,7 @@ TOKEN_MGR_DECLS: {
 // -------------------------------------------------------------------------------------------------
 // Identifiers.
 
-<EXPR, EXPR_NO_DOUBLE_QUOTE, EXPR_NO_SINGLE_QUOTE> TOKEN: {
+<EXPR, EXPR_NO_DOUBLE_QUOTE, EXPR_NO_SINGLE_QUOTE, DEFAULT> TOKEN: {
   < IDENT: <RAW_IDENT> >
 | < DOLLAR_IDENT: "$" <IDENT> >
 }
@@ -1248,7 +1320,6 @@ TOKEN_MGR_DECLS: {
 
 <*> TOKEN: {
   < #WS: [" ", "\t", "\n", "\r"] | "\r\n" >
-| < #BLANK_LINES: ( (" ")* ("\r")? "\n" ){2,} > // One or more consecutive blank lines.
 | < #RAW_IDENT: ["a"-"z","A"-"Z","_"] ( ["a"-"z","A"-"Z","_","0"-"9"] )* >
 | < #DEC_DIGITS: ( ["0"-"9"] )+ >
 | < #HEX_DIGIT: ["0"-"9","A"-"F","a"-"f"] >
@@ -1280,7 +1351,9 @@ private SoyFileNode SoyFile() :
   DelPackageDeclaration delpackageDecl = null;
   NamespaceDeclaration namespace;
   AliasDeclaration alias;
-  List<AliasDeclaration> aliases = ImmutableList.of();
+  ImportNode importNode;
+  ImmutableList.Builder<AliasDeclaration> aliases = new ImmutableList.Builder<AliasDeclaration>();
+  ImmutableList.Builder<ImportNode> imports = new ImmutableList.Builder<ImportNode>();
   TemplateNode template;
   Token eof;
 }
@@ -1291,17 +1364,25 @@ private SoyFileNode SoyFile() :
 
   (
     alias = Alias()
-    { if (aliases.isEmpty()) {
-        aliases = new ArrayList<AliasDeclaration>();
-      }
+    {
       if (alias != null) {
         aliases.add(alias);
       }
     }
   )*
 
+  (
+    importNode = Import()
+    {
+      if (importNode != null) {
+        imports.add(importNode);
+      }
+    }
+  )*
+
   {
-    headerInfo = new SoyFileHeaderInfo(errorReporter, delpackageDecl, namespace, aliases);
+    headerInfo = new SoyFileHeaderInfo(errorReporter, delpackageDecl, namespace,
+        aliases.build());
     List<TemplateNode> templates = new ArrayList<TemplateNode>();
   }
 
@@ -1323,6 +1404,7 @@ private SoyFileNode SoyFile() :
         new SourceLocation(filePath, SourceLocation.Point.create(1, 1),
             SourceLocation.Point.create(eof.beginLine, eof.beginColumn)),
             namespace, headerInfo, buildComments(token_source));
+    sfn.addChildren(imports.build());
     sfn.addChildren(templates);
     return sfn;
   }
@@ -1364,6 +1446,41 @@ private AliasDeclaration Alias() :
     }
     return AliasDeclaration.create(srcLoc, namespace, alias);
   }
+}
+
+private ImportNode Import() :
+{
+  Token open, close;
+  StringNode path = null;
+  Token identifier = null;
+  ImmutableList.Builder<VarDefn> identifiers = new ImmutableList.Builder<VarDefn>();
+}
+{
+  (
+    open = <IMPORT_OPEN>
+    [
+    <LCURLY>
+    identifier = <IDENT>
+    {
+      identifiers.add(new ImportedVar(identifier.image, createSrcLoc(identifier)));
+    }
+    (
+    <DEFAULT_COMMA>
+    identifier = <IDENT>
+    {
+      identifiers.add(new ImportedVar(identifier.image, createSrcLoc(identifier)));
+    }
+    )*
+    <RCURLY>
+    <FROM>
+    ]
+    path = StringLiteral()
+    close = <SEMICOLON>
+    {
+      return new ImportNode(nodeIdGen.genId(), createSrcLoc(open, close), path,
+          identifiers.build());
+    }
+  )
 }
 
 
@@ -1513,7 +1630,7 @@ private CommandTagAttribute Attribute() :
       return new CommandTagAttribute(
           Identifier.create(name.identifier(), name.location()),
           quoteStyle,
-          exprList);
+          exprList, createSrcLoc(nameToken, qToken));
     }
   |
     // Non-expression attributes
@@ -1529,7 +1646,8 @@ private CommandTagAttribute Attribute() :
       { quoteStyle = QuoteStyle.SINGLE; }
     )
     {
-      return new CommandTagAttribute(name, quoteStyle, value.image, createSrcLoc(startValue, value));
+      return new CommandTagAttribute(name, quoteStyle, value.image, createSrcLoc(startValue, value),
+          createSrcLoc(nameToken, value));
     }
   )
 }
@@ -1858,9 +1976,9 @@ private RawTextNode TemplateHeader(TemplateNodeBuilder<?> templateBuilder, boole
 {
   Token tok;
   TemplateHeaderVarDefn param;
+  TemplateHeaderVarDefn docSinkParam = null;
   List<TemplateHeaderVarDefn> params = ImmutableList.of();
   RawTextNode whitespace = null;
-  Token soyDocToken = null;
   String soyDoc = null;
 
 }
@@ -1874,8 +1992,16 @@ private RawTextNode TemplateHeader(TemplateNodeBuilder<?> templateBuilder, boole
       ( LOOKAHEAD(1)  // prefer staying in the loop
         tok = <TOKEN_WS>
         { if (tok.specialToken != null && tok.specialToken.kind == SOYDOC) {
-            soyDocToken = tok.specialToken;
-            soyDoc = soyDocToken.image;
+            if (docSinkParam != null) {
+              String desc = tok.specialToken.image;
+              desc = desc.substring(3, desc.length() - 2).trim();
+              docSinkParam.setDesc(desc);
+              docSinkParam = null;
+            } else {
+              soyDoc = tok.specialToken.image;
+            }
+          } else if (tok.image.contains("\n") || tok.image.contains("\r")) {
+            docSinkParam = null;
           }
           builder.addBasic(tok);
         }
@@ -1886,6 +2012,7 @@ private RawTextNode TemplateHeader(TemplateNodeBuilder<?> templateBuilder, boole
       (
         param = ParamDecl(soyDoc)
         {
+          docSinkParam = param;
           switch (param.kind()) {
           case PARAM:
             // we just parsed a param, preceding whitespace/doc comments are not important
@@ -1908,6 +2035,7 @@ private RawTextNode TemplateHeader(TemplateNodeBuilder<?> templateBuilder, boole
             break;
           case LOCAL_VAR:
           case COMPREHENSION_VAR:
+          case IMPORT_VAR:
           case UNDECLARED:
             throw new AssertionError("unexpected var kind: " + param.kind());
           }
@@ -2749,8 +2877,6 @@ private IfNode IfStmt() :
   Token tagBeginEnd = null;
   ExprNode ifExpr;
   List<StandaloneNode> templateBlock;
-  IfCondNode lastIfCondNode = null;
-  IfElseNode ifElseNode = null;
 }
 {
   tagBegin = <CMD_BEGIN_IF>
@@ -2767,13 +2893,12 @@ private IfNode IfStmt() :
     List<BlockNode> condNodes = new ArrayList<BlockNode>();
     IfCondNode ifCondNode = new IfCondNode(
         nodeIdGen.genId(),
-        createSrcLoc(tagBegin, templateBlock),
+        createSrcLoc(tagBegin, getPointJustBeforeNextToken()),
         tagBeginEnd == null ? createSrcLoc(tagBegin) : createSrcLoc(tagBegin, tagBeginEnd),
         "if",
         ifExpr);
     condNodes.add(ifCondNode);
     ifCondNode.addChildren(templateBlock);
-    lastIfCondNode = ifCondNode;
   }
 
   (
@@ -2790,17 +2915,12 @@ private IfNode IfStmt() :
     {
       ifCondNode = new IfCondNode(
           nodeIdGen.genId(),
-          createSrcLoc(condTagBegin, templateBlock),
+          createSrcLoc(condTagBegin, getPointJustBeforeNextToken()),
           tagBeginEnd == null ? createSrcLoc(tagBegin) : createSrcLoc(tagBegin, tagBeginEnd),
           "elseif",
           ifExpr);
       condNodes.add(ifCondNode);
       ifCondNode.addChildren(templateBlock);
-      lastIfCondNode.setSourceLocation(
-          lastIfCondNode
-              .getSourceLocation()
-              .extend(Tokens.getPreviousPointOrBeginOfLine(condTagBegin)));
-      lastIfCondNode = ifCondNode;
     }
   )*
 
@@ -2808,12 +2928,10 @@ private IfNode IfStmt() :
     elseTag = <CMD_FULL_ELSE>
     templateBlock = TemplateBlock()
     {
-      ifElseNode =
-          new IfElseNode(nodeIdGen.genId(), createSrcLoc(elseTag, templateBlock),
+      IfElseNode ifElseNode =
+          new IfElseNode(nodeIdGen.genId(), createSrcLoc(elseTag, getPointJustBeforeNextToken()),
               createSrcLoc(elseTag));
       condNodes.add(ifElseNode);
-      lastIfCondNode.setSourceLocation(lastIfCondNode.getSourceLocation().extend(
-                                           Tokens.getPreviousPointOrBeginOfLine(elseTag)));
       ifElseNode.addChildren(templateBlock);
     }
   ]
@@ -2821,13 +2939,6 @@ private IfNode IfStmt() :
   tagClose = <CMD_CLOSE_IF>
 
   {
-    if (ifElseNode != null) {
-      ifElseNode.setSourceLocation(ifElseNode.getSourceLocation().extend(
-                                       Tokens.getPreviousPointOrBeginOfLine(tagClose)));
-    } else {
-      lastIfCondNode.setSourceLocation(lastIfCondNode.getSourceLocation().extend(
-                                           Tokens.getPreviousPointOrBeginOfLine(tagClose)));
-    }
     IfNode ifNode = new IfNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose));
     ifNode.addChildren(condNodes);
     return ifNode;
@@ -2891,7 +3002,6 @@ private SwitchNode SwitchStmt() :
   ImmutableList<ExprNode> caseExprs;
   List<StandaloneNode> templateBlock;
   SwitchDefaultNode defaultNode = null;
-  SwitchCaseNode lastCaseNode = null;
 }
 {
   tagBegin = <CMD_BEGIN_SWITCH>
@@ -2919,35 +3029,25 @@ private SwitchNode SwitchStmt() :
       caseTagEnd = <CMD_END>
       templateBlock = TemplateBlock()
       {
-        if (lastCaseNode != null) {
-          lastCaseNode.setSourceLocation(
-              lastCaseNode
-                  .getSourceLocation()
-                  .extend(Tokens.getPreviousPointOrBeginOfLine(caseTag)));
-        }
         SwitchCaseNode caseNode = new SwitchCaseNode(
             nodeIdGen.genId(),
-            createSrcLoc(caseTag, templateBlock),
+            createSrcLoc(caseTag, getPointJustBeforeNextToken()),
             createSrcLoc(caseTag, caseTagEnd),
             caseExprs);
         caseNode.addChildren(templateBlock);
-        lastCaseNode = caseNode;
         cases.add(caseNode);
+
       }
+
     )+
 
     [
       defaultTag = <CMD_FULL_DEFAULT>
       templateBlock = TemplateBlock()
       {
-        if (lastCaseNode != null) {
-          lastCaseNode.setSourceLocation(
-              lastCaseNode
-                  .getSourceLocation()
-                  .extend(Tokens.getPreviousPointOrBeginOfLine(defaultTag)));
-        }
         defaultNode =
-            new SwitchDefaultNode(nodeIdGen.genId(), createSrcLoc(defaultTag, templateBlock),
+            new SwitchDefaultNode(nodeIdGen.genId(),
+                createSrcLoc(defaultTag, getPointJustBeforeNextToken()),
                 createSrcLoc(defaultTag));
         defaultNode.addChildren(templateBlock);
         cases.add(defaultNode);
@@ -2960,17 +3060,6 @@ private SwitchNode SwitchStmt() :
   }
 
   {
-    if (defaultNode != null) {
-      defaultNode.setSourceLocation(
-          defaultNode
-              .getSourceLocation()
-              .extend(Tokens.getPreviousPointOrBeginOfLine(tagClose)));
-    } else if (lastCaseNode != null) {
-      lastCaseNode.setSourceLocation(
-          lastCaseNode
-              .getSourceLocation()
-              .extend(Tokens.getPreviousPointOrBeginOfLine(tagClose)));
-    }
     SwitchNode switchNode =
         new SwitchNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose),
             tagBeginEnd == null ? createSrcLoc(tagBegin) : createSrcLoc(tagBegin, tagBeginEnd),
@@ -3264,19 +3353,19 @@ private CallParamNode CallParam() :
  */
 private LogNode LogStmt() :
 {
-  Token open;
+  Token open, close;
   List<StandaloneNode> templateBlock;
 }
 {
   open = <CMD_OPEN_LOG>
-  { LogNode logNode = new LogNode(nodeIdGen.genId(), createSrcLoc(open)); }
-
   templateBlock = TemplateBlock()
-  { logNode.addChildren(templateBlock); }
+  close = <CMD_CLOSE_LOG>
 
-  <CMD_CLOSE_LOG>
-
-  { return logNode; }
+  {
+    LogNode logNode = new LogNode(nodeIdGen.genId(), createSrcLoc(open, close));
+    logNode.addChildren(templateBlock);
+    return logNode;
+  }
 }
 
 
@@ -4049,24 +4138,29 @@ private ExprNode List() :
 }
 
 /**
- * Parses list comprehensions. ListComprehension -> "[" Expr for $var in Expr [ if Expr ] "]". The
- * opening "[ Expr" has already been parsed by {@link #List()}.
+ * Parses list comprehensions. ListComprehension -> "[" Expr for $var [ , $i ] in Expr [ if Expr ] "]".
+ * The opening "[ Expr" has already been parsed by {@link #List()}.
  *
  * @param begin token for the opening left bracket ("[").
- * @param itemExpr expr to perform on each item in the list (e.g. "$a+1" in [$a+1 for $a in $foo]).
+ * @param itemExpr expr to perform on each item in the list (e.g. "$a+$i" in [$a+$i for $a, $i in $foo]).
  */
 private ExprNode ListComprehension(Token begin, ExprNode itemExpr) :
 {
   Token end, listIterVar = null;
+  Token indexVar = null;
   ExprNode listExpr = null;
   ExprNode filterExpr = null;
   SourceLocation listIterVarIdentLocation = null;
 }
 {
-  // "[Expr" has already been matched. Now try to match " for $var in Expr]".
+  // "[Expr" has already been matched. Now try to match " for $var, $index in Expr]".
   <FOR>
   try {
     listIterVar = <DOLLAR_IDENT>
+    [
+      <COMMA>
+      indexVar = <DOLLAR_IDENT>
+    ]
     <IN>
     listExpr = Expr()
     [
@@ -4079,13 +4173,17 @@ private ExprNode ListComprehension(Token begin, ExprNode itemExpr) :
         reportTemplateBodyErrorAndSkipTo(
             e,
             "\nList comprehensions should be formatted as:"
-               + " \"[$foo.bar for $foo in <listExpression>]\".",
+               + " \"[$foo.bar for $foo in <listExpression>]\" or \"[$foo.bar for $foo, $i in <listExpression>]\".",
             RBRACKET);
-    return new ListComprehensionNode(errorExpr(begin), "$error", createSrcLoc(begin),
-        errorExpr(begin), errorExpr(begin), createSrcLoc(begin, end),  nodeIdGen.genId());
+    return new ListComprehensionNode(errorExpr(begin), "$error", createSrcLoc(begin), "$error",
+        createSrcLoc(begin), errorExpr(begin), errorExpr(begin), createSrcLoc(begin, end),
+        nodeIdGen.genId());
   }
-  { return new ListComprehensionNode(listExpr, listIterVar.image, createSrcLoc(listIterVar),
-       itemExpr, filterExpr, createSrcLoc(begin, end),  nodeIdGen.genId()); }
+  { String indexVarName = indexVar == null ? null : indexVar.image;
+    SourceLocation indexVarNameLocation = indexVar == null ? null : createSrcLoc(indexVar);
+    return new ListComprehensionNode(listExpr, listIterVar.image, createSrcLoc(listIterVar),
+      indexVarName, indexVarNameLocation, itemExpr, filterExpr, createSrcLoc(begin, end),
+      nodeIdGen.genId()); }
 }
 
 /**

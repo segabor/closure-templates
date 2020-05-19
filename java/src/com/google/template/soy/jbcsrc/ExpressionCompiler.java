@@ -30,7 +30,6 @@ import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.ternary;
 
 import com.google.common.collect.Iterables;
 import com.google.template.soy.base.internal.Identifier;
-import com.google.template.soy.basicmethods.GetExtensionMethod;
 import com.google.template.soy.data.SoyLegacyObjectMap;
 import com.google.template.soy.data.SoyMap;
 import com.google.template.soy.data.SoyProtoValue;
@@ -97,8 +96,12 @@ import com.google.template.soy.jbcsrc.restricted.SoyExpression;
 import com.google.template.soy.jbcsrc.restricted.SoyRuntimeType;
 import com.google.template.soy.jbcsrc.restricted.Statement;
 import com.google.template.soy.jbcsrc.shared.LegacyFunctionAdapter;
+import com.google.template.soy.plugin.internal.JavaPluginExecContext;
 import com.google.template.soy.plugin.java.internal.PluginAnalyzer;
 import com.google.template.soy.plugin.java.restricted.SoyJavaSourceFunction;
+import com.google.template.soy.shared.internal.BuiltinMethod;
+import com.google.template.soy.shared.restricted.SoyMethod;
+import com.google.template.soy.shared.restricted.SoySourceFunctionMethod;
 import com.google.template.soy.soytree.ForNonemptyNode;
 import com.google.template.soy.soytree.SoyNode.LocalVarNode;
 import com.google.template.soy.soytree.defn.LocalVar;
@@ -175,14 +178,12 @@ final class ExpressionCompiler {
    * ExpressionDetacher.Factory}
    */
   static ExpressionCompiler create(
-      ExpressionDetacher.Factory detacherFactory,
       TemplateParameterLookup parameters,
       LocalVariableManager varManager,
       FieldManager fields,
       ErrorReporter reporter,
       SoyTypeRegistry registry) {
-    return new ExpressionCompiler(
-        detacherFactory, checkNotNull(parameters), varManager, fields, reporter, registry);
+    return new ExpressionCompiler(checkNotNull(parameters), varManager, fields, reporter, registry);
   }
 
   static BasicExpressionCompiler createConstantCompiler(
@@ -266,18 +267,15 @@ final class ExpressionCompiler {
   private final TemplateParameterLookup parameters;
   private final LocalVariableManager varManager;
   private final FieldManager fields;
-  private final ExpressionDetacher.Factory detacherFactory;
   private final ErrorReporter reporter;
   private final SoyTypeRegistry registry;
 
   private ExpressionCompiler(
-      ExpressionDetacher.Factory detacherFactory,
       TemplateParameterLookup parameters,
       LocalVariableManager varManager,
       FieldManager fields,
       ErrorReporter reporter,
       SoyTypeRegistry registry) {
-    this.detacherFactory = detacherFactory;
     this.parameters = checkNotNull(parameters);
     this.varManager = checkNotNull(varManager);
     this.fields = checkNotNull(fields);
@@ -285,15 +283,9 @@ final class ExpressionCompiler {
     this.registry = registry;
   }
 
-  /**
-   * Compiles the given expression tree to a sequence of bytecode.
-   *
-   * <p>The reattachPoint should be {@link CodeBuilder#mark(Label) marked} by the caller at a
-   * location where the stack depth is 0 and will be used to 'reattach' execution if the compiled
-   * expression needs to perform a detach operation.
-   */
-  SoyExpression compile(ExprNode node, Label reattachPoint) {
-    return asBasicCompiler(reattachPoint).compile(node);
+  /** Compiles the given expression tree to a sequence of bytecode. */
+  SoyExpression compile(ExprNode node, ExpressionDetacher detacher) {
+    return asBasicCompiler(detacher).compile(node);
   }
 
   /**
@@ -303,9 +295,10 @@ final class ExpressionCompiler {
    * and it will generate code such that the stack contains a single SoyValue when it returns. The
    * SoyValue object will have a runtime type equal to {@code node.getType().javaType()}.
    */
-  SoyExpression compile(ExprNode node) {
+  SoyExpression compile(ExprNode node, ExpressionDetacher.Factory detacherFactory) {
     Label reattachPoint = new Label();
-    final SoyExpression exec = compile(node, reattachPoint);
+    final SoyExpression exec =
+        compile(node, detacherFactory.createExpressionDetacher(reattachPoint));
     return exec.withSource(exec.labelStart(reattachPoint));
   }
 
@@ -327,15 +320,9 @@ final class ExpressionCompiler {
    * Returns a {@link BasicExpressionCompiler} that can be used to compile multiple expressions all
    * with the same detach logic.
    */
-  BasicExpressionCompiler asBasicCompiler(final Label reattachPoint) {
+  BasicExpressionCompiler asBasicCompiler(ExpressionDetacher detacher) {
     return new BasicExpressionCompiler(
-        new CompilerVisitor(
-            parameters,
-            varManager,
-            fields,
-            detacherFactory.createExpressionDetacher(reattachPoint),
-            reporter,
-            registry));
+        new CompilerVisitor(parameters, varManager, fields, detacher, reporter, registry));
   }
 
   private static final class CompilerVisitor
@@ -448,6 +435,18 @@ final class ExpressionCompiler {
           itemVar.store(
               listVar.invoke(MethodRef.LIST_GET, indexVar).checkedCast(SOY_VALUE_PROVIDER_TYPE),
               itemVar.start());
+      LocalVariable userIndexVar =
+          node.getIndexVar() == null
+              ? null
+              : scope.createNamedLocal(node.getIndexVar().name(), SOY_VALUE_PROVIDER_TYPE);
+      Statement userIndexVarInitializer =
+          userIndexVar == null
+              ? null
+              : userIndexVar.store(
+                  SoyExpression.forInt(BytecodeUtils.numericConversion(indexVar, Type.LONG_TYPE))
+                      .boxAsSoyValueProvider()
+                      .checkedCast(SOY_VALUE_PROVIDER_TYPE),
+                  userIndexVar.start());
 
       SoyExpression visitedMap = visit(mapExpr).box();
       SoyExpression visitedFilter = filterExpr != null ? visit(filterExpr).coerceToBoolean() : null;
@@ -463,10 +462,13 @@ final class ExpressionCompiler {
       int a_length = a_list.size();
       for (int a_i = 0; a_i < a_length; a_i++) {
         Object a = a_list.get(a_i);
-        if (filterPredicate != null && !filterPredicate.test(a)) {
+        if (userIndexVar != null) {
+          int i = a_i;
+        }
+        if (filterPredicate != null && !filterPredicate.test(a,i)) {
           continue;
         }
-        a_result.add(mapFunction.apply(a));
+        a_result.add(mapFunction.apply(a,i));
       }
       return a_result;
 
@@ -493,14 +495,19 @@ final class ExpressionCompiler {
 
                   itemVarInitializer.gen(adapter); // Object a = a_list.get(a_i);
 
+                  if (userIndexVar != null) {
+                    userIndexVarInitializer.gen(adapter); // int i = a_i;
+                  }
+
                   if (visitedFilter != null) {
                     visitedFilter.gen(adapter);
-                    adapter.ifZCmp(Opcodes.IFEQ, loopContinue); // if (!filter.test(a)) continue;
+                    adapter.ifZCmp(Opcodes.IFEQ, loopContinue); // if (!filter.test(a,i)) continue;
                   }
 
                   resultVar.gen(adapter);
                   visitedMap.gen(adapter);
-                  MethodRef.ARRAY_LIST_ADD.invokeUnchecked(adapter); // a_result.add(map.apply(a));
+                  MethodRef.ARRAY_LIST_ADD.invokeUnchecked(
+                      adapter); // a_result.add(map.apply(a,i));
                   adapter.pop(); // pop boolean return value of List.add()
 
                   adapter.mark(loopContinue);
@@ -1117,19 +1124,39 @@ final class ExpressionCompiler {
       return SoyExpression.forSoyValue(node.getType(), soyValue);
     }
 
-    private static SoyExpression visitMethodCall(SoyExpression baseExpr, MethodCallNode node) {
+    private SoyExpression visitMethodCall(SoyExpression baseExpr, MethodCallNode node) {
       // All null safe accesses should've already been converted to NullSafeAccessNodes.
       checkArgument(!node.isNullSafe());
-      // TODO(b/147372851): Handle case when the implementation of the method cannot be determined
-      // from the base type during compile time and the node has multiple SoySourceFunctions.
       checkArgument(node.isMethodResolved());
 
-      if (GetExtensionMethod.isGetExtensionMethodCall(node)) {
-        SoyProtoType protoType = (SoyProtoType) baseExpr.soyType();
-        return ProtoUtils.accessExtensionField(protoType, baseExpr, node);
+      // Never allow a null method receiver.
+      if (!BytecodeUtils.isPrimitive(baseExpr.resultType())) {
+        baseExpr = assertNonNull(baseExpr, node.getBaseExprChild());
       }
-      // TODO(b/147372851): Implement method calls for normal SoyMethodSignature methods.
-      return baseExpr;
+
+      SoyMethod function = node.getSoyMethod();
+      if (function instanceof BuiltinMethod) {
+        BuiltinMethod builtinMethod = (BuiltinMethod) function;
+        switch (builtinMethod) {
+          case GET_EXTENSION:
+            return ProtoUtils.accessExtensionField(
+                baseExpr,
+                node,
+                BuiltinMethod.getProtoExtensionIdFromMethodCall(node),
+                /* useBrokenSemantics= */ true);
+          case HAS_PROTO_FIELD:
+            return ProtoUtils.hasserField(
+                baseExpr, BuiltinMethod.getProtoFieldNameFromMethodCall(node));
+        }
+      } else if (function instanceof SoySourceFunctionMethod) {
+        SoySourceFunctionMethod sourceMethod = (SoySourceFunctionMethod) function;
+        List<SoyExpression> args = new ArrayList<>(node.numParams() + 1);
+        args.add(baseExpr);
+        node.getParams().forEach(n -> args.add(visit(n)));
+        return visitSoyJavaSourceFunction(
+            JavaPluginExecContext.forMethodCallNode(node, sourceMethod), args);
+      }
+      throw new AssertionError(function.getClass());
     }
 
     @Override
@@ -1393,45 +1420,8 @@ final class ExpressionCompiler {
       Object fn = node.getSoyFunction();
       List<SoyExpression> args = visitChildren(node);
       if (fn instanceof SoyJavaSourceFunction) {
-        return new JbcSrcValueFactory(
-                node,
-                // parameters is null when we are in a constant context.
-                parameters == null
-                    ? new JbcSrcPluginContext() {
-                      private Expression error() {
-                        throw new UnsupportedOperationException(
-                            "Cannot access contextual data from a pure context");
-                      }
-
-                      @Override
-                      public Expression getBidiGlobalDir() {
-                        return error();
-                      }
-
-                      @Override
-                      public Expression getAllRequiredCssNamespaces(SoyExpression template) {
-                        return error();
-                      }
-
-                      @Override
-                      public Expression getULocale() {
-                        return error();
-                      }
-                    }
-                    : parameters.getPluginContext(),
-                new JbcSrcValueFactory.PluginInstanceLookup() {
-                  @Override
-                  public Expression getPluginInstance(String pluginName) {
-                    if (parameters == null) {
-                      throw new UnsupportedOperationException(
-                          "Pure functions cannot have instances");
-                    }
-                    return parameters.getRenderContext().getPluginInstance(pluginName);
-                  }
-                },
-                reporter,
-                registry)
-            .computeForJavaSource(args);
+        return visitSoyJavaSourceFunction(
+            JavaPluginExecContext.forFunctionNode(node, (SoyJavaSourceFunction) fn), args);
       }
 
       // Functions that are not a SoyJavaSourceFunction
@@ -1448,6 +1438,45 @@ final class ExpressionCompiler {
           MethodRef.RUNTIME_CALL_LEGACY_FUNCTION
               .invoke(legacyFunctionRuntimeExpr, list)
               .checkedCast(SoyRuntimeType.getBoxedType(node.getType()).runtimeType()));
+    }
+
+    SoyExpression visitSoyJavaSourceFunction(
+        JavaPluginExecContext context, List<SoyExpression> args) {
+      return new JbcSrcValueFactory(
+              context,
+              // parameters is null when we are in a constant context.
+              parameters == null
+                  ? new JbcSrcPluginContext() {
+                    private Expression error() {
+                      throw new UnsupportedOperationException(
+                          "Cannot access contextual data from a pure context");
+                    }
+
+                    @Override
+                    public Expression getBidiGlobalDir() {
+                      return error();
+                    }
+
+                    @Override
+                    public Expression getAllRequiredCssNamespaces(SoyExpression template) {
+                      return error();
+                    }
+
+                    @Override
+                    public Expression getULocale() {
+                      return error();
+                    }
+                  }
+                  : parameters.getPluginContext(),
+              pluginName -> {
+                if (parameters == null) {
+                  throw new UnsupportedOperationException("Pure functions cannot have instances");
+                }
+                return parameters.getRenderContext().getPluginInstance(pluginName);
+              },
+              reporter,
+              registry)
+          .computeForJavaSource(args);
     }
 
     // Proto initialization calls
@@ -1498,6 +1527,7 @@ final class ExpressionCompiler {
         case STATE:
           return false;
         case UNDECLARED:
+        case IMPORT_VAR:
           break;
       }
       throw new AssertionError();

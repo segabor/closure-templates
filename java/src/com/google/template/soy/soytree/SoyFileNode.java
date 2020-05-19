@@ -16,6 +16,7 @@
 
 package com.google.template.soy.soytree;
 
+
 import com.google.common.collect.ImmutableList;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.Identifier;
@@ -31,8 +32,8 @@ import javax.annotation.Nullable;
  * <p>Important: Do not use outside of Soy code (treat as superpackage-private).
  *
  */
-public final class SoyFileNode extends AbstractParentSoyNode<TemplateNode>
-    implements SplitLevelTopNode<TemplateNode> {
+public final class SoyFileNode extends AbstractParentSoyNode<SoyNode>
+    implements SplitLevelTopNode<SoyNode> {
 
   /** The name and location of the containing delegate package, or null if none. */
   @Nullable private final DelPackageDeclaration delPackage;
@@ -132,6 +133,22 @@ public final class SoyFileNode extends AbstractParentSoyNode<TemplateNode>
   /** Returns the path to the source Soy file ("unknown" if not supplied). */
   public String getFilePath() {
     return getSourceLocation().getFilePath();
+  }
+
+  public ImmutableList<TemplateNode> getTemplates() {
+    // No need to look recursively since we know these are all top level.
+    return this.getChildren().stream()
+        .filter(c -> c instanceof TemplateNode)
+        .map(c -> (TemplateNode) c)
+        .collect(ImmutableList.toImmutableList());
+  }
+
+  public ImmutableList<ImportNode> getImports() {
+    // No need to look recursively since we know these are all top level.
+    return this.getChildren().stream()
+        .filter(c -> c instanceof ImportNode)
+        .map(c -> (ImportNode) c)
+        .collect(ImmutableList.toImmutableList());
   }
 
   /** Returns this Soy file's name. */

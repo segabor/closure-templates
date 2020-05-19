@@ -169,16 +169,35 @@ public final class SoyProtoValue extends SoyAbstractValue implements SoyLegacyOb
    *     semantics)
    */
   public SoyValue getProtoField(String name) {
+    return getProtoField(name, /* useBrokenProtoSemantics= */ true);
+  }
+
+  public SoyValue getProtoField(String name, boolean useBrokenProtoSemantics) {
     FieldWithInterpreter field = clazz().fields.get(name);
     if (field == null) {
       throw new IllegalArgumentException(
           "Proto " + proto.getClass().getName() + " does not have a field of name " + name);
     }
-    if (field.shouldCheckFieldPresenceToEmulateJspbNullability()
+    if (useBrokenProtoSemantics
+        && field.shouldCheckFieldPresenceToEmulateJspbNullability()
         && !proto.hasField(field.getDescriptor())) {
       return NullData.INSTANCE;
     }
     return field.interpretField(proto);
+  }
+
+  public boolean hasProtoField(String name) {
+    FieldWithInterpreter field = clazz().fields.get(name);
+    if (field == null) {
+      throw new IllegalArgumentException(
+          "Proto " + proto.getClass().getName() + " does not have a field of name " + name);
+    }
+    if (field.getDescriptor().isRepeated()) {
+      // Compiler should prevent this from happening.
+      throw new IllegalArgumentException("Cannot check for presence on repeated field " + name);
+    } else {
+      return proto.hasField(field.getDescriptor());
+    }
   }
 
   public void setAccessLocationKey(Object location) {
@@ -328,7 +347,7 @@ public final class SoyProtoValue extends SoyAbstractValue implements SoyLegacyOb
               ,
               fullName, type),
           e);
-      } else {
+    } else {
       // if there is a locationKey (i.e. this is tofu), then we will use the location key
       logger.log(
           Level.SEVERE,

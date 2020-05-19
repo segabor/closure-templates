@@ -28,6 +28,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Streams;
 import com.google.template.soy.base.internal.BaseUtils;
 import com.google.template.soy.invocationbuilders.javatypes.JavaType;
+import com.google.template.soy.invocationbuilders.passes.SoyFileNodeTransformer.ParamStatus;
 import com.google.template.soy.passes.IndirectParamsCalculator;
 import com.google.template.soy.passes.IndirectParamsCalculator.IndirectParamsInfo;
 import com.google.template.soy.shared.internal.gencode.JavaGenerationUtils;
@@ -37,6 +38,7 @@ import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateMetadata.Parameter;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
+import com.google.template.soy.soytree.TemplateSignature;
 import com.google.template.soy.soytree.Visibility;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.types.SoyType;
@@ -283,7 +285,7 @@ public class SoyFileNodeTransformer {
     List<TemplateInfo> templates = new ArrayList<>();
 
     Set<String> uniqueTemplateClassNames = new HashSet<>();
-    for (TemplateNode template : node.getChildren()) {
+    for (TemplateNode template : node.getTemplates()) {
       if (template.getVisibility() == Visibility.PUBLIC
           && template.getKind() != SoyNode.Kind.TEMPLATE_DELEGATE_NODE) {
 
@@ -324,7 +326,8 @@ public class SoyFileNodeTransformer {
     Set<String> directParamNames = ImmutableSet.copyOf(params.keySet());
 
     IndirectParamsInfo idi =
-        indirectParamsCalculator.calculateIndirectParams(TemplateMetadata.fromTemplate(template));
+        indirectParamsCalculator.calculateIndirectParams(
+            TemplateSignature.fromTemplateMetadata(TemplateMetadata.fromTemplate(template)));
 
     for (Map.Entry<String, Parameter> entry : idi.indirectParams.entrySet()) {
       String paramName = entry.getKey();

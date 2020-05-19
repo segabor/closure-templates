@@ -16,8 +16,9 @@
 
 package com.google.template.soy.passes.htmlmatcher;
 
-import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.LinkedHashMultimap;
+import com.google.common.collect.SetMultimap;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.error.ErrorReporter;
@@ -40,22 +41,22 @@ import java.util.Queue;
 import javax.annotation.Nullable;
 
 /**
- * Pass for checking the balance of open tag nodes with possible close tags.
- * Because Soy contains control flow, it is possible for a open tag node to possible map to
- * different close tags. For example, consider the following:
+ * Pass for checking the balance of open tag nodes with possible close tags. Because Soy contains
+ * control flow, it is possible for a open tag node to possible map to different close tags. For
+ * example, consider the following:
  *
  * <pre>
- * @code {
+ * {@code} {
  *   <div>
  *   {if $foo}</div><div>{/if}
  *   </div>
  * }
  * </pre>
  *
- * Because of this, we need to consider all possible paths statically inferable from the template
- * at hand (calls are not considered). In this example, we need to check if $foo==true
- * and $foo == false generate correct DOM. This visitor verifies that all possible paths are
- * legitimate and then annotates open tags and close tags with their possible pairs.
+ * Because of this, we need to consider all possible paths statically inferable from the template at
+ * hand (calls are not considered). In this example, we need to check if $foo==true and $foo ==
+ * false generate correct DOM. This visitor verifies that all possible paths are legitimate and then
+ * annotates open tags and close tags with their possible pairs.
  */
 public final class HtmlTagMatchingPass {
   private static final SoyErrorKind INVALID_CLOSE_TAG =
@@ -100,8 +101,8 @@ public final class HtmlTagMatchingPass {
    * Record of nodes and their related tag nodes. This is used to "save" a record of actions to be
    * taken. At the end of the graph traversal, if there are no errors, "commit" the changes.
    */
-  private final HashMultimap<HtmlTagNode, Optional<HtmlTagNode>> annotationMap =
-      HashMultimap.create();
+  private final SetMultimap<HtmlTagNode, Optional<HtmlTagNode>> annotationMap =
+      LinkedHashMultimap.create();
 
   private final ExprEquivalence exprEquivalence = new ExprEquivalence();
 

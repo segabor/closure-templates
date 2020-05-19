@@ -36,6 +36,7 @@ import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
 import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory.RuntimeNamespace;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
+import com.google.template.soy.shared.restricted.SoyMethodSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import java.lang.reflect.Method;
 import java.util.List;
@@ -56,6 +57,7 @@ import java.util.List;
         @Signature(
             returnType = "int",
             parameterTypes = {"string"}))
+@SoyMethodSignature(name = "length", baseType = "string", value = @Signature(returnType = "int"))
 @SoyPureFunction
 final class StrLenFunction
     implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {

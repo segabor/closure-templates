@@ -384,6 +384,11 @@ def list_indexof(l, item):
   return -1
 
 
+def list_slice(l, start, stop):
+  """Equivalent of JavaScript Array.prototype.slice."""
+  return l[slice(start, stop)]
+
+
 def type_safe_eq(first, second):
   """An equality function that does type coercion for various scenarios.
 
@@ -506,6 +511,26 @@ def str_to_ascii_lower_case(s):
 def str_to_ascii_upper_case(s):
   """Converts the ASCII characters in the given string to upper case."""
   return ''.join([c.upper() if 'a' <= c <= 'z' else c for c in s])
+
+
+def str_starts_with(s, val):
+  """Returns whether s starts with val."""
+  return s.startswith(val)
+
+
+def str_ends_with(s, val):
+  """Returns whether s ends with val."""
+  return s.endswith(val)
+
+
+def str_trim(s):
+  """Trims leading and trailing whitespace from s."""
+  return s.strip()
+
+
+def str_split(s, sep):
+  """Splits s into an array on sep."""
+  return s.split(sep) if sep else list(s)
 
 
 def soy_round(num, precision=0):

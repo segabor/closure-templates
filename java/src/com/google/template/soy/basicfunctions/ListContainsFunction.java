@@ -37,6 +37,7 @@ import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
 import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory.RuntimeNamespace;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
+import com.google.template.soy.shared.restricted.SoyMethodSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import java.lang.reflect.Method;
 import java.util.List;
@@ -57,6 +58,10 @@ import java.util.List;
         @Signature(
             parameterTypes = {"list<any>", "any"},
             returnType = "bool"))
+@SoyMethodSignature(
+    name = "contains",
+    baseType = "list<any>",
+    value = @Signature(parameterTypes = "any", returnType = "bool"))
 @SoyPureFunction
 public class ListContainsFunction
     implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {

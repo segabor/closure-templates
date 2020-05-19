@@ -439,6 +439,8 @@ public class SoyTypesTest {
     // Any string types should be resolved to string
     assertThat(SoyTypes.getSoyTypeForBinaryOperator(INT_TYPE, STRING_TYPE, plusOp))
         .isEqualTo(STRING_TYPE);
+    assertThat(SoyTypes.getSoyTypeForBinaryOperator(STRING_TYPE, BOOL_TYPE, plusOp))
+        .isEqualTo(STRING_TYPE);
     assertThat(SoyTypes.getSoyTypeForBinaryOperator(STRING_TYPE, FLOAT_TYPE, plusOp))
         .isEqualTo(STRING_TYPE);
     assertThat(SoyTypes.getSoyTypeForBinaryOperator(STRING_TYPE, NUMBER_TYPE, plusOp))
@@ -809,12 +811,13 @@ public class SoyTypesTest {
 
     private static SoyType parseType(String input) {
       TemplateNode template =
-          SoyFileSetParserBuilder.forTemplateContents(
-                  "{@param p : " + input + "|string}\n{$p ? 't' : 'f'}")
-              .parse()
-              .fileSet()
-              .getChild(0)
-              .getChild(0);
+          (TemplateNode)
+              SoyFileSetParserBuilder.forTemplateContents(
+                      "{@param p : " + input + "|string}\n{$p ? 't' : 'f'}")
+                  .parse()
+                  .fileSet()
+                  .getChild(0)
+                  .getChild(0);
       SoyType type = Iterables.getOnlyElement(template.getAllParams()).type();
       if (type.equals(StringType.getInstance())
           || type.equals(UnknownType.getInstance())

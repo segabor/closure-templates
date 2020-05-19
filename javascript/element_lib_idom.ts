@@ -8,6 +8,7 @@ import './skiphandler';
 import {assert} from 'goog:goog.asserts';  // from //javascript/closure/asserts
 import {IjData} from 'goog:goog.soy';      // from //javascript/closure/soy
 import SanitizedContentKind from 'goog:goog.soy.data.SanitizedContentKind'; // from //javascript/closure/soy:data
+import {Logger} from 'goog:soy.velog';  // from //javascript/template/soy:soyutils_velog
 import * as incrementaldom from 'incrementaldom';  // from //third_party/javascript/incremental_dom:incrementaldom
 
 import {IncrementalDomRenderer, patchOuter, SKIP_TOKEN} from './api_idom';
@@ -31,12 +32,25 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}> {
   private node: HTMLElement|null = null;
   private skipHandler:
       ((prev: TInterface, next: TInterface) => boolean)|null = null;
+  private patchHandler:
+      ((prev: TInterface, next: TInterface) => void)|null = null;
   private syncState = true;
+  private logger: Logger|null = null;
   // Marker so that future element accesses can find this Soy element from the
   // DOM
   key: string = '';
 
   constructor(protected data: TData, protected ijData?: IjData) {}
+
+  /**
+   * Sets the Logger instance to use for renders of this SoyElement. If `render`
+   * is called with a Renderer that has its own Logger, Renderer's Logger is
+   * used instead.
+   */
+  setLogger(logger: Logger|null): this {
+    this.logger = logger;
+    return this;
+  }
 
   /**
    * State variables that are derived from parameters will continue to be
@@ -57,10 +71,21 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}> {
    */
   render(renderer = new IncrementalDomRenderer()) {
     assert(this.node);
+    if (this.logger && !renderer.getLogger()) {
+      renderer.setLogger(this.logger);
+    }
     // It is possible that this Soy element has a skip handler on it. When
     // render() is called, ignore the skip handler.
     const skipHandler = this.skipHandler;
     this.skipHandler = null;
+    if (this.patchHandler) {
+      const patchHandler =
+          (this as SoyElement<TData, TInterface>).patchHandler!;
+      this.node!.__soy_patch_handler = () => {
+        patchHandler(
+            this as unknown as TInterface, this as unknown as TInterface);
+      };
+    }
     patchOuter(this.node!, () => {
       // If there are parameters, they must already be specified.
       this.renderInternal(renderer, this.data!);
@@ -105,22 +130,37 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}> {
     }
     this.node = node;
     node.__soy = this as unknown as SoyElement<{}, {}>;
+    const maybeSkipHandler = this.skipHandler || getSkipHandler(node);
     const newNode = new (
         this.constructor as
         {new (a: TData): SoyElement<TData, TInterface>})(data);
+    if (maybeSkipHandler || this.patchHandler) {
+      // Users may configure a skip handler to avoid patching DOM in certain
+      // cases.
+      const oldData = this.data;
+      if (maybeSkipHandler) {
+        assert(
+            !this.skipHandler || !getSkipHandler(node),
+            'Do not set skip handlers twice.');
+        const skipHandler = maybeSkipHandler;
+        if (skipHandler(
+                this as unknown as TInterface,
+                newNode as unknown as TInterface)) {
+          this.data = newNode.data;
+          return true;
+        }
+      }
 
-    // Users may configure a skip handler to avoid patching DOM in certain
-    // cases.
-    const maybeSkipHandler = getSkipHandler(node);
-    if (this.skipHandler || maybeSkipHandler) {
-      assert(
-          !this.skipHandler || !maybeSkipHandler,
-          'Do not set skip handlers twice.');
-      const skipHandler = this.skipHandler || maybeSkipHandler;
-      if (skipHandler!
-          (this as unknown as TInterface, newNode as unknown as TInterface)) {
-        this.data = newNode.data;
-        return true;
+      if (this.patchHandler) {
+        const oldNode = new (
+            this.constructor as
+            {new (a: TData): SoyElement<TData, TInterface>})(oldData);
+        const patchHandler = this.patchHandler;
+        this.node.__soy_patch_handler = () => {
+          patchHandler(
+              oldNode as unknown as TInterface,
+              newNode as unknown as TInterface);
+        };
       }
     }
     // For server-side rehydration, it is only necessary to execute idom to
@@ -135,6 +175,11 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}> {
   setSkipHandler(skipHandler: (prev: TInterface, next: TInterface) => boolean) {
     assert(!this.skipHandler, 'Only one skip handler is allowed.');
     this.skipHandler = skipHandler;
+  }
+
+  setAfterPatch(handler: (prev: TInterface, next: TInterface) => void) {
+    assert(!this.patchHandler, 'Only one patch handler is allowed');
+    this.patchHandler = handler;
   }
 
   /**

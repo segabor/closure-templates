@@ -1761,7 +1761,6 @@ soy.$$isLowSurrogate_ = function(cc) {
  * @param {!IArrayLike<?>} list
  * @param {*} val
  * @return {boolean}
- * @template T
  */
 soy.$$listContains = function(list, val) {
   return soy.$$listIndexOf(list, val) >= 0;
@@ -1773,7 +1772,6 @@ soy.$$listContains = function(list, val) {
  * @param {!IArrayLike<?>} list
  * @param {*} val
  * @return {number}
- * @template T
  */
 soy.$$listIndexOf = function(list, val) {
   return goog.array.findIndex(list, function(el) {
@@ -1781,6 +1779,19 @@ soy.$$listIndexOf = function(list, val) {
   });
 };
 
+
+/**
+ * Returns an array slice of list.
+ * @param {!IArrayLike<T>} list
+ * @param {number} from
+ * @param {?number} to
+ * @return {!IArrayLike<T>}
+ * @template T
+ */
+soy.$$listSlice = function(list, from, to) {
+  return to == null ? goog.array.slice(list, from) :
+                      goog.array.slice(list, from, to);
+};
 
 
 /**
@@ -1812,6 +1823,48 @@ soy.$$strToAsciiUpperCase = function(s) {
   return goog.array.map(s, function(c) {
     return 'a' <= c && c <= 'z' ? c.toUpperCase() : c;
   }).join('');
+};
+
+
+/**
+ * Trims a string.
+ * @param {string} s
+ * @return {string}
+ */
+soy.$$strTrim = function(s) {
+  return s.trim();
+};
+
+/**
+ * Returns whether s starts with val.
+ * @param {string} s
+ * @param {string} val
+ * @return {boolean}
+ */
+soy.$$strStartsWith = function(s, val) {
+  return s.length >= val.length && s.substring(0, val.length) === val;
+};
+
+
+/**
+ * Returns whether s ends with val.
+ * @param {string} s
+ * @param {string} val
+ * @return {boolean}
+ */
+soy.$$strEndsWith = function(s, val) {
+  return s.length >= val.length && s.substring(s.length - val.length) === val;
+};
+
+
+/**
+ * Splits a string.
+ * @param {string} s
+ * @param {string} sep
+ * @return {!Array<string>}
+ */
+soy.$$strSplit = function(s, sep) {
+  return s.split(sep);
 };
 
 

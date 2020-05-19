@@ -33,7 +33,6 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.annotations.ForOverride;
 import com.google.template.soy.base.internal.Identifier;
-import com.google.template.soy.basicmethods.GetExtensionMethod;
 import com.google.template.soy.data.SoyDataException;
 import com.google.template.soy.data.SoyLegacyObjectMap;
 import com.google.template.soy.data.SoyList;
@@ -41,6 +40,7 @@ import com.google.template.soy.data.SoyMap;
 import com.google.template.soy.data.SoyProtoValue;
 import com.google.template.soy.data.SoyRecord;
 import com.google.template.soy.data.SoyValue;
+import com.google.template.soy.data.SoyValueConverter;
 import com.google.template.soy.data.SoyValueProvider;
 import com.google.template.soy.data.internal.DictImpl;
 import com.google.template.soy.data.internal.ListImpl;
@@ -98,18 +98,23 @@ import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.exprtree.VeLiteralNode;
 import com.google.template.soy.logging.LoggingFunction;
 import com.google.template.soy.msgs.SoyMsgBundle;
+import com.google.template.soy.plugin.internal.JavaPluginExecContext;
 import com.google.template.soy.plugin.java.restricted.JavaValueFactory;
 import com.google.template.soy.plugin.java.restricted.SoyJavaSourceFunction;
 import com.google.template.soy.shared.SoyCssRenamingMap;
 import com.google.template.soy.shared.SoyIdRenamingMap;
 import com.google.template.soy.shared.internal.BuiltinFunction;
+import com.google.template.soy.shared.internal.BuiltinMethod;
 import com.google.template.soy.shared.restricted.SoyJavaFunction;
+import com.google.template.soy.shared.restricted.SoyMethod;
+import com.google.template.soy.shared.restricted.SoySourceFunctionMethod;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.types.MapType;
 import com.google.template.soy.types.SoyProtoType;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyTypes;
 import com.google.template.soy.types.UnionType;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -270,8 +275,12 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
     ExprNode filterExpr = node.getFilterExpr();
     ComprehensionVarDefn itemName = node.getListIterVar();
     ImmutableList.Builder<SoyValueProvider> mappedValues = ImmutableList.builder();
-    for (SoyValueProvider soyValue : ((SoyList) listValue).asJavaList()) {
-      env.bind(itemName, soyValue);
+    List<? extends SoyValueProvider> list = ((SoyList) listValue).asJavaList();
+    for (int i = 0; i < list.size(); i++) {
+      env.bind(itemName, list.get(i));
+      if (node.getIndexVar() != null) {
+        env.bind(node.getIndexVar(), SoyValueConverter.INSTANCE.convert(i));
+      }
       if (filterExpr != null) {
         if (!visit(filterExpr).booleanValue()) {
           continue;
@@ -550,20 +559,39 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
     }
   }
 
-  private static SoyValue visitMethodCallNode(MethodCallNode methodCallNode, SoyValue base) {
+  private SoyValue visitMethodCallNode(MethodCallNode methodNode, SoyValue base) {
     // All null safe accesses should've already been converted to NullSafeAccessNodes.
-    checkArgument(!methodCallNode.isNullSafe());
+    checkArgument(!methodNode.isNullSafe());
     // TODO(b/147372851): Handle case when the implementation of the method cannot be determined
     // from the base type during compile time and the node has multiple SoySourceFunctions.
-    checkArgument(methodCallNode.isMethodResolved());
+    checkArgument(methodNode.isMethodResolved());
 
-    if (GetExtensionMethod.isGetExtensionMethodCall(methodCallNode)) {
-      String fieldName = GetExtensionMethod.getExtensionId(methodCallNode);
-      return ((SoyProtoValue) base).getProtoField(fieldName);
+    // Never allow a null method receiver.
+    base = assertNotNull(base, methodNode.getBaseExprChild());
+
+    SoyMethod method = methodNode.getSoyMethod();
+    if (method instanceof BuiltinMethod) {
+      BuiltinMethod builtinMethod = (BuiltinMethod) method;
+      switch (builtinMethod) {
+        case GET_EXTENSION:
+          return ((SoyProtoValue) base)
+              .getProtoField(
+                  BuiltinMethod.getProtoExtensionIdFromMethodCall(methodNode),
+                  /* useBrokenProtoSemantics= */ true);
+        case HAS_PROTO_FIELD:
+          return BooleanData.forValue(
+              ((SoyProtoValue) base)
+                  .hasProtoField(BuiltinMethod.getProtoFieldNameFromMethodCall(methodNode)));
+      }
+    } else if (method instanceof SoySourceFunctionMethod) {
+      SoySourceFunctionMethod sourceMethod = (SoySourceFunctionMethod) method;
+      List<SoyValue> args = new ArrayList<>(methodNode.numParams() + 1);
+      args.add(base);
+      methodNode.getParams().forEach(n -> args.add(visit(n)));
+      return computeFunctionHelper(
+          args, JavaPluginExecContext.forMethodCallNode(methodNode, sourceMethod));
     }
-
-    // TODO(b/147372851): Implement method calls for normal SoyMethodSignature methods.
-    return base;
+    throw new AssertionError(method.getClass());
   }
 
   // Returns true if the base SoyValue of a data access chain is null or undefined.
@@ -753,7 +781,7 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
       List<SoyValue> args = this.visitChildren(node);
       SoyJavaSourceFunction fn = (SoyJavaSourceFunction) soyFunction;
       // Note: Arity has already been checked by CheckFunctionCallsVisitor.
-      return computeFunctionHelper(fn, args, node);
+      return computeFunctionHelper(args, JavaPluginExecContext.forFunctionNode(node, fn));
     } else if (soyFunction instanceof LoggingFunction) {
       return StringData.forValue(((LoggingFunction) soyFunction).getPlaceholder());
     } else {
@@ -817,16 +845,15 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
   /**
    * Protected helper for {@code computeFunction}.
    *
-   * @param fn The function object.
    * @param args The arguments to the function.
    * @param fnNode The function node. Only used for error reporting.
    * @return The result of the function called on the given arguments.
    */
   @ForOverride
-  protected SoyValue computeFunctionHelper(
-      SoyJavaSourceFunction fn, List<SoyValue> args, final FunctionNode fnNode) {
+  protected SoyValue computeFunctionHelper(List<SoyValue> args, JavaPluginExecContext fnNode) {
     try {
-      return new TofuValueFactory(fnNode, pluginInstances).computeForJava(fn, args, context);
+      return new TofuValueFactory(fnNode, pluginInstances)
+          .computeForJava(fnNode.getSourceFunction(), args, context);
     } catch (Exception e) {
       throw RenderException.create(
           "While computing function \"" + fnNode.toSourceString() + "\": " + e.getMessage(), e);

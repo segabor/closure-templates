@@ -102,6 +102,7 @@ import com.google.template.soy.soytree.TemplateDelegateNode;
 import com.google.template.soy.soytree.TemplateElementNode;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
+import com.google.template.soy.soytree.TemplateSignature;
 import com.google.template.soy.soytree.VeLogNode;
 import com.google.template.soy.soytree.Visibility;
 import com.google.template.soy.soytree.defn.TemplateParam;
@@ -452,7 +453,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     }
 
     // Add code for each template.
-    for (TemplateNode template : node.getChildren()) {
+    for (TemplateNode template : node.getTemplates()) {
       jsCodeBuilder.appendLine().appendLine();
       staticVarDeclarations = new ArrayList<>();
       visit(template);
@@ -468,7 +469,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
   private Map<String, SoyType> getAllIjDataParams(SoyFileNode node) {
     Map<String, SoyType> params = new LinkedHashMap<>();
-    for (TemplateNode template : node.getChildren()) {
+    for (TemplateNode template : node.getTemplates()) {
       for (TemplateParam param : template.getInjectedParams()) {
         SoyType oldType = params.put(param.name(), param.type());
         if (oldType != null) {
@@ -491,7 +492,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
     SortedSet<String> requiredCssNamespaces = new TreeSet<>();
     requiredCssNamespaces.addAll(soyFile.getRequiredCssNamespaces());
-    for (TemplateNode template : soyFile.getChildren()) {
+    for (TemplateNode template : soyFile.getTemplates()) {
       requiredCssNamespaces.addAll(template.getRequiredCssNamespaces());
     }
 
@@ -587,7 +588,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
   private void addJsDocToProvideDelTemplates(JsDoc.Builder header, SoyFileNode soyFile) {
 
     SortedSet<String> delTemplateNames = new TreeSet<>();
-    for (TemplateNode template : soyFile.getChildren()) {
+    for (TemplateNode template : soyFile.getTemplates()) {
       if (template instanceof TemplateDelegateNode) {
         delTemplateNames.add(delTemplateNamer.getDelegateName((TemplateDelegateNode) template));
       }
@@ -655,6 +656,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
    *   ...
    * };
    * if (goog.DEBUG) {
+   *   /** @type {string} * /
    *   my.namespace.func.soyTemplateName = 'my.namespace.func';
    * }
    * </pre>
@@ -726,7 +728,10 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     declarations.add(
         ifStatement(
                 GOOG_DEBUG,
-                assign(aliasExp.dotAccess("soyTemplateName"), stringLiteral(templateName)))
+                assign(
+                    aliasExp.dotAccess("soyTemplateName"),
+                    stringLiteral(templateName),
+                    JsDoc.builder().addParameterizedAnnotation("type", "string").build()))
             .build());
 
     // ------ If delegate template, generate a statement to register it. ------
@@ -1474,7 +1479,8 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     // is not in the current compilation file set.
     IndirectParamsInfo ipi =
         new IndirectParamsCalculator(templateRegistry)
-            .calculateIndirectParams(templateRegistry.getMetadata(node));
+            .calculateIndirectParams(
+                TemplateSignature.fromTemplateMetadata(templateRegistry.getMetadata(node)));
     // If there are any calls outside of the file set, then we can't know
     // the complete types of any indirect params. In such a case, we can simply
     // omit the indirect params from the function type signature, since record

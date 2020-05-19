@@ -22,13 +22,14 @@ import com.google.common.base.Joiner;
 import com.google.common.base.Splitter;
 import com.google.common.collect.Lists;
 import com.google.protobuf.Descriptors.FieldDescriptor;
+import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.base.internal.IndentedLinesBuilder;
-import com.google.template.soy.basicmethods.GetExtensionMethod;
 import com.google.template.soy.exprtree.FieldAccessNode;
 import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.exprtree.MethodCallNode;
 import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.internal.proto.ProtoUtils;
+import com.google.template.soy.shared.internal.BuiltinMethod;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateNode;
@@ -270,7 +271,7 @@ public final class JavaGenerationUtils {
   }
 
   public static Set<String> getProtoTypes(SoyFileNode node, SoyTypeRegistry typeRegistry) {
-    return node.getChildren().stream()
+    return SoyTreeUtils.getAllNodesOfType(node, TemplateNode.class).stream()
         .flatMap(template -> getProtoTypes(template, typeRegistry).stream())
         .collect(toSet());
   }
@@ -296,16 +297,17 @@ public final class JavaGenerationUtils {
         }
       }
     }
-    // Add extension references from getExtension method call.
-    for (MethodCallNode methodCallNode :
-        SoyTreeUtils.getAllNodesOfType(template, MethodCallNode.class)) {
-      if (GetExtensionMethod.isGetExtensionMethodCall(methodCallNode)) {
-        SoyType baseType = SoyTypes.removeNull(methodCallNode.getBaseExprChild().getType());
-        String fieldName = GetExtensionMethod.getExtensionId(methodCallNode);
-        FieldDescriptor desc = ((SoyProtoType) baseType).getFieldDescriptor(fieldName);
-        protoTypes.add(ProtoUtils.getQualifiedOuterClassname(desc));
-      }
-    }
+
+    // Add references for return types of getExtension method.
+    SoyTreeUtils.getAllNodesOfType(template, MethodCallNode.class).stream()
+        .filter(MethodCallNode::isMethodResolved)
+        .filter(n -> n.getSoyMethod() instanceof BuiltinMethod)
+        .flatMap(
+            methodNode ->
+                ((BuiltinMethod) methodNode.getSoyMethod())
+                    .getProtoDependencyTypes(methodNode).stream())
+        .forEach(protoTypes::add);
+
     // Note: we need to add descriptors from other parts of the expression api that contain direct
     // proto references.  We do not just scan for all referenced proto types since that would
     // cause us to add direct references to the parseinfos for protos that are only indirectly
@@ -319,7 +321,14 @@ public final class JavaGenerationUtils {
     // Add proto init
     for (ProtoInitNode protoInit : SoyTreeUtils.getAllNodesOfType(template, ProtoInitNode.class)) {
       if (protoInit.getType().getKind() == Kind.PROTO) {
-        protoTypes.add(((SoyProtoType) protoInit.getType()).getDescriptorExpression());
+        SoyProtoType proto = (SoyProtoType) protoInit.getType();
+        protoTypes.add(proto.getDescriptorExpression());
+        for (Identifier paramName : protoInit.getParamNames()) {
+          FieldDescriptor fieldDescriptor = proto.getFieldDescriptor(paramName.identifier());
+          if (fieldDescriptor.isExtension()) {
+            protoTypes.add(ProtoUtils.getQualifiedOuterClassname(fieldDescriptor));
+          }
+        }
       }
     }
 

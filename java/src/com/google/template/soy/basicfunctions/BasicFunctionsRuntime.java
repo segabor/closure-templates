@@ -16,7 +16,10 @@
 
 package com.google.template.soy.basicfunctions;
 
+import static com.google.common.collect.ImmutableList.toImmutableList;
+
 import com.google.common.base.Joiner;
+import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.primitives.Doubles;
@@ -29,10 +32,12 @@ import com.google.template.soy.data.SoyMaps;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.SoyValueProvider;
 import com.google.template.soy.data.internal.DictImpl;
+import com.google.template.soy.data.internal.ListImpl;
 import com.google.template.soy.data.internal.RuntimeMapTypeTracker;
 import com.google.template.soy.data.restricted.FloatData;
 import com.google.template.soy.data.restricted.IntegerData;
 import com.google.template.soy.data.restricted.NumberData;
+import com.google.template.soy.data.restricted.StringData;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -80,6 +85,30 @@ public final class BasicFunctionsRuntime {
       stringList.add(value.coerceToString());
     }
     return Joiner.on(separator).join(stringList);
+  }
+
+  /**
+   * Implements JavaScript-like Array slice. Negative and out-of-bounds indexes emulate the JS
+   * behavior.
+   */
+  public static SoyList listSlice(SoyList list, int from, IntegerData optionalTo) {
+    int length = list.length();
+    if (from < 0) {
+      from = length + from;
+    }
+    int to = length;
+    if (optionalTo != null) {
+      to = optionalTo.integerValue();
+      if (to < 0) {
+        to = length + to;
+      }
+    }
+    from = Math.max(0, Math.min(from, length));
+    to = Math.max(0, Math.min(to, length));
+    if (from >= to) {
+      return ListImpl.forProviderList(ImmutableList.of());
+    }
+    return ListImpl.forProviderList(list.asJavaList().subList(from, to));
   }
 
   /**
@@ -228,6 +257,24 @@ public final class BasicFunctionsRuntime {
   public static String strSub(SoyValue str, int start, int end) {
     // TODO(b/74259210) -- Change the first param to String & avoid using stringValue().
     return str.stringValue().substring(start, end);
+  }
+
+  public static boolean strStartsWith(String str, String arg) {
+    return str.startsWith(arg);
+  }
+
+  public static boolean strEndsWith(String str, String arg) {
+    return str.endsWith(arg);
+  }
+
+  public static SoyList strSplit(String str, String sep) {
+    return ListImpl.forProviderList(
+        (sep.isEmpty() ? Splitter.fixedLength(1) : Splitter.on(sep))
+            .splitToList(str).stream().map(StringData::forValue).collect(toImmutableList()));
+  }
+
+  public static String strTrim(String str) {
+    return str.trim();
   }
 
   public static int length(List<?> list) {

@@ -25,10 +25,13 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.UnsignedInts;
 import com.google.common.primitives.UnsignedLongs;
+import com.google.protobuf.ExtensionLite;
+import com.google.protobuf.GeneratedMessage.ExtendableMessage;
 import com.google.protobuf.Message;
 import com.google.protobuf.ProtocolMessageEnum;
 import com.google.template.soy.data.Dir;
 import com.google.template.soy.data.LoggingAdvisingAppendable;
+import com.google.template.soy.data.ProtoFieldInterpreter;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
 import com.google.template.soy.data.SoyLegacyObjectMap;
 import com.google.template.soy.data.SoyList;
@@ -42,6 +45,8 @@ import com.google.template.soy.data.SoyVisualElementData;
 import com.google.template.soy.data.SoyVisualElementFactory;
 import com.google.template.soy.data.UnsafeSanitizedContentOrdainer;
 import com.google.template.soy.data.internal.DictImpl;
+import com.google.template.soy.data.internal.LazyProtoToSoyValueList;
+import com.google.template.soy.data.internal.LazyProtoToSoyValueMap;
 import com.google.template.soy.data.internal.ListImpl;
 import com.google.template.soy.data.internal.ParamStore;
 import com.google.template.soy.data.internal.RuntimeMapTypeTracker;
@@ -373,9 +378,6 @@ public abstract class MethodRef {
   public static final MethodRef SOY_MSG_RAW_TEXT_PART_GET_RAW_TEXT =
       create(SoyMsgRawTextPart.class, "getRawText").asCheap().asNonNullable();
 
-  public static final MethodRef SOY_PROTO_VALUE_GET_PROTO_FIELD =
-      create(SoyProtoValue.class, "getProtoField", String.class).asCheap().asNonNullable();
-
   public static final MethodRef RUNTIME_GET_PROTO_FIELD =
       create(JbcSrcRuntime.class, "getProtoField", SoyProtoValue.class, String.class).asCheap();
 
@@ -416,6 +418,9 @@ public abstract class MethodRef {
 
   public static final MethodRef SOY_VALUE_PROVIDER_RESOLVE =
       create(JbcSrcRuntime.class, "resolveSoyValueProvider", SoyValueProvider.class);
+
+  public static final MethodRef SOY_VALUE_PROVIDER_OR_NULL =
+      create(JbcSrcRuntime.class, "soyValueProviderOrNull", SoyValueProvider.class);
 
   public static final MethodRef SOY_VALUE_PROVIDER_STATUS =
       create(SoyValueProvider.class, "status").asNonNullable();
@@ -464,6 +469,30 @@ public abstract class MethodRef {
 
   public static final MethodRef BOX_JAVA_MAP_AS_SOY_LEGACY_OBJECT_MAP =
       MethodRef.create(JbcSrcRuntime.class, "boxJavaMapAsSoyLegacyObjectMap", Map.class);
+
+  public static final MethodRef LAZY_PROTO_TO_SOY_VALUE_LIST_FOR_LIST =
+      MethodRef.create(
+              LazyProtoToSoyValueList.class, "forList", List.class, ProtoFieldInterpreter.class)
+          .asNonNullable();
+
+  public static final MethodRef LAZY_PROTO_TO_SOY_VALUE_MAP_FOR_MAP =
+      MethodRef.create(
+              LazyProtoToSoyValueMap.class,
+              "forMap",
+              Map.class,
+              ProtoFieldInterpreter.class,
+              ProtoFieldInterpreter.class,
+              Class.class)
+          .asNonNullable();
+
+  public static final MethodRef GET_EXTENSION_LIST =
+      MethodRef.create(
+              JbcSrcRuntime.class,
+              "getExtensionList",
+              ExtendableMessage.class,
+              ExtensionLite.class,
+              ProtoFieldInterpreter.class)
+          .asNonNullable();
 
   public static MethodRef create(Class<?> clazz, String methodName, Class<?>... params) {
     java.lang.reflect.Method m;

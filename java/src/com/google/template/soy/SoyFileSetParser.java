@@ -26,6 +26,7 @@ import com.google.template.soy.base.internal.IncrementingIdGenerator;
 import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.base.internal.SoyFileSupplier;
 import com.google.template.soy.error.ErrorReporter;
+import com.google.template.soy.error.SoyError;
 import com.google.template.soy.passes.PassManager;
 import com.google.template.soy.shared.SoyAstCache;
 import com.google.template.soy.shared.SoyAstCache.VersionedFile;
@@ -37,6 +38,7 @@ import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.types.SoyTypeRegistry;
+import java.io.File;
 import java.io.IOException;
 import java.io.Reader;
 import java.util.ArrayList;
@@ -101,13 +103,16 @@ public abstract class SoyFileSetParser {
   /** A simple tuple for the result of a parse operation. */
   @AutoValue
   public abstract static class ParseResult {
-    static ParseResult create(SoyFileSetNode soyTree, TemplateRegistry registry) {
-      return new AutoValue_SoyFileSetParser_ParseResult(soyTree, registry);
+    static ParseResult create(
+        SoyFileSetNode soyTree, TemplateRegistry registry, ImmutableList<SoyError> warnings) {
+      return new AutoValue_SoyFileSetParser_ParseResult(soyTree, registry, warnings);
     }
 
     public abstract SoyFileSetNode fileSet();
 
     public abstract TemplateRegistry registry();
+
+    public abstract ImmutableList<SoyError> warnings();
   }
 
   public static Builder newBuilder() {
@@ -128,6 +133,9 @@ public abstract class SoyFileSetParser {
 
   public abstract SoyTypeRegistry typeRegistry();
 
+  @Nullable
+  public abstract ImmutableList<File> cssSummaries();
+
   /** Builder for {@link SoyFileSetParser}. */
   @AutoValue.Builder
   public abstract static class Builder {
@@ -144,6 +152,8 @@ public abstract class SoyFileSetParser {
     public abstract Builder setErrorReporter(ErrorReporter errorReporter);
 
     public abstract Builder setTypeRegistry(SoyTypeRegistry typeRegistry);
+
+    public abstract Builder setCssSummaries(List<File> cssSummaries);
 
     public abstract SoyFileSetParser build();
   }
@@ -216,7 +226,7 @@ public abstract class SoyFileSetParser {
         passManager().runTemplateReturnTypeInferencePasses(soyTree, builder.build());
       }
       for (SoyFileNode node : soyTree.getChildren()) {
-        for (TemplateNode template : node.getChildren()) {
+        for (TemplateNode template : node.getTemplates()) {
           builder.addTemplate(TemplateMetadata.fromTemplate(template));
         }
       }
@@ -225,7 +235,8 @@ public abstract class SoyFileSetParser {
       if (!filesWereSkipped) {
         passManager().runWholeFilesetPasses(soyTree, registry);
       }
-      return ParseResult.create(soyTree, registry);
+      return ParseResult.create(
+          soyTree, registry, ImmutableList.copyOf(errorReporter().getWarnings()));
     }
   }
 

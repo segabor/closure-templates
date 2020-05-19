@@ -35,6 +35,8 @@ public interface TemplateHeaderVarDefn extends VarDefn {
   /** Returns whether the param is required. */
   boolean isRequired();
 
+  boolean isExplicitlyOptional();
+
   ExprRootNode defaultValue();
 
   boolean hasType();
@@ -53,6 +55,8 @@ public interface TemplateHeaderVarDefn extends VarDefn {
    */
   @Nullable
   String desc();
+
+  void setDesc(String desc);
 
   TemplateHeaderVarDefn copy(CopyState copyState);
 }
