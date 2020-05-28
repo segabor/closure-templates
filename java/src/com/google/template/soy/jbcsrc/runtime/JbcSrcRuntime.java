@@ -40,7 +40,6 @@ import com.google.template.soy.data.SanitizedContent;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
 import com.google.template.soy.data.SoyLegacyObjectMap;
 import com.google.template.soy.data.SoyMap;
-import com.google.template.soy.data.SoyProtoValue;
 import com.google.template.soy.data.SoyRecord;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.SoyValueConverter;
@@ -133,20 +132,6 @@ public final class JbcSrcRuntime {
         new Exception());
   }
 
-  public static String getKeyObject(SoyValue key) {
-    if (key instanceof NumberData) {
-      return serialize(key.coerceToString(), "#");
-    }
-    if (key == null) {
-      return serialize("null", "_");
-    }
-    return serialize(key.coerceToString(), ":");
-  }
-
-  private static String serialize(String key, String delimiter) {
-    return key.length() + delimiter + key;
-  }
-
   public static boolean stringEqualsAsNumber(String expr, double number) {
     if (expr == null) {
       return false;
@@ -202,17 +187,6 @@ public final class JbcSrcRuntime {
 
   public static SoyValueProvider getFieldProvider(SoyRecord record, String field) {
     return getFieldProvider(record, field, /* defaultValue= */ null);
-  }
-
-  /**
-   * Helper function to make SoyProtoValue.getProtoField compatible with the jbcsrc representation
-   * of {@code null}.
-   */
-  public static SoyValue getProtoField(SoyProtoValue proto, String field) {
-    if (proto == null) {
-      throw new NullPointerException("Attempted to access field '" + field + "' of null");
-    }
-    return handleTofuNull(proto.getProtoField(field));
   }
 
   /** Casts the given type to SoyString or throws a ClassCastException. */

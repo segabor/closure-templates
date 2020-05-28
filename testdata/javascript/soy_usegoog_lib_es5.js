@@ -57,10 +57,11 @@ $jscomp.getGlobal = function(passedInThis) {
   throw Error("Cannot find global object");
 };
 $jscomp.global = $jscomp.getGlobal(this);
+$jscomp.IS_SYMBOL_NATIVE = "function" === typeof Symbol && "symbol" === typeof Symbol("x");
+$jscomp.TRUST_ES6_POLYFILLS = !$jscomp.ISOLATE_POLYFILLS || $jscomp.IS_SYMBOL_NATIVE;
 $jscomp.polyfills = {};
 $jscomp.propertyToPolyfillSymbol = {};
 $jscomp.POLYFILL_PREFIX = "$jscp$";
-$jscomp.IS_SYMBOL_NATIVE = "function" === typeof Symbol && "symbol" === typeof Symbol("x");
 $jscomp.polyfill = function(target, polyfill, fromLang, toLang) {
   polyfill && ($jscomp.ISOLATE_POLYFILLS ? $jscomp.polyfillIsolated(target, polyfill, fromLang, toLang) : $jscomp.polyfillUnisolated(target, polyfill, fromLang, toLang));
 };
@@ -115,21 +116,22 @@ $jscomp.polyfill("Symbol", function(orig) {
   return symbolPolyfill;
 }, "es6", "es3");
 $jscomp.initSymbolIterator = function() {
-  $jscomp.initSymbolIterator = function() {
-  };
-  var symbolIterator = Symbol.iterator;
-  symbolIterator || (symbolIterator = Symbol.iterator = Symbol("Symbol.iterator"));
-  "function" != typeof Array.prototype[symbolIterator] && $jscomp.defineProperty(Array.prototype, symbolIterator, {configurable:!0, writable:!0, value:function() {
-    return $jscomp.iteratorPrototype($jscomp.arrayIteratorImpl(this));
-  }});
 };
+$jscomp.polyfill("Symbol.iterator", function(orig) {
+  if (orig) {
+    return orig;
+  }
+  for (var symbolIterator = Symbol("Symbol.iterator"), arrayLikes = "Array Int8Array Uint8Array Uint8ClampedArray Int16Array Uint16Array Int32Array Uint32Array Float32Array Float64Array".split(" "), i = 0; i < arrayLikes.length; i++) {
+    var ArrayLikeCtor = $jscomp.global[arrayLikes[i]];
+    "function" === typeof ArrayLikeCtor && "function" != typeof ArrayLikeCtor.prototype[symbolIterator] && $jscomp.defineProperty(ArrayLikeCtor.prototype, symbolIterator, {configurable:!0, writable:!0, value:function() {
+      return $jscomp.iteratorPrototype($jscomp.arrayIteratorImpl(this));
+    }});
+  }
+  return symbolIterator;
+}, "es6", "es3");
 $jscomp.initSymbolAsyncIterator = function() {
-  $jscomp.initSymbolAsyncIterator = function() {
-  };
-  Symbol.asyncIterator || (Symbol.asyncIterator = Symbol("Symbol.asyncIterator"));
 };
 $jscomp.iteratorPrototype = function(next) {
-  $jscomp.initSymbolIterator();
   var iterator = {next:next};
   iterator[Symbol.iterator] = function() {
     return this;
@@ -137,7 +139,6 @@ $jscomp.iteratorPrototype = function(next) {
   return iterator;
 };
 $jscomp.iteratorFromArray = function(array, transform) {
-  $jscomp.initSymbolIterator();
   array instanceof String && (array += "");
   var i = 0, iter = {next:function() {
     if (i < array.length) {
@@ -316,7 +317,6 @@ $jscomp.polyfill("Map", function(NativeMap) {
       return NativeMap;
     }
   }
-  $jscomp.initSymbolIterator();
   var idMap = new WeakMap, PolyfillMap = function(opt_iterable) {
     this.data_ = {};
     this.head_ = createHead();
@@ -432,7 +432,6 @@ goog.FEATURESET_YEAR = 2012;
 goog.DEBUG = !1;
 goog.LOCALE = "en";
 goog.TRUSTED_SITE = !0;
-goog.STRICT_MODE_COMPATIBLE = !1;
 goog.DISALLOW_TEST_ONLY_CODE = !goog.DEBUG;
 goog.ENABLE_CHROME_APP_SAFE_SCRIPT_LOADING = !1;
 goog.provide = function(name) {
@@ -2082,10 +2081,10 @@ goog.i18n.bidi.setElementDirAndAlign = function(element, dir) {
 goog.i18n.bidi.setElementDirByTextDirectionality = function(element, text) {
   switch(goog.i18n.bidi.estimateDirection(text)) {
     case goog.i18n.bidi.Dir.LTR:
-      element.dir = "ltr";
+      "ltr" !== element.dir && (element.dir = "ltr");
       break;
     case goog.i18n.bidi.Dir.RTL:
-      element.dir = "rtl";
+      "rtl" !== element.dir && (element.dir = "rtl");
       break;
     default:
       element.removeAttribute("dir");
@@ -8460,6 +8459,14 @@ soy.$$listIndexOf = function(list, val) {
 };
 soy.$$listSlice = function(list, from, to) {
   return null == to ? goog.array.slice(list, from) : goog.array.slice(list, from, to);
+};
+soy.$$numberListSort = function(list) {
+  return goog.array.toArray(list).sort(function(a, b) {
+    return a - b;
+  });
+};
+soy.$$stringListSort = function(list) {
+  return goog.array.toArray(list).sort();
 };
 soy.$$strToAsciiLowerCase = function(s) {
   return goog.array.map(s, soy.$$charToAsciiLowerCase_).join("");

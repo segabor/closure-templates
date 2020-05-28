@@ -20,6 +20,7 @@ import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableSortedSet.toImmutableSortedSet;
 import static com.google.template.soy.passes.CheckTemplateCallsPass.ARGUMENT_TYPE_MISMATCH;
+import static com.google.template.soy.types.SoyTypes.SAFE_PROTO_TO_SANITIZED_TYPE;
 import static java.util.Comparator.naturalOrder;
 import static java.util.stream.Collectors.toList;
 
@@ -41,6 +42,7 @@ import com.google.template.soy.basicfunctions.LegacyObjectMapToMapFunction;
 import com.google.template.soy.basicfunctions.ListSliceMethod;
 import com.google.template.soy.basicfunctions.MapKeysFunction;
 import com.google.template.soy.basicfunctions.MapToLegacyObjectMapFunction;
+import com.google.template.soy.basicfunctions.NumberListSortMethod;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.ErrorReporter.Checkpoint;
 import com.google.template.soy.error.SoyErrorKind;
@@ -1021,6 +1023,10 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         } else if (sourceFunction instanceof ListSliceMethod) {
           // list<T>.slice(...) returns list<T>
           node.setType(node.getBaseExprChild().getType());
+        } else if (sourceFunction instanceof NumberListSortMethod) {
+          // list<T>.sort() returns list<T>
+          // The sort() method only supports lists of number, int, or float.
+          node.setType(node.getBaseExprChild().getType());
         } else {
           node.setType(sourceMethod.getReturnType());
         }
@@ -1503,6 +1509,13 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         node.setType(ErrorType.getInstance());
       } else if (type.getKind() != SoyType.Kind.PROTO) {
         errorReporter.report(node.getSourceLocation(), NOT_A_PROTO_TYPE, protoName, type);
+        node.setType(ErrorType.getInstance());
+      } else if (SAFE_PROTO_TO_SANITIZED_TYPE.containsKey(protoName)) {
+        errorReporter.report(
+            node.getSourceLocation(),
+            TypeNodeConverter.SAFE_PROTO_TYPE,
+            SAFE_PROTO_TO_SANITIZED_TYPE.get(protoName),
+            protoName);
         node.setType(ErrorType.getInstance());
       } else {
         node.setType(type);

@@ -26,6 +26,7 @@ import com.google.template.soy.SoyFileSetParser.CompilationUnitAndKind;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
 import com.google.template.soy.base.internal.SoyFileSupplier;
 import com.google.template.soy.conformance.ValidatedConformanceConfig;
+import com.google.template.soy.css.CssRegistry;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.logging.ValidatedLoggingConfig;
 import com.google.template.soy.passes.CompilerPass;
@@ -43,6 +44,7 @@ import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyMethodSignature;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
 import com.google.template.soy.types.SoyTypeRegistry;
+import com.google.template.soy.types.SoyTypeRegistryBuilder;
 import java.util.Arrays;
 import java.util.List;
 import javax.annotation.Nullable;
@@ -55,7 +57,7 @@ import javax.annotation.Nullable;
 public final class SoyFileSetParserBuilder {
 
   private final ImmutableMap<String, SoyFileSupplier> soyFileSuppliers;
-  private SoyTypeRegistry typeRegistry = new SoyTypeRegistry();
+  private SoyTypeRegistry typeRegistry = SoyTypeRegistryBuilder.create();
   @Nullable private SoyAstCache astCache = null;
   private ErrorReporter errorReporter = ErrorReporter.exploding(); // See #parse for discussion.
   private boolean allowUnboundGlobals;
@@ -222,6 +224,10 @@ public final class SoyFileSetParserBuilder {
 
   public SoyFileSetParserBuilder typeRegistry(SoyTypeRegistry typeRegistry) {
     this.typeRegistry = typeRegistry;
+    return this;
+  }
+
+  public SoyFileSetParserBuilder cssRegistry(CssRegistry cssRegistry) {
     return this;
   }
 

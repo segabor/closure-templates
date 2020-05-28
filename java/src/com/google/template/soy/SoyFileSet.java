@@ -37,6 +37,7 @@ import com.google.template.soy.base.internal.SoyFileSupplier;
 import com.google.template.soy.base.internal.TriState;
 import com.google.template.soy.base.internal.VolatileSoyFileSupplier;
 import com.google.template.soy.conformance.ValidatedConformanceConfig;
+import com.google.template.soy.css.CssRegistry;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyCompilationException;
 import com.google.template.soy.error.SoyError;
@@ -86,6 +87,7 @@ import com.google.template.soy.swiftsrc.internal.SwiftSrcMain;
 import com.google.template.soy.tofu.SoyTofu;
 import com.google.template.soy.tofu.internal.BaseTofu;
 import com.google.template.soy.types.SoyTypeRegistry;
+import com.google.template.soy.types.SoyTypeRegistryBuilder;
 import java.io.File;
 import java.io.IOException;
 import java.net.URL;
@@ -140,7 +142,7 @@ public final class SoyFileSet {
     private SoyGeneralOptions lazyGeneralOptions = null;
 
     /** The SoyProtoTypeProvider builder that will be built for local type registry. */
-    private final SoyTypeRegistry.Builder typeRegistryBuilder = new SoyTypeRegistry.Builder();
+    private final SoyTypeRegistryBuilder typeRegistryBuilder = new SoyTypeRegistryBuilder();
 
     @Nullable private Appendable warningSink;
 
@@ -150,7 +152,7 @@ public final class SoyFileSet {
 
     private ImmutableList<File> pluginRuntimeJars = ImmutableList.of();
 
-    private ImmutableList<File> cssSummaries = ImmutableList.of();
+    private CssRegistry cssRegistry = CssRegistry.create(ImmutableSet.of(), ImmutableMap.of());
 
     private boolean skipPluginValidation = false;
 
@@ -231,7 +233,7 @@ public final class SoyFileSet {
           pluginRuntimeJars,
           skipPluginValidation,
           optimize,
-          cssSummaries);
+          cssRegistry);
     }
 
     /** Adds one {@link SoySourceFunction} to the functions used by this SoyFileSet. */
@@ -573,8 +575,8 @@ public final class SoyFileSet {
       return this;
     }
 
-    Builder setCssSummaries(List<File> cssSummaries) {
-      this.cssSummaries = ImmutableList.copyOf(cssSummaries);
+    public Builder setCssRegistry(CssRegistry cssRegistry) {
+      this.cssRegistry = cssRegistry;
       return this;
     }
 
@@ -602,7 +604,7 @@ public final class SoyFileSet {
   private final ValidatedConformanceConfig conformanceConfig;
   private final ValidatedLoggingConfig loggingConfig;
   private final ImmutableList<File> pluginRuntimeJars;
-  private final ImmutableList<File> cssSummaries;
+  private final CssRegistry cssRegistry;
 
   private final ImmutableList<SoyFunction> soyFunctions;
   private final ImmutableList<SoyPrintDirective> printDirectives;
@@ -635,7 +637,7 @@ public final class SoyFileSet {
       ImmutableList<File> pluginRuntimeJars,
       boolean skipPluginValidation,
       boolean optimize,
-      ImmutableList<File> cssSummaries) {
+      CssRegistry cssRegistry) {
     this.scopedData = apiCallScopeProvider;
     this.typeRegistry = typeRegistry;
     this.soyFileSuppliers = soyFileSuppliers;
@@ -652,7 +654,7 @@ public final class SoyFileSet {
     this.pluginRuntimeJars = pluginRuntimeJars;
     this.skipPluginValidation = skipPluginValidation;
     this.optimize = optimize;
-    this.cssSummaries = cssSummaries;
+    this.cssRegistry = cssRegistry;
   }
 
   /** Returns the list of suppliers for the input Soy files. For testing use only! */
@@ -1200,7 +1202,7 @@ public final class SoyFileSet {
         .setCache(cache)
         .setSoyFileSuppliers(soyFileSuppliers)
         .setCompilationUnits(compilationUnits)
-        .setCssSummaries(cssSummaries)
+        .setCssRegistry(cssRegistry)
         .setTypeRegistry(typeRegistry)
         .setPassManager(builder.setTypeRegistry(typeRegistry).build())
         .setErrorReporter(errorReporter)

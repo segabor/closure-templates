@@ -246,17 +246,6 @@ goog.TRUSTED_SITE = goog.define('goog.TRUSTED_SITE', true);
 
 
 /**
- * @define {boolean} Whether a project is expected to be running in strict mode.
- *
- * This define can be used to trigger alternate implementations compatible with
- * running in EcmaScript Strict mode or warn about unavailable functionality.
- * @see https://goo.gl/PudQ4y
- *
- */
-goog.STRICT_MODE_COMPATIBLE = goog.define('goog.STRICT_MODE_COMPATIBLE', false);
-
-
-/**
  * @define {boolean} Whether code that calls {@link goog.setTestOnly} should
  *     be disallowed in the compilation unit.
  */
@@ -9338,10 +9327,14 @@ goog.i18n.bidi.setElementDirByTextDirectionality = function(element, text) {
   const htmlElement = /** @type {!HTMLElement} */ (element);
   switch (goog.i18n.bidi.estimateDirection(text)) {
     case (goog.i18n.bidi.Dir.LTR):
-      htmlElement.dir = 'ltr';
+      if (htmlElement.dir !== 'ltr') {
+        htmlElement.dir = 'ltr';
+      }
       break;
     case (goog.i18n.bidi.Dir.RTL):
-      htmlElement.dir = 'rtl';
+      if (htmlElement.dir !== 'rtl') {
+        htmlElement.dir = 'rtl';
+      }
       break;
     default:
       // Default for no direction, inherit from document.
@@ -42203,6 +42196,27 @@ soy.$$listIndexOf = function(list, val) {
 soy.$$listSlice = function(list, from, to) {
   return to == null ? goog.array.slice(list, from) :
                       goog.array.slice(list, from, to);
+};
+
+
+/**
+ * Sorts a list of numbers in numerical order.
+ * @param {!IArrayLike<T>} list
+ * @return {!Array<T>}
+ * @template T extends number
+ */
+soy.$$numberListSort = function(list) {
+  return goog.array.toArray(list).sort((a, b) => a - b);
+};
+
+
+/**
+ * Sorts a list of strings in lexicographic order.
+ * @param {!IArrayLike<string>} list
+ * @return {!Array<string>}
+ */
+soy.$$stringListSort = function(list) {
+  return goog.array.toArray(list).sort();
 };
 
 
