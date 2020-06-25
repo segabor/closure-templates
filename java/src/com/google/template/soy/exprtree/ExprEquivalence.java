@@ -150,6 +150,11 @@ public final class ExprEquivalence {
         }
 
         @Override
+        protected Integer visitTemplateLiteralNode(TemplateLiteralNode node) {
+          return node.getResolvedName().hashCode();
+        }
+
+        @Override
         protected Integer visitBooleanNode(BooleanNode node) {
           return Booleans.hashCode(node.getValue());
         }
@@ -276,6 +281,15 @@ public final class ExprEquivalence {
       return mapLiteralFields(node).equals(mapLiteralFields((MapLiteralNode) other));
     }
 
+    /**
+     * As seen above in the hash implementation, two list comprehension nodes can only be equivalent
+     * if they are the exact same object.
+     */
+    @Override
+    protected Boolean visitListComprehensionNode(ListComprehensionNode node) {
+      return node == other;
+    }
+
     // literals
 
     @Override
@@ -293,6 +307,12 @@ public final class ExprEquivalence {
       return node.getId().equals(otherNode.getId())
           && node.getName().equals(otherNode.getName())
           && node.getType().toString().equals(otherNode.getType().toString());
+    }
+
+    @Override
+    protected Boolean visitTemplateLiteralNode(TemplateLiteralNode node) {
+      TemplateLiteralNode otherNode = (TemplateLiteralNode) other;
+      return node.getResolvedName().equals(otherNode.getResolvedName());
     }
 
     @Override

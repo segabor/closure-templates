@@ -20,7 +20,6 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.template.soy.types.SoyTypes.SAFE_PROTO_TO_SANITIZED_TYPE;
 
 import com.google.common.base.Function;
-import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -39,6 +38,7 @@ import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyType.Kind;
 import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.TemplateType;
+import com.google.template.soy.types.UnknownType;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -138,10 +138,13 @@ public final class TypeNodeConverter
 
   private final ErrorReporter errorReporter;
   private final SoyTypeRegistry typeRegistry;
+  private final boolean disableAllTypeChecking;
 
-  public TypeNodeConverter(ErrorReporter errorReporter, SoyTypeRegistry typeRegistry) {
-    this.errorReporter = Preconditions.checkNotNull(errorReporter);
-    this.typeRegistry = Preconditions.checkNotNull(typeRegistry);
+  public TypeNodeConverter(
+      ErrorReporter errorReporter, SoyTypeRegistry typeRegistry, boolean disableAllTypeChecking) {
+    this.errorReporter = errorReporter;
+    this.typeRegistry = typeRegistry;
+    this.disableAllTypeChecking = disableAllTypeChecking;
   }
 
   /**
@@ -170,14 +173,19 @@ public final class TypeNodeConverter
             MISSING_GENERIC_TYPE_PARAMETERS,
             name,
             genericType.formatNumTypeParams());
+        type = ErrorType.getInstance();
       } else {
-        errorReporter.report(
-            node.sourceLocation(),
-            UNKNOWN_TYPE,
-            name,
-            SoyErrors.getDidYouMeanMessage(typeRegistry.getAllSortedTypeNames(), name));
+        if (disableAllTypeChecking) {
+          type = UnknownType.getInstance();
+        } else {
+          errorReporter.report(
+              node.sourceLocation(),
+              UNKNOWN_TYPE,
+              name,
+              SoyErrors.getDidYouMeanMessage(typeRegistry.getAllSortedTypeNames(), name));
+          type = ErrorType.getInstance();
+        }
       }
-      type = ErrorType.getInstance();
     }
     node.setResolvedType(type);
     return type;
@@ -250,15 +258,17 @@ public final class TypeNodeConverter
 
   @Override
   public SoyType visit(TemplateTypeNode node) {
-    Map<String, TemplateType.Argument> map = new LinkedHashMap<>();
-    for (TemplateTypeNode.Argument argument : node.arguments()) {
-      TemplateType.Argument oldArgument =
+    Map<String, TemplateType.Parameter> map = new LinkedHashMap<>();
+    for (TemplateTypeNode.Parameter parameter : node.parameters()) {
+      TemplateType.Parameter oldParameter =
           map.put(
-              argument.name(),
-              TemplateType.argumentOf(argument.name(), argument.type().accept(this)));
-      if (oldArgument != null) {
-        errorReporter.report(argument.nameLocation(), DUPLICATE_TEMPLATE_ARGUMENT, argument.name());
-        map.put(argument.name(), oldArgument);
+              parameter.name(),
+              TemplateType.Parameter.create(
+                  parameter.name(), parameter.type().accept(this), true /* isRequired */));
+      if (oldParameter != null) {
+        errorReporter.report(
+            parameter.nameLocation(), DUPLICATE_TEMPLATE_ARGUMENT, parameter.name());
+        map.put(parameter.name(), oldParameter);
       }
     }
     SoyType returnType = node.returnType().accept(this);
@@ -266,7 +276,8 @@ public final class TypeNodeConverter
     if (!ALLOWED_TEMPLATE_RETURN_TYPES.contains(returnType.getKind())) {
       errorReporter.report(node.returnType().sourceLocation(), INVALID_TEMPLATE_RETURN_TYPE);
     }
-    SoyType type = typeRegistry.getOrCreateTemplateType(map.values(), returnType);
+    SoyType type =
+        typeRegistry.internTemplateType(TemplateType.declaredTypeOf(map.values(), returnType));
     node.setResolvedType(type);
     return type;
   }

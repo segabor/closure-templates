@@ -16,17 +16,19 @@
 
 package com.google.template.soy.types;
 
-import static com.google.common.collect.Streams.stream;
 import static java.util.Comparator.comparingInt;
+import static java.util.Comparator.naturalOrder;
 
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.ImmutableSetMultimap;
+import com.google.common.collect.Iterables;
 import com.google.common.collect.MultimapBuilder;
 import com.google.common.collect.SetMultimap;
-import com.google.common.collect.Streams;
 import com.google.protobuf.DescriptorProtos.FileDescriptorProto;
 import com.google.protobuf.DescriptorProtos.FileDescriptorSet;
 import com.google.protobuf.Descriptors.Descriptor;
@@ -128,20 +130,20 @@ public final class SoyTypeRegistryBuilder {
       String requestor,
       String name,
       Map<String, FileDescriptor> descriptors,
-      Map<String, FileDescriptorProto> protos)
+      Map<String, FileDescriptorProto> nameToProtos)
       throws DescriptorValidationException {
     FileDescriptor file = descriptors.get(name);
     if (file != null) {
       return file;
     }
-    FileDescriptorProto proto = protos.get(name);
+    FileDescriptorProto proto = nameToProtos.get(name);
     if (proto == null) {
       throw new IllegalStateException(
           "Cannot find proto descriptor for " + name + " which is a dependency of " + requestor);
     }
     FileDescriptor[] deps = new FileDescriptor[proto.getDependencyCount()];
     for (int i = 0; i < proto.getDependencyCount(); i++) {
-      deps[i] = buildDescriptor(name, proto.getDependency(i), descriptors, protos);
+      deps[i] = buildDescriptor(name, proto.getDependency(i), descriptors, nameToProtos);
     }
     file = FileDescriptor.buildFrom(proto, deps);
     descriptors.put(name, file);
@@ -160,7 +162,8 @@ public final class SoyTypeRegistryBuilder {
     return new ProtoSoyTypeRegistry(
         base,
         ImmutableMap.copyOf(visitor.descriptors),
-        ImmutableSetMultimap.copyOf(visitor.extensions));
+        ImmutableSetMultimap.copyOf(visitor.extensions),
+        ImmutableSet.copyOf(visitor.files));
   }
 
   /** Walks a descriptor tree to build the descriptors, and extensions maps. */
@@ -175,6 +178,7 @@ public final class SoyTypeRegistryBuilder {
                 comparingInt(FieldDescriptor::getNumber)
                     .thenComparing(left -> left.getContainingType().getFullName()))
             .build();
+    final Set<FileDescriptor> files = new HashSet<>();
 
     /**
      * Collect all enum, message, and extension descriptors referenced by the given descriptor
@@ -207,6 +211,7 @@ public final class SoyTypeRegistryBuilder {
       if (!shouldVisitDescriptor(fileDescriptor, onlyVisitingFiles)) {
         return;
       }
+      files.add(fileDescriptor);
       visitFiles(fileDescriptor.getDependencies(), onlyVisitingFiles);
       // disable exploring dependencies when visiting all declarations in a file. Because we have
       // already visited all the file level dependencies we don't need to do more explorations
@@ -295,7 +300,9 @@ public final class SoyTypeRegistryBuilder {
     }
   }
 
-  private static class ProtoSoyTypeRegistry extends DelegatingSoyTypeRegistry {
+  /** The standard implementation of SoyTypeRegistry, which supports protobuf types. */
+  public static class ProtoSoyTypeRegistry extends DelegatingSoyTypeRegistry
+      implements TypeRegistry.ProtoRegistry {
 
     /**
      * Map of SoyTypes that have been created from the type descriptors. Gets filled in lazily as
@@ -320,16 +327,43 @@ public final class SoyTypeRegistryBuilder {
     /** Map of all the protobuf type descriptors that we've discovered. */
     private final ImmutableMap<String, GenericDescriptor> descriptors;
 
+    /** All of the known type names for this registry (including its delegate), sorted. */
+    private final Iterable<String> allSortedTypeNames;
+
+    /**
+     * Map of the first dotted prefix in a type to its full type name (e.g. "foo." ->
+     * "foo.bar.Baz"). Used to check for namespace conflicts in {@link ValidateAliasesPass}.
+     */
+    private final ImmutableMap<String, String> prefixesToTypeNames;
+
     /* Multimap of all known extensions of a given proto */
     private final ImmutableSetMultimap<String, FieldDescriptor> extensions;
+
+    private final ImmutableSet<FileDescriptor> fileDescriptors;
 
     public ProtoSoyTypeRegistry(
         SoyTypeRegistry delegate,
         ImmutableMap<String, GenericDescriptor> descriptors,
-        ImmutableSetMultimap<String, FieldDescriptor> extensions) {
+        ImmutableSetMultimap<String, FieldDescriptor> extensions,
+        ImmutableSet<FileDescriptor> fileDescriptors) {
       super(delegate);
       this.descriptors = descriptors;
+
+      this.allSortedTypeNames =
+          Iterables.mergeSorted(
+              ImmutableList.of(
+                  super.getAllSortedTypeNames(), ImmutableList.sortedCopyOf(descriptors.keySet())),
+              naturalOrder());
+
+      prefixesToTypeNames = getPrefixToTypeNamesMap(allSortedTypeNames);
+
       this.extensions = extensions;
+      this.fileDescriptors = fileDescriptors;
+    }
+
+    @Override
+    public ImmutableSet<FileDescriptor> getFileDescriptors() {
+      return fileDescriptors;
     }
 
     @Nullable
@@ -347,22 +381,33 @@ public final class SoyTypeRegistryBuilder {
 
     @Override
     public String findTypeWithMatchingNamespace(String prefix) {
-      prefix = prefix + ".";
-      // This must be sorted so that errors are deterministic, or we'll break integration tests.
-      for (String name : getAllSortedTypeNames()) {
-        if (name.startsWith(prefix)) {
-          return name;
-        }
-      }
-      return null;
+      return prefixesToTypeNames.get(prefix + ".");
     }
 
     @Override
     public Iterable<String> getAllSortedTypeNames() {
-      return () ->
-          Streams.concat(stream(super.getAllSortedTypeNames()), descriptors.keySet().stream())
-              .sorted()
-              .iterator();
+      return allSortedTypeNames;
+    }
+
+    /**
+     * Takes a list of fully qualified type names (e.g. "foo.bar.Baz"), and returns a map of the
+     * first dotted prefix to each full name (e.g. "foo." -> "foo.bar.Baz"). If multiple types have
+     * the same prefix, the map will store the first one.
+     */
+    private static ImmutableMap<String, String> getPrefixToTypeNamesMap(
+        Iterable<String> fullTypeNames) {
+      Map<String, String> prefixesToTypeNamesBuilder = new HashMap<>();
+      for (String typeName : fullTypeNames) {
+        String prefix = typeName;
+        int indexOfFirstDot = typeName.indexOf(".");
+        // If there was no dot, or a dot was the last char, return the whole string.
+        // Otherwise, return "foo." in "foo.bar.baz".
+        if (indexOfFirstDot >= 0 && indexOfFirstDot < typeName.length() - 1) {
+          prefix = typeName.substring(0, indexOfFirstDot + 1);
+        }
+        prefixesToTypeNamesBuilder.computeIfAbsent(prefix, key -> typeName);
+      }
+      return ImmutableMap.copyOf(prefixesToTypeNamesBuilder);
     }
   }
 }

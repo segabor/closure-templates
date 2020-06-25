@@ -31,6 +31,7 @@ import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableListMultimap;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.base.SourceLocation;
@@ -294,14 +295,14 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       SoyErrorKind.of(
           "Could not find logging configuration for this element.{0}",
           StyleAllowance.NO_PUNCTUATION);
+  private static final SoyErrorKind TEMPLATE_TYPE_PARAMETERS_CANNOT_USE_INFERRED_TYPES =
+      SoyErrorKind.of(
+          "Template type parameters cannot be inferred. Instead, explicitly declare the type.");
 
   private final ErrorReporter errorReporter;
-  /** Type registry. */
-  private final SoyTypeRegistry typeRegistry;
 
   private final ValidatedLoggingConfig loggingConfig;
   private final SoyMethod.Registry methodRegistry;
-  private final TypeNodeConverter typeNodeConverter;
   /** Cached map that converts a string representation of types to actual soy types. */
   private final Map<Signature, ResolvedSignature> signatureMap = new HashMap<>();
 
@@ -309,25 +310,27 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
   private TypeSubstitution substitutions;
 
   private ExprEquivalence exprEquivalence;
+  private SoyTypeRegistry typeRegistry;
+  private TypeNodeConverter typeNodeConverter;
 
   ResolveExpressionTypesPass(
-      SoyTypeRegistry typeRegistry,
       ErrorReporter errorReporter,
       ValidatedLoggingConfig loggingConfig,
       PluginResolver pluginResolver) {
     this.errorReporter = errorReporter;
-    this.typeRegistry = typeRegistry;
     this.loggingConfig = loggingConfig;
     this.methodRegistry =
         new CompositeMethodRegistry(
             ImmutableList.of(BuiltinMethod.REGISTRY, new PluginMethodRegistry(pluginResolver)));
-    this.typeNodeConverter = new TypeNodeConverter(errorReporter, typeRegistry);
   }
 
   @Override
   public void run(SoyFileNode file, IdGenerator nodeIdGen) {
     substitutions = null; // make sure substitutions don't leak across files
     exprEquivalence = new ExprEquivalence();
+    typeRegistry = file.getSoyTypeRegistry();
+    typeNodeConverter =
+        new TypeNodeConverter(errorReporter, typeRegistry, /* disableAllTypeChecking= */ false);
     new TypeAssignmentSoyVisitor().exec(file);
   }
 
@@ -393,7 +396,11 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
           SoyType actualType = headerVar.defaultValue().getRoot().getType();
           if (headerVar.getTypeNode() != null) {
             SoyType declaredType = headerVar.type();
-            if (!declaredType.isAssignableFrom(actualType)) {
+            // Validation for template types happens later, it's intentional that it is not
+            // assignable at this stage in parsing.
+            if (!declaredType.isAssignableFrom(actualType)
+                && !(declaredType.getKind() == SoyType.Kind.TEMPLATE
+                    && actualType.getKind() == SoyType.Kind.NAMED_TEMPLATE)) {
               errorReporter.report(
                   headerVar.defaultValue().getSourceLocation(),
                   DECLARED_DEFAULT_TYPE_MISMATCH,
@@ -1673,6 +1680,14 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
 
     @Override
     protected void visitTemplateLiteralNode(TemplateLiteralNode node) {
+      // Template literals are not legal as default values without a declared type. This is because
+      // we don't have enough information to resolve the type at the time this pass is run. For
+      // example, two templates may have each other as default parameters, which would create a
+      // circular dependency for the type resolution.
+      if (isDefaultInitializerForInferredParam) {
+        errorReporter.report(
+            node.getSourceLocation(), TEMPLATE_TYPE_PARAMETERS_CANNOT_USE_INFERRED_TYPES);
+      }
       // Template literal nodes are instantiated with a temporary type because we don't have enough
       // information to give them a type at the time this pass is run -- we need to know the
       // signature of the referenced template. The type is resolved and checked in a later pass.
@@ -2062,8 +2077,18 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
           break;
         case TO_FLOAT: // is added to the AST after this pass
         case REMAINDER:
-        case MSG_WITH_ID: // should have already been removed from the tree
-          throw new AssertionError();
+          node.setType(IntType.getInstance());
+          break;
+        case MSG_WITH_ID:
+          node.setType(
+              RecordType.of(
+                  ImmutableMap.of(
+                      "id",
+                      StringType.getInstance(),
+                      "msg",
+                      node.numChildren() > 0
+                          ? node.getChild(0).getType()
+                          : UnknownType.getInstance())));
       }
     }
 

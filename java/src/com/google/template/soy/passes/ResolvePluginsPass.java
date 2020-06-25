@@ -32,7 +32,6 @@ import com.google.template.soy.soytree.PrintNode;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.types.SoyType;
-import com.google.template.soy.types.SoyTypeRegistry;
 import java.util.Optional;
 
 /**
@@ -47,14 +46,13 @@ final class ResolvePluginsPass implements CompilerFilePass {
               + " ''{1}''.");
 
   private final PluginResolver resolver;
-  private final SoyTypeRegistry typeRegistry;
   private final ErrorReporter errorReporter;
+  private final boolean rewritePlugins;
 
-  ResolvePluginsPass(
-      PluginResolver resolver, SoyTypeRegistry typeRegistry, ErrorReporter errorReporter) {
+  ResolvePluginsPass(PluginResolver resolver, ErrorReporter errorReporter, boolean rewritePlugins) {
     this.resolver = resolver;
-    this.typeRegistry = typeRegistry;
     this.errorReporter = errorReporter;
+    this.rewritePlugins = rewritePlugins;
   }
 
   @Override
@@ -65,8 +63,8 @@ final class ResolvePluginsPass implements CompilerFilePass {
       if (function.numChildren() == 0) {
         String name = function.getFunctionName();
         Identifier resolvedName =
-            file.resolveAlias(Identifier.create(name, function.getSourceLocation()));
-        SoyType type = typeRegistry.getType(resolvedName.identifier());
+            file.resolveAlias(Identifier.create(name, function.getFunctionNameLocation()));
+        SoyType type = file.getSoyTypeRegistry().getType(resolvedName.identifier());
         if (type != null && type.getKind() == SoyType.Kind.PROTO) {
           ProtoInitNode protoInit =
               new ProtoInitNode(resolvedName, ImmutableList.of(), function.getSourceLocation());
@@ -90,7 +88,9 @@ final class ResolvePluginsPass implements CompilerFilePass {
       Optional<SoySourceFunction> aliasedFunction =
           resolver.getFunctionCallableAsPrintDirective(name, directiveNode.getSourceLocation());
       if (aliasedFunction.isPresent()) {
-        rewritePrintDirectiveAsFunction(directiveNode, aliasedFunction.get());
+        if (rewritePlugins) {
+          rewritePrintDirectiveAsFunction(directiveNode, aliasedFunction.get());
+        }
       } else {
         directiveNode.setPrintDirective(
             resolver.lookupPrintDirective(

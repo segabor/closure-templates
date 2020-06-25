@@ -152,7 +152,7 @@ public final class SoyFileSet {
 
     private ImmutableList<File> pluginRuntimeJars = ImmutableList.of();
 
-    private CssRegistry cssRegistry = CssRegistry.create(ImmutableSet.of(), ImmutableMap.of());
+    private Optional<CssRegistry> cssRegistry = Optional.empty();
 
     private boolean skipPluginValidation = false;
 
@@ -576,7 +576,7 @@ public final class SoyFileSet {
     }
 
     public Builder setCssRegistry(CssRegistry cssRegistry) {
-      this.cssRegistry = cssRegistry;
+      this.cssRegistry = Optional.of(cssRegistry);
       return this;
     }
 
@@ -604,7 +604,7 @@ public final class SoyFileSet {
   private final ValidatedConformanceConfig conformanceConfig;
   private final ValidatedLoggingConfig loggingConfig;
   private final ImmutableList<File> pluginRuntimeJars;
-  private final CssRegistry cssRegistry;
+  private final Optional<CssRegistry> cssRegistry;
 
   private final ImmutableList<SoyFunction> soyFunctions;
   private final ImmutableList<SoyPrintDirective> printDirectives;
@@ -637,7 +637,7 @@ public final class SoyFileSet {
       ImmutableList<File> pluginRuntimeJars,
       boolean skipPluginValidation,
       boolean optimize,
-      CssRegistry cssRegistry) {
+      Optional<CssRegistry> cssRegistry) {
     this.scopedData = apiCallScopeProvider;
     this.typeRegistry = typeRegistry;
     this.soyFileSuppliers = soyFileSuppliers;
@@ -710,13 +710,12 @@ public final class SoyFileSet {
     return entryPoint(
         () -> {
           ParseResult result = parseForGenJava();
+          throwIfErrorsPresent();
           TemplateRegistry registry = result.registry();
           SoyFileSetNode soyTree = result.fileSet();
-          throwIfErrorsPresent();
 
           // Generate template invocation builders for the soy tree.
-          return new GenInvocationBuildersVisitor(javaPackage, registry, typeRegistry)
-              .exec(soyTree);
+          return new GenInvocationBuildersVisitor(javaPackage, registry).exec(soyTree);
         });
   }
 
@@ -784,14 +783,13 @@ public final class SoyFileSet {
           // SoyConformance pass.
           parse(
               passManagerBuilder()
-                  // We have to set disableAllTypeChecking to make sure default parameter types
-                  // don't break calculating TemplateMetadata objects.  This is because
-                  // SoyConformancePass runs before ResolveExpressionTypesPass which normally
-                  // populates the parameter types for default params.  With disableAllTypeChecking
-                  // set an earlier pass will just set those types to unknown
-                  // TODO(lukes):  change the pass continuation mechanism to avoid generating a
-                  // template registry if we halt prior to cross template passes.
-                  .disableAllTypeChecking()
+                  // TODO(lukes): kill the pass continuation mechanism
+                  .allowUnknownGlobals()
+                  .allowUnknownJsGlobals()
+                  .allowV1Expression()
+                  .desugarHtmlAndStateNodes(false)
+                  .optimize(false)
+                  .addHtmlAttributesForDebugging(false)
                   .addPassContinuationRule(
                       SoyConformancePass.class, PassContinuationRule.STOP_AFTER_PASS));
         });
@@ -1151,12 +1149,23 @@ public final class SoyFileSet {
   }
 
   /** Performs enough work to retrieve all possible warnings in a compile. */
-  public ParseResult compileForWarnings() {
+  public ParseResult compileForAnalysis() {
     return entryPoint(
         () -> {
           disallowExternalCalls();
           return parse(
               passManagerBuilder()
+                  // the optimizer mutates the AST heavily which inhibits certain source analysis
+                  // rules.
+                  .optimize(false)
+                  .rewritePlugins(false)
+                  // skip adding extra attributes
+                  .addHtmlAttributesForDebugging(false)
+                  // skip the autoescaper
+                  .insertEscapingDirectives(false)
+                  .desugarHtmlAndStateNodes(false)
+                  // TODO(lukes): other passes should be disabled, basically anything that mutates
+                  // the AST
                   .allowUnknownGlobals()
                   .allowUnknownJsGlobals()
                   .allowV1Expression(),
@@ -1215,6 +1224,7 @@ public final class SoyFileSet {
         .setGeneralOptions(generalOptions)
         .optimize(optimize)
         .setSoyPrintDirectives(printDirectives)
+        .setCssRegistry(cssRegistry)
         .setErrorReporter(errorReporter)
         .setConformanceConfig(conformanceConfig)
         .setLoggingConfig(loggingConfig)

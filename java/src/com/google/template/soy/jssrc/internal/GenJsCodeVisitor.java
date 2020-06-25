@@ -104,7 +104,6 @@ import com.google.template.soy.soytree.TemplateDelegateNode;
 import com.google.template.soy.soytree.TemplateElementNode;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
-import com.google.template.soy.soytree.TemplateSignature;
 import com.google.template.soy.soytree.VeLogNode;
 import com.google.template.soy.soytree.Visibility;
 import com.google.template.soy.soytree.defn.TemplateParam;
@@ -399,6 +398,11 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     addJsDocToRequireDelTemplates(jsDocBuilder, node);
     addCodeToRequireCss(jsDocBuilder, node);
     jsDocBuilder.addAnnotation("public");
+    // TODO(b/157149103) Enable this either by migrating SoyJS to goog.module or conditionally
+    // using aliases when possible.
+    if (jsSrcOptions.shouldGenerateGoogModules()) {
+      jsDocBuilder.addParameterizedAnnotation("suppress", "missingRequire");
+    }
     file.append(jsDocBuilder.build());
     file.append("\n\n");
 
@@ -493,7 +497,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
   private static void addCodeToRequireCss(JsDoc.Builder header, SoyFileNode soyFile) {
 
     SortedSet<String> requiredCssNamespaces = new TreeSet<>();
-    requiredCssNamespaces.addAll(soyFile.getRequiredCssNamespaces());
+    requiredCssNamespaces.addAll(soyFile.getRequireCss());
     for (TemplateNode template : soyFile.getTemplates()) {
       requiredCssNamespaces.addAll(template.getRequiredCssNamespaces());
     }
@@ -1484,9 +1488,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     // Also note that indirect param types may not be inferrable if the target
     // is not in the current compilation file set.
     IndirectParamsInfo ipi =
-        new IndirectParamsCalculator(templateRegistry)
-            .calculateIndirectParams(
-                TemplateSignature.fromTemplateMetadata(templateRegistry.getMetadata(node)));
+        new IndirectParamsCalculator(templateRegistry).calculateIndirectParams(node);
     // If there are any calls outside of the file set, then we can't know
     // the complete types of any indirect params. In such a case, we can simply
     // omit the indirect params from the function type signature, since record

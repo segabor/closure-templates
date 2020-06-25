@@ -58,16 +58,25 @@ import com.google.template.soy.soytree.defn.LocalVar;
  *   <li>{@code msgWithId} will return a record of the id and the msg text which is slightly more
  *       usable.
  * </ul>
- *
- * <p>Must run after the ResolveNamesPass and the CheckNonEmptyMsgNodesPass since we depend on
- * finding local variable definitions and empty message nodes don't have valid ids. Should run
- * before ResolveExpressionTypesPass so that we don't need to worry about assigning types here.
  */
+@RunAfter({
+  ResolveNamesPass.class, // depends on looking up definitions from names
+  CheckNonEmptyMsgNodesPass.class, // depends on calculating ids and empty msg nodes don't have them
+})
+@RunBefore({
+  ResolveExpressionTypesPass
+      .class, // so we don't need to worry about assigning types to our synthetic expressions
+})
 final class MsgWithIdFunctionPass implements CompilerFilePass {
   private static final SoyErrorKind MSG_VARIABLE_NOT_IN_SCOPE =
       SoyErrorKind.of(
           "Function ''{0}'' must take a let variable containing a single msg "
               + "as its only argument.{1}",
+          StyleAllowance.NO_PUNCTUATION);
+
+  private static final SoyErrorKind ALTERNATE_ID_NOT_ALLOWED =
+      SoyErrorKind.of(
+          "Messages with alternate ids are not allowed to use function ''{0}''.{1}",
           StyleAllowance.NO_PUNCTUATION);
 
   private final ErrorReporter errorReporter;
@@ -87,17 +96,17 @@ final class MsgWithIdFunctionPass implements CompilerFilePass {
       }
       ExprNode msgVariable = fn.getChild(0);
       if (!(msgVariable instanceof VarRefNode)) {
-        badFunctionCall(fn, " It is not a variable.");
+        badFunctionCall(fn, MSG_VARIABLE_NOT_IN_SCOPE, " It is not a variable.");
         continue;
       }
       VarDefn defn = ((VarRefNode) msgVariable).getDefnDecl();
       if (!(defn instanceof LocalVar)) {
-        badFunctionCall(fn, " It is not a let variable.");
+        badFunctionCall(fn, MSG_VARIABLE_NOT_IN_SCOPE, " It is not a let variable.");
         continue;
       }
       LocalVarNode declaringNode = ((LocalVar) defn).declaringNode();
       if (!(declaringNode instanceof LetContentNode)) {
-        badFunctionCall(fn, " It is not a let.");
+        badFunctionCall(fn, MSG_VARIABLE_NOT_IN_SCOPE, " It is not a let.");
         continue;
       }
       LetContentNode letNode = (LetContentNode) declaringNode;
@@ -109,28 +118,29 @@ final class MsgWithIdFunctionPass implements CompilerFilePass {
           if (fallbackGroupNode == null) {
             fallbackGroupNode = (MsgFallbackGroupNode) child;
           } else {
-            badFunctionCall(fn, " There is more than one msg.");
+            badFunctionCall(fn, MSG_VARIABLE_NOT_IN_SCOPE, " There is more than one msg.");
             continue outer;
           }
         } else {
-          badFunctionCall(fn, " There is a non-msg child of the let.");
+          badFunctionCall(fn, MSG_VARIABLE_NOT_IN_SCOPE, " There is a non-msg child of the let.");
           continue outer;
         }
       }
       if (fallbackGroupNode == null) {
-        badFunctionCall(fn, " There was no msg in the referenced let.");
+        badFunctionCall(fn, MSG_VARIABLE_NOT_IN_SCOPE, " There was no msg in the referenced let.");
+        continue;
+      }
+      if (fallbackGroupNode.getMsg().getAlternateId().isPresent()) {
+        badFunctionCall(fn, ALTERNATE_ID_NOT_ALLOWED, "");
         continue;
       }
       handleMsgIdCall(fn, fallbackGroupNode);
     }
   }
 
-  private void badFunctionCall(FunctionNode fn, String explanation) {
+  private void badFunctionCall(FunctionNode fn, SoyErrorKind errorKind, String explanation) {
     errorReporter.report(
-        fn.getChild(0).getSourceLocation(),
-        MSG_VARIABLE_NOT_IN_SCOPE,
-        fn.getFunctionName(),
-        explanation);
+        fn.getChild(0).getSourceLocation(), errorKind, fn.getFunctionName(), explanation);
 
     // this way we don't trigger a cascade of errors about incorrect types
     RecordLiteralNode recordLiteral =

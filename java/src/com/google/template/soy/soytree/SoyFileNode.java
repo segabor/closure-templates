@@ -17,13 +17,15 @@
 package com.google.template.soy.soytree;
 
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.basetree.CopyState;
-import com.google.template.soy.soytree.SoyNode.Kind;
+import com.google.template.soy.soytree.ImportsContext.ImportsTemplateRegistry;
 import com.google.template.soy.soytree.SoyNode.SplitLevelTopNode;
 import com.google.template.soy.soytree.TemplateNode.SoyFileHeaderInfo;
+import com.google.template.soy.types.SoyTypeRegistry;
 import javax.annotation.Nullable;
 
 /**
@@ -47,6 +49,8 @@ public final class SoyFileNode extends AbstractParentSoyNode<SoyNode>
 
   private final ImmutableList<Comment> comments;
 
+  private ImportsContext importsContext;
+
   /**
    * @param id The id for this node.
    * @param sourceLocation The source location of the file.
@@ -66,6 +70,7 @@ public final class SoyFileNode extends AbstractParentSoyNode<SoyNode>
     this.namespaceDeclaration = namespaceDeclaration; // Immutable
     this.aliasDeclarations = headerInfo.getAliases(); // immutable
     this.comments = comments;
+    this.importsContext = new ImportsContext();
   }
 
   /**
@@ -80,6 +85,9 @@ public final class SoyFileNode extends AbstractParentSoyNode<SoyNode>
     this.aliasDeclarations = orig.aliasDeclarations; // immutable
     this.headerInfo = orig.headerInfo.copy();
     this.comments = orig.comments;
+    // Imports context must be reset during edit-refresh (can't be set/cached in single file
+    // passes).
+    this.importsContext = new ImportsContext();
   }
 
   @Override
@@ -114,9 +122,25 @@ public final class SoyFileNode extends AbstractParentSoyNode<SoyNode>
     return namespaceDeclaration;
   }
 
-  /** Returns the CSS namespaces required by this file (usable in any template in this file). */
+  /**
+   * Returns the CSS namespaces required by this file (usable in any template in this file).
+   * TODO(b/151775233): This does not include CSS imports that also have css namespaces. To make CSS
+   * collection work, this needs to be augmented.
+   */
   public ImmutableList<String> getRequiredCssNamespaces() {
     return namespaceDeclaration.getRequiredCssNamespaces();
+  }
+
+  /** Returns the CSS namespaces required by this file (usable in any template in this file). */
+  public ImmutableList<String> getRequiredCssPaths() {
+    return namespaceDeclaration.getRequiredCssPaths();
+  }
+
+  public ImmutableList<String> getRequireCss() {
+    return new ImmutableList.Builder<String>()
+        .addAll(getRequiredCssNamespaces())
+        .addAll(getRequiredCssPaths())
+        .build();
   }
 
   /** Returns the CSS base namespace for this file (usable in any template in this file). */
@@ -164,16 +188,39 @@ public final class SoyFileNode extends AbstractParentSoyNode<SoyNode>
 
   /** Resolves a qualified name against the aliases for this file. */
   public Identifier resolveAlias(Identifier identifier) {
-    return headerInfo.resolveAlias(identifier);
+    Preconditions.checkState(
+        importsContext != null, "Called resolveAlias() before ImportsPass was run");
+    return importsContext.resolveAlias(identifier, headerInfo);
   }
 
   public boolean aliasUsed(String alias) {
     return headerInfo.aliasUsed(alias);
   }
 
-  @Override
-  public SourceLocation getSourceLocation() {
-    return super.getSourceLocation();
+  public SoyFileHeaderInfo getHeaderInfo() {
+    return headerInfo;
+  }
+
+  public SoyTypeRegistry getSoyTypeRegistry() {
+    Preconditions.checkState(
+        importsContext != null,
+        "Called getSoyTypeRegistry() before ResolveProtoImportsPass was run.");
+    return importsContext.getTypeRegistry();
+  }
+
+  public ImportsTemplateRegistry getTemplateRegistry() {
+    Preconditions.checkState(
+        importsContext != null,
+        "Called getTemplateRegistry() before ResolveTemplateImportsPass was run.");
+    return importsContext.getTemplateRegistry();
+  }
+
+  public boolean hasTemplateRegistry() {
+    return importsContext.hasTemplateRegistry();
+  }
+
+  public ImportsContext getImportsContext() {
+    return importsContext;
   }
 
   @Override

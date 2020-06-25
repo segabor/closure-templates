@@ -170,10 +170,13 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
     this.escapingDirectives = orig.escapingDirectives;
     this.callKey = orig.callKey;
     this.isPcData = orig.getIsPcData();
+    this.htmlContext = orig.htmlContext;
     this.openTagLocation = orig.openTagLocation;
     this.selfClosing = orig.selfClosing;
     this.attributes =
         orig.attributes.stream().map(c -> c.copy(copyState)).collect(toImmutableList());
+    // we may have handed out a copy to ourselves via genSamenessKey()
+    copyState.updateRefs(orig, this);
   }
 
   /**
@@ -255,11 +258,11 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
   }
 
   @Override
-  public Object genSamenessKey() {
+  public SamenessKey genSamenessKey() {
     // CallNodes are never considered the same placeholder. We return the node instance as the info
     // for determining sameness. Since nodes have identity semantics this will only compare equal
     // to itself.
-    return this;
+    return new IdentitySamenessKey(this);
   }
 
   @Override
@@ -274,7 +277,7 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
 
   @Override
   public ImmutableList<ExprRootNode> getExprList() {
-    if (dataExpr == null & keyExpr == null) {
+    if (dataExpr == null && keyExpr == null) {
       return ImmutableList.of();
     } else if (dataExpr != null && keyExpr != null) {
       return ImmutableList.of(dataExpr, keyExpr);

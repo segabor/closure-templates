@@ -43,20 +43,14 @@ final class ValidateAliasesPass implements CompilerFilePass {
   private static final SoyErrorKind ALIAS_CONFLICTS_WITH_VE =
       SoyErrorKind.of("Alias ''{0}'' conflicts with a VE of the same name.");
 
-  private static final SoyErrorKind ALIAS_NEVER_USED =
-      SoyErrorKind.of("Alias ''{0}'' is never referenced in this file. Please remove it.");
-
-  private final SoyTypeRegistry registry;
   private final ErrorReporter errorReporter;
   private final SoyGeneralOptions options;
   private final ValidatedLoggingConfig loggingConfig;
 
   ValidateAliasesPass(
-      SoyTypeRegistry registry,
       ErrorReporter errorReporter,
       SoyGeneralOptions options,
       ValidatedLoggingConfig loggingConfig) {
-    this.registry = registry;
     this.errorReporter = errorReporter;
     this.options = options;
     this.loggingConfig = loggingConfig;
@@ -64,12 +58,8 @@ final class ValidateAliasesPass implements CompilerFilePass {
 
   @Override
   public void run(SoyFileNode file, IdGenerator nodeIdGen) {
+    SoyTypeRegistry registry = file.getSoyTypeRegistry();
     for (AliasDeclaration alias : file.getAliasDeclarations()) {
-      if (!file.aliasUsed(alias.alias().identifier())) {
-        errorReporter.report(alias.alias().location(), ALIAS_NEVER_USED, alias.alias());
-        // Skip the rest of the checks to prevent multiple errors on a bad alias.
-        continue;
-      }
       if (options.getCompileTimeGlobals().containsKey(alias.alias().identifier())) {
         errorReporter.report(alias.alias().location(), ALIAS_CONFLICTS_WITH_GLOBAL, alias.alias());
       }

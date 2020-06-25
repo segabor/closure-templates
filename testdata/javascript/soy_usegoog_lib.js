@@ -282,6 +282,7 @@ goog.ENABLE_CHROME_APP_SAFE_SCRIPT_LOADING =
  * @see goog.module
  * @param {string} name Namespace provided by this file in the form
  *     "goog.package.part".
+ * deprecated Use goog.module (see b/159289405)
  */
 goog.provide = function(name) {
   if (goog.isInModuleLoader_()) {
@@ -731,22 +732,6 @@ goog.getObjectByName = function(name, opt_obj) {
 
 
 /**
- * Globalizes a whole namespace, such as goog or goog.lang.
- *
- * @param {!Object} obj The namespace to globalize.
- * @param {Object=} opt_global The object to add the properties to.
- * @deprecated Properties may be explicitly exported to the global scope, but
- *     this should no longer be done in bulk.
- */
-goog.globalize = function(obj, opt_global) {
-  var global = opt_global || goog.global;
-  for (var x in obj) {
-    global[x] = obj[x];
-  }
-};
-
-
-/**
  * Adds a dependency from a file to the files it requires.
  * @param {string} relPath The path to the js file.
  * @param {!Array<string>} provides An array of strings with
@@ -914,6 +899,7 @@ goog.global.CLOSURE_IMPORT_SCRIPT;
 /**
  * Null function used for default values of callbacks, etc.
  * @return {void} Nothing.
+ * @deprecated use '()=>{}' or 'function(){}' instead.
  */
 goog.nullFunction = function() {};
 
@@ -1301,92 +1287,17 @@ goog.transpile_ = function(code, path, target) {
  */
 goog.typeOf = function(value) {
   var s = typeof value;
-  if (s == 'object') {
-    if (value) {
-      // Check these first, so we can avoid calling Object.prototype.toString if
-      // possible.
-      //
-      // IE9 and below improperly marshals typeof across execution contexts, but
-      // a cross-context object will still return false for "instanceof Object".
-      if (value instanceof Array) {
-        return 'array';
-      } else if (value instanceof Object) {
-        return s;
-      }
 
-      // HACK: In order to use an Object prototype method on the arbitrary
-      //   value, the compiler requires the value be cast to type Object,
-      //   even though the ECMA spec explicitly allows it.
-      var className = Object.prototype.toString.call(
-          /** @type {!Object} */ (value));
-      // In Firefox 3.6, attempting to access iframe window objects' length
-      // property throws an NS_ERROR_FAILURE, so we need to special-case it
-      // here.
-      if (className == '[object Window]') {
-        return 'object';
-      }
+  if (s != 'object') {
+    return s;
+  }
 
-      // We cannot always use constructor == Array or instanceof Array because
-      // different frames have different Array objects. In IE6, if the iframe
-      // where the array was created is destroyed, the array loses its
-      // prototype. Then dereferencing val.splice here throws an exception, so
-      // we can't use goog.isFunction. Calling typeof directly returns 'unknown'
-      // so that will work. In this case, this function will return false and
-      // most array functions will still work because the array is still
-      // array-like (supports length and []) even though it has lost its
-      // prototype.
-      // Mark Miller noticed that Object.prototype.toString
-      // allows access to the unforgeable [[Class]] property.
-      //  15.2.4.2 Object.prototype.toString ( )
-      //  When the toString method is called, the following steps are taken:
-      //      1. Get the [[Class]] property of this object.
-      //      2. Compute a string value by concatenating the three strings
-      //         "[object ", Result(1), and "]".
-      //      3. Return Result(2).
-      // and this behavior survives the destruction of the execution context.
-      if ((className == '[object Array]' ||
-           // In IE all non value types are wrapped as objects across window
-           // boundaries (not iframe though) so we have to do object detection
-           // for this edge case.
-           typeof value.length == 'number' &&
-               typeof value.splice != 'undefined' &&
-               typeof value.propertyIsEnumerable != 'undefined' &&
-               !value.propertyIsEnumerable('splice')
+  if (!value) {
+    return 'null';
+  }
 
-               )) {
-        return 'array';
-      }
-      // HACK: There is still an array case that fails.
-      //     function ArrayImpostor() {}
-      //     ArrayImpostor.prototype = [];
-      //     var impostor = new ArrayImpostor;
-      // this can be fixed by getting rid of the fast path
-      // (value instanceof Array) and solely relying on
-      // (value && Object.prototype.toString.vall(value) === '[object Array]')
-      // but that would require many more function calls and is not warranted
-      // unless closure code is receiving objects from untrusted sources.
-
-      // IE in cross-window calls does not correctly marshal the function type
-      // (it appears just as an object) so we cannot use just typeof val ==
-      // 'function'. However, if the object has a call property, it is a
-      // function.
-      if ((className == '[object Function]' ||
-           typeof value.call != 'undefined' &&
-               typeof value.propertyIsEnumerable != 'undefined' &&
-               !value.propertyIsEnumerable('call'))) {
-        return 'function';
-      }
-
-    } else {
-      return 'null';
-    }
-
-  } else if (s == 'function' && typeof value.call == 'undefined') {
-    // In Safari typeof nodeList returns 'function', and on Firefox typeof
-    // behaves similarly for HTML{Applet,Embed,Object}, Elements and RegExps. We
-    // would like to return object for those and we can detect an invalid
-    // function by making sure that the function object has a call method.
-    return 'object';
+  if (Array.isArray(value)) {
+    return 'array';
   }
   return s;
 };
@@ -1434,6 +1345,7 @@ goog.isDateLike = function(val) {
  * Returns true if the specified value is a function.
  * @param {?} val Variable to test.
  * @return {boolean} Whether variable is a function.
+ * @deprecated use "typeof val === 'function'" instead.
  */
 goog.isFunction = function(val) {
   return goog.typeOf(val) == 'function';
@@ -1523,24 +1435,6 @@ goog.UID_PROPERTY_ = 'closure_uid_' + ((Math.random() * 1e9) >>> 0);
  * @private
  */
 goog.uidCounter_ = 0;
-
-
-/**
- * Adds a hash code field to an object. The hash code is unique for the
- * given object.
- * @param {Object} obj The object to get the hash code for.
- * @return {number} The hash code for the object.
- * @deprecated Use goog.getUid instead.
- */
-goog.getHashCode = goog.getUid;
-
-
-/**
- * Removes the hash code field from an object.
- * @param {Object} obj The object to remove the field from.
- * @deprecated Use goog.removeUid instead.
- */
-goog.removeHashCode = goog.removeUid;
 
 
 /**
@@ -1649,6 +1543,7 @@ goog.bindJs_ = function(fn, selfObj, var_args) {
  *     invoked as a method of.
  * @template T
  * @suppress {deprecated} See above.
+ * @deprecated use `=> {}` or Function.prototype.bind instead.
  */
 goog.bind = function(fn, selfObj, var_args) {
   // TODO(nicksantos): narrow the type signature.
@@ -1726,64 +1621,18 @@ goog.mixin = function(target, source) {
  *     between midnight, January 1, 1970 and the current time.
  * @deprecated Use Date.now
  */
-goog.now = (goog.TRUSTED_SITE && Date.now) || (function() {
-             // Unary plus operator converts its operand to a number which in
-             // the case of
-             // a date is done by calling getTime().
-             return +new Date();
-           });
+goog.now = Date.now;
 
 
 /**
- * Evals JavaScript in the global scope.  In IE this uses execScript, other
- * browsers use goog.global.eval. If goog.global.eval does not evaluate,
- * appends a script tag instead.
+ * Evals JavaScript in the global scope.
+ *
  * Throws an exception if neither execScript or eval is defined.
  * @param {string} script JavaScript string.
  */
 goog.globalEval = function(script) {
-  if (goog.global.execScript) {
-    goog.global.execScript(script, 'JavaScript');
-  } else if (goog.global.eval) {
-    // Test to see if eval works
-    if (goog.evalWorks_ == null) {
-      try {
-        goog.global.eval('');
-        goog.evalWorks_ = true;
-      } catch (ignore) {
-        goog.evalWorks_ = false;
-      }
-    }
-
-    if (goog.evalWorks_) {
-      goog.global.eval(script);
-    } else {
-      /** @type {!Document} */
-      var doc = goog.global.document;
-      var scriptElt =
-          /** @type {!HTMLScriptElement} */ (doc.createElement('script'));
-      scriptElt.type = 'text/javascript';
-      scriptElt.defer = false;
-      // Note(user): can't use .innerHTML since "t('<test>')" will fail and
-      // .text doesn't work in Safari 2.  Therefore we append a text node.
-      scriptElt.appendChild(doc.createTextNode(script));
-      doc.head.appendChild(scriptElt);
-      doc.head.removeChild(scriptElt);
-    }
-  } else {
-    throw new Error('goog.globalEval not available');
-  }
+  (0, eval)(script);
 };
-
-
-/**
- * Indicates whether or not we can call 'eval' directly to eval code in the
- * global scope. Set to a Boolean by the first call to goog.globalEval (which
- * empirically tests whether eval works for globals). @see goog.globalEval
- * @type {?boolean}
- * @private
- */
-goog.evalWorks_ = null;
 
 
 /**
@@ -2065,6 +1914,7 @@ goog.exportProperty = function(object, publicName, symbol) {
  * @param {!Function} parentCtor Parent class.
  * @suppress {strictMissingProperties} superClass_ and base is not defined on
  *    Function.
+ * @deprecated Use ECMAScript class syntax instead.
  */
 goog.inherits = function(childCtor, parentCtor) {
   /** @constructor */
@@ -2164,7 +2014,7 @@ if (!COMPILED) {
  *        be added.
  *     all other properties are added to the prototype.
  * @return {!Function} The class constructor.
- * @deprecated Use ES6 class syntax instead.
+ * @deprecated Use ECMAScript class syntax instead.
  */
 goog.defineClass = function(superClass, def) {
   // TODO(johnlenz): consider making the superClass an optional parameter.
@@ -3927,7 +3777,7 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
  * use Trusted Types.
  */
 goog.TRUSTED_TYPES_POLICY_NAME =
-    goog.define('goog.TRUSTED_TYPES_POLICY_NAME', '');
+    goog.define('goog.TRUSTED_TYPES_POLICY_NAME', 'goog');
 
 
 /**
@@ -5762,13 +5612,15 @@ goog.array.isSorted = function(arr, opt_compareFn, opt_strict) {
  * have the same length and their corresponding elements are equal according to
  * the comparison function.
  *
- * @param {IArrayLike<?>} arr1 The first array to compare.
- * @param {IArrayLike<?>} arr2 The second array to compare.
- * @param {Function=} opt_equalsFn Optional comparison function.
+ * @param {IArrayLike<A>} arr1 The first array to compare.
+ * @param {IArrayLike<B>} arr2 The second array to compare.
+ * @param {?function(A,B):boolean=} opt_equalsFn Optional comparison function.
  *     Should take 2 arguments to compare, and return true if the arguments
  *     are equal. Defaults to {@link goog.array.defaultCompareEquality} which
  *     compares the elements using the built-in '===' operator.
  * @return {boolean} Whether the two arrays are equal.
+ * @template A
+ * @template B
  */
 goog.array.equals = function(arr1, arr2, opt_equalsFn) {
   if (!goog.isArrayLike(arr1) || !goog.isArrayLike(arr2) ||
@@ -6818,6 +6670,7 @@ goog.provide('goog.object');
  * @param {*} v2 The second value to compare.
  * @return {boolean} Whether two values are not observably distinguishable.
  * @see http://wiki.ecmascript.org/doku.php?id=harmony:egal
+ * @deprecated Use Object.is
  */
 goog.object.is = function(v, v2) {
   if (v === v2) {
@@ -7302,15 +7155,11 @@ goog.object.equals = function(a, b) {
  * @template K,V
  */
 goog.object.clone = function(obj) {
-  // We cannot use the prototype trick because a lot of methods depend on where
-  // the actual key is set.
-
   const res = {};
   for (const key in obj) {
     res[key] = obj[key];
   }
   return res;
-  // We could also use goog.mixin but I wanted this to be independent from that.
 };
 
 
@@ -7596,114 +7445,6 @@ goog.dom.tags.isVoidTag = function(tagName) {
   return goog.dom.tags.VOID_TAGS_[tagName] === true;
 };
 
-//third_party/javascript/closure/memoize/memoize.js
-/**
- * @license
- * Copyright The Closure Library Authors.
- * SPDX-License-Identifier: Apache-2.0
- */
-
-/**
- * @fileoverview Tool for caching the result of expensive deterministic
- * functions.
- *
- * @see http://en.wikipedia.org/wiki/Memoization
- */
-
-goog.provide('goog.memoize');
-
-
-/**
- * Decorator around functions that caches the inner function's return values.
- *
- * To cache parameterless functions, see goog.functions.cacheReturnValue.
- *
- * @param {Function} f The function to wrap. Its return value may only depend
- *     on its arguments and 'this' context. There may be further restrictions
- *     on the arguments depending on the capabilities of the serializer used.
- * @param {function(number, Object): string=} opt_serializer A function to
- *     serialize f's arguments. It must have the same signature as
- *     goog.memoize.simpleSerializer. It defaults to that function.
- * @return {!Function} The wrapped function.
- */
-goog.memoize = function(f, opt_serializer) {
-  const serializer = opt_serializer || goog.memoize.simpleSerializer;
-
-  return (/**
-           * @this {Object} The object whose function is being wrapped.
-           * @return {?} the return value of the original function.
-           */
-          function() {
-            if (goog.memoize.ENABLE_MEMOIZE) {
-              // In the strict mode, when this function is called as a global
-              // function, the value of 'this' is undefined instead of a global
-              // object. See:
-              // https://developer.mozilla.org/en/JavaScript/Strict_mode
-              // Otherwise, if memoize wraps a method of an object, `this` will
-              // be the context object, causing memoize to cache its values on
-              // the object instance, instead of on the global object.
-              // This (ha!) is a very surprising API, but retained for backwards
-              // compatibility.
-              const thisOrGlobal = this || goog.global;
-              // Maps the serialized list of args to the corresponding return
-              // value.
-              const cache = thisOrGlobal[goog.memoize.CACHE_PROPERTY_] ||
-                  (thisOrGlobal[goog.memoize.CACHE_PROPERTY_] = {});
-              const key = serializer(goog.getUid(f), arguments);
-              return cache.hasOwnProperty(key) ?
-                  cache[key] :
-                  (cache[key] = f.apply(this, arguments));
-            } else {
-              return f.apply(this, arguments);
-            }
-          });
-};
-
-
-/**
- * @define {boolean} Flag to disable memoization in unit tests.
- */
-goog.memoize.ENABLE_MEMOIZE = goog.define('goog.memoize.ENABLE_MEMOIZE', true);
-
-
-/**
- * Clears the memoization cache on the given object.
- * @param {Object} cacheOwner The owner of the cache. This is the `this`
- *     context of the memoized function.
- */
-goog.memoize.clearCache = function(cacheOwner) {
-  cacheOwner[goog.memoize.CACHE_PROPERTY_] = {};
-};
-
-
-/**
- * Name of the property used by goog.memoize as cache.
- * @type {string}
- * @private
- */
-goog.memoize.CACHE_PROPERTY_ = 'closure_memoize_cache_';
-
-
-/**
- * Simple and fast argument serializer function for goog.memoize.
- * Supports string, number, boolean, null and undefined arguments. Doesn't
- * support \x0B characters in the strings.
- * @param {number} functionUid Unique identifier of the function whose result
- *     is cached.
- * @param {?{length:number}} args The arguments that the function to memoize is
- *     called with. Note: it is an array-like object, because it supports
- *     indexing and has the length property.
- * @return {string} The list of arguments with type information concatenated
- *     with the functionUid argument, serialized as \x0B-separated string.
- */
-goog.memoize.simpleSerializer = function(functionUid, args) {
-  const context = [functionUid];
-  for (let i = args.length - 1; i >= 0; --i) {
-    context.push(typeof args[i], args[i]);
-  }
-  return context.join('\x0B');
-};
-
 //third_party/javascript/closure/html/trustedtypes.js
 /**
  * @license
@@ -7717,7 +7458,14 @@ goog.memoize.simpleSerializer = function(functionUid, args) {
  */
 
 goog.provide('goog.html.trustedtypes');
-goog.require('goog.memoize');
+
+
+/**
+ * Cached result of goog.createTrustedTypesPolicy.
+ * @type {?TrustedTypePolicy|undefined}
+ * @private
+ */
+goog.html.trustedtypes.cachedPolicy_;
 
 
 /**
@@ -7730,8 +7478,13 @@ goog.html.trustedtypes.getPolicyPrivateDoNotAccessOrElse = function() {
     // Binary not configured for Trusted Types.
     return null;
   }
-  return goog.memoize(goog.createTrustedTypesPolicy)(
-      goog.TRUSTED_TYPES_POLICY_NAME + '#html');
+
+  if (goog.html.trustedtypes.cachedPolicy_ === undefined) {
+    goog.html.trustedtypes.cachedPolicy_ =
+        goog.createTrustedTypesPolicy(goog.TRUSTED_TYPES_POLICY_NAME + '#html');
+  }
+
+  return goog.html.trustedtypes.cachedPolicy_;
 };
 
 //third_party/javascript/closure/string/typedstring.js
@@ -8012,6 +7765,9 @@ goog.require('goog.string.TypedString');
  * that within an HTML script (raw text) element, HTML character references,
  * such as "&lt;" are not allowed. See
  * http://www.w3.org/TR/html5/scripting-1.html#restrictions-for-contents-of-script-elements.
+ *
+ * Creating SafeScript objects HAS SIDE-EFFECTS due to calling Trusted Types Web
+ * API.
  *
  * @see goog.html.SafeScript#fromConstant
  * @constructor
@@ -9417,6 +9173,9 @@ goog.require('goog.string.TypedString');
  * initialize with non-empty values. Anyone else calling constructor will
  * get default instance with empty value.
  *
+ * Creating TrustedResourceUrl objects HAS SIDE-EFFECTS due to calling
+ * Trusted Types Web API.
+ *
  * @see goog.html.TrustedResourceUrl#fromConstant
  * @constructor
  * @final
@@ -10614,15 +10373,17 @@ goog.html.DATA_URL_PATTERN_ = /^data:(.*);base64,[a-z0-9+\/]+=*$/i;
 
 
 /**
- * Creates a SafeUrl wrapping a data: URL, after validating it matches a
- * known-safe media MIME type.
+ * Attempts to create a SafeUrl wrapping a `data:` URL, after validating it
+ * matches a known-safe media MIME type. If it doesn't match, return `null`.
  *
  * @param {string} dataUrl A valid base64 data URL with one of the whitelisted
  *     media MIME types.
- * @return {!goog.html.SafeUrl} A matching safe URL, or {@link INNOCUOUS_STRING}
- *     wrapped as a SafeUrl if it does not pass.
+ * @return {?goog.html.SafeUrl} A matching safe URL, or `null` if it does not
+ *     pass.
  */
-goog.html.SafeUrl.fromDataUrl = function(dataUrl) {
+goog.html.SafeUrl.tryFromDataUrl = function(dataUrl) {
+  // For defensive purposes, in case users cast around the parameter type.
+  dataUrl = String(dataUrl);
   // RFC4648 suggest to ignore CRLF in base64 encoding.
   // See https://tools.ietf.org/html/rfc4648.
   // Remove the CR (%0D) and LF (%0A) from the dataUrl.
@@ -10636,8 +10397,27 @@ goog.html.SafeUrl.fromDataUrl = function(dataUrl) {
   // https://blog.mozilla.org/security/2017/10/04/treating-data-urls-unique-origins-firefox-57/
   // Older versions of IE don't understand `data:` urls, so it is not an issue.
   var valid = match && goog.html.SafeUrl.isSafeMimeType(match[1]);
-  return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(
-      valid ? filteredDataUrl : goog.html.SafeUrl.INNOCUOUS_STRING);
+  if (valid) {
+    return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(
+        filteredDataUrl);
+  }
+  return null;
+};
+
+
+/**
+ * Creates a SafeUrl wrapping a `data:` URL, after validating it matches a
+ * known-safe media MIME type. If it doesn't match, return
+ * `goog.html.SafeUrl.INNOCUOUS_URL`.
+ *
+ * @param {string} dataUrl A valid base64 data URL with one of the whitelisted
+ *     media MIME types.
+ * @return {!goog.html.SafeUrl} A matching safe URL, or
+ *     `goog.html.SafeUrl.INNOCUOUS_URL` if it does not pass.
+ */
+goog.html.SafeUrl.fromDataUrl = function(dataUrl) {
+  return goog.html.SafeUrl.tryFromDataUrl(dataUrl) ||
+      goog.html.SafeUrl.INNOCUOUS_URL;
 };
 
 
@@ -10929,13 +10709,43 @@ goog.html.SAFE_URL_PATTERN_ =
  */
 goog.html.SafeUrl.SAFE_URL_PATTERN = goog.html.SAFE_URL_PATTERN_;
 
+/**
+ * Attempts to create a SafeUrl object from `url`. The input string is validated
+ * to match a pattern of commonly used safe URLs. If validation fails, `null` is
+ * returned.
+ *
+ * `url` may be a URL with the `http:`, `https:`, `mailto:`, or `ftp:` scheme,
+ * or a relative URL (i.e., a URL without a scheme; specifically, a
+ * scheme-relative, absolute-path-relative, or path-relative URL).
+ *
+ * @see http://url.spec.whatwg.org/#concept-relative-url
+ * @param {string|!goog.string.TypedString} url The URL to validate.
+ * @return {?goog.html.SafeUrl} The validated URL, wrapped as a SafeUrl, or null
+ *     if validation fails.
+ */
+goog.html.SafeUrl.trySanitize = function(url) {
+  if (url instanceof goog.html.SafeUrl) {
+    return url;
+  }
+  if (typeof url == 'object' && url.implementsGoogStringTypedString) {
+    url = /** @type {!goog.string.TypedString} */ (url).getTypedStringValue();
+  } else {
+    // For defensive purposes, in case users cast around the parameter type.
+    url = String(url);
+  }
+  if (!goog.html.SAFE_URL_PATTERN_.test(url)) {
+    return null;
+  }
+  return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(url);
+};
 
 /**
  * Creates a SafeUrl object from `url`. If `url` is a
- * goog.html.SafeUrl then it is simply returned. Otherwise the input string is
- * validated to match a pattern of commonly used safe URLs.
+ * `goog.html.SafeUrl` then it is simply returned. Otherwise the input string is
+ * validated to match a pattern of commonly used safe URLs. If validation fails,
+ * `goog.html.SafeUrl.INNOCUOUS_URL` is returned.
  *
- * `url` may be a URL with the http, https, mailto or ftp scheme,
+ * `url` may be a URL with the `http:`, `https:`, `mailto:` or `ftp:` scheme,
  * or a relative URL (i.e., a URL without a scheme; specifically, a
  * scheme-relative, absolute-path-relative, or path-relative URL).
  *
@@ -10944,22 +10754,12 @@ goog.html.SafeUrl.SAFE_URL_PATTERN = goog.html.SAFE_URL_PATTERN_;
  * @return {!goog.html.SafeUrl} The validated URL, wrapped as a SafeUrl.
  */
 goog.html.SafeUrl.sanitize = function(url) {
-  if (url instanceof goog.html.SafeUrl) {
-    return url;
-  } else if (typeof url == 'object' && url.implementsGoogStringTypedString) {
-    url = /** @type {!goog.string.TypedString} */ (url).getTypedStringValue();
-  } else {
-    url = String(url);
-  }
-  if (!goog.html.SAFE_URL_PATTERN_.test(url)) {
-    url = goog.html.SafeUrl.INNOCUOUS_STRING;
-  }
-  return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(url);
+  return goog.html.SafeUrl.trySanitize(url) || goog.html.SafeUrl.INNOCUOUS_URL;
 };
 
 /**
  * Creates a SafeUrl object from `url`. If `url` is a
- * goog.html.SafeUrl then it is simply returned. Otherwise the input string is
+ * `goog.html.SafeUrl` then it is simply returned. Otherwise the input string is
  * validated to match a pattern of commonly used safe URLs.
  *
  * `url` may be a URL with the http, https, mailto or ftp scheme,
@@ -10967,7 +10767,7 @@ goog.html.SafeUrl.sanitize = function(url) {
  * scheme-relative, absolute-path-relative, or path-relative URL).
  *
  * This function asserts (using goog.asserts) that the URL matches this pattern.
- * If it does not, in addition to failing the assert, an innocous URL will be
+ * If it does not, in addition to failing the assert, an innocuous URL will be
  * returned.
  *
  * @see http://url.spec.whatwg.org/#concept-relative-url
@@ -11020,6 +10820,15 @@ goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse = function(
   return new goog.html.SafeUrl(
       goog.html.SafeUrl.CONSTRUCTOR_TOKEN_PRIVATE_, url);
 };
+
+
+/**
+ * `INNOCUOUS_STRING` wrapped in a `SafeUrl`.
+ * @const {!goog.html.SafeUrl}
+ */
+goog.html.SafeUrl.INNOCUOUS_URL =
+    goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(
+        goog.html.SafeUrl.INNOCUOUS_STRING);
 
 
 /**
@@ -12558,6 +12367,9 @@ goog.require('goog.string.internal');
  * etc and not by invoking its constructor.  The constructor intentionally
  * takes no parameters and the type is immutable; hence only a default instance
  * corresponding to the empty string can be obtained via constructor invocation.
+ *
+ * Creating SafeHtml objects HAS SIDE-EFFECTS due to calling Trusted Types Web
+ * API.
  *
  * Note that there is no `goog.html.SafeHtml.fromConstant`. The reason is that
  * the following code would create an unsafe HTML:
@@ -14968,6 +14780,23 @@ goog.dom.safe.setInnerHtml = function(elem, html) {
 
 
 /**
+ * Assigns constant HTML to an element's innerHTML property.
+ * @param {!Element} element The element whose innerHTML is to be assigned to.
+ * @param {!goog.string.Const} constHtml The known-safe HTML to assign.
+ * @throws {!Error} If called with one of these tags: math, script, style, svg,
+ *     template.
+ */
+goog.dom.safe.setInnerHtmlFromConstant = function(element, constHtml) {
+  goog.dom.safe.setInnerHtml(
+      element,
+      goog.html.uncheckedconversions
+          .safeHtmlFromStringKnownToSatisfyTypeContract(
+              goog.string.Const.from('Constant HTML to be immediatelly used.'),
+              goog.string.Const.unwrap(constHtml)));
+};
+
+
+/**
  * Assigns known-safe HTML to an element's outerHTML property.
  * @param {!Element} elem The element whose outerHTML is to be assigned to.
  * @param {!goog.html.SafeHtml} html The known-safe HTML to assign.
@@ -15378,7 +15207,7 @@ goog.dom.safe.setScriptSrc = function(script, url) {
  */
 goog.dom.safe.setScriptContent = function(script, content) {
   goog.dom.asserts.assertIsHTMLScriptElement(script);
-  script.text = goog.html.SafeScript.unwrapTrustedScript(content);
+  script.textContent = goog.html.SafeScript.unwrapTrustedScript(content);
   goog.dom.safe.setNonceForScriptElement_(script);
 };
 
@@ -31415,7 +31244,7 @@ goog.i18n.currency.CurrencyInfo = {
   'SGD': [2, '$', 'S$'],
   'THB': [2, '\u0e3f', 'THB'],
   'TRY': [2, '₺', 'TRY'],
-  'TWD': [2, 'NT$', 'NT$'],
+  'TWD': [2, '$', 'NT$'],
   'TZS': [0, 'TSh', 'TSh'],
   'UAH': [2, 'грн.', 'UAH'],
   'USD': [2, '$', 'US$'],
@@ -42198,6 +42027,23 @@ soy.$$listSlice = function(list, from, to) {
                       goog.array.slice(list, from, to);
 };
 
+/**
+ * A helper for list comprehension.
+ * @param {!IArrayLike<T>} list
+ * @param {function(T,number):boolean} filter
+ * @param {function(T,number):V} map
+ * @return {!IArrayLike<V>}
+ * @template T, V
+ */
+soy.$$filterAndMap = function(list, filter, map) {
+  let array = [];
+  for (let i = 0; i < list.length; i++) {
+    if (filter(list[i], i)) {
+      array.push(map(list[i], i));
+    }
+  }
+  return array;
+};
 
 /**
  * Sorts a list of numbers in numerical order.
@@ -47159,9 +47005,9 @@ goog.soy.renderElement = function(
 /**
  * Renders a Soy template into a single node or a document
  * fragment. If the rendered HTML string represents a single node, then that
- * node is returned (note that this is *not* a fragment, despite them name of
- * the method). Otherwise a document fragment is returned containing the
- * rendered nodes.
+ * node is returned (note that this is *not* a fragment, despite the name of the
+ * method). Otherwise a document fragment is returned containing the rendered
+ * nodes.
  *
  * @param {function(ARG_TYPES, ?goog.soy.CompatibleIj_=): *} template The Soy
  *     template defining the element's content. The kind of the template must be

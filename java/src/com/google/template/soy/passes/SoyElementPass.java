@@ -16,6 +16,7 @@
 
 package com.google.template.soy.passes;
 
+import static com.google.common.collect.ImmutableSet.toImmutableSet;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
@@ -28,6 +29,7 @@ import com.google.template.soy.soytree.CallBasicNode;
 import com.google.template.soy.soytree.HtmlElementMetadataP;
 import com.google.template.soy.soytree.HtmlOpenTagNode;
 import com.google.template.soy.soytree.HtmlTagNode;
+import com.google.template.soy.soytree.ImportsContext.ImportsTemplateRegistry;
 import com.google.template.soy.soytree.KeyNode;
 import com.google.template.soy.soytree.SkipNode;
 import com.google.template.soy.soytree.SoyFileNode;
@@ -38,7 +40,6 @@ import com.google.template.soy.soytree.TemplateDelegateNode;
 import com.google.template.soy.soytree.TemplateElementNode;
 import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateNode;
-import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.VeLogNode;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -94,8 +95,7 @@ public final class SoyElementPass implements CompilerFileSetPass {
   }
 
   @Override
-  public Result run(
-      ImmutableList<SoyFileNode> sourceFiles, IdGenerator idGenerator, TemplateRegistry registry) {
+  public Result run(ImmutableList<SoyFileNode> sourceFiles, IdGenerator idGenerator) {
     Map<String, TemplateNode> templatesInLibrary = new LinkedHashMap<>();
     for (SoyFileNode file : sourceFiles) {
       // Create an intermediatary data structure for template name -> template node so that
@@ -111,7 +111,8 @@ public final class SoyElementPass implements CompilerFileSetPass {
     }
     for (TemplateNode template : templatesInLibrary.values()) {
       Set<TemplateNode> visited = new HashSet<>();
-      getTemplateMetadata(template, templatesInLibrary, registry, visited);
+      getTemplateMetadata(
+          template, templatesInLibrary, template.getParent().getTemplateRegistry(), visited);
     }
     return Result.CONTINUE;
   }
@@ -123,17 +124,14 @@ public final class SoyElementPass implements CompilerFileSetPass {
   private HtmlElementMetadataP getTemplateMetadata(
       TemplateNode template,
       Map<String, TemplateNode> templatesInLibrary,
-      TemplateRegistry registry,
+      ImportsTemplateRegistry registry,
       Set<TemplateNode> visited) {
     if (visited.contains(template)) {
       if (template instanceof TemplateElementNode) {
         errorReporter.report(
             template.getSourceLocation(),
             SOYELEMENT_CANNOT_WRAP_ITSELF_RECURSIVELY,
-            visited.stream()
-                .map(tmpl -> tmpl.getTemplateName())
-                .sorted()
-                .collect(ImmutableSet.toImmutableSet()));
+            visited.stream().map(TemplateNode::getTemplateName).sorted().collect(toImmutableSet()));
       }
       template.setHtmlElementMetadata(DEFAULT_HTML_METADATA);
       return null;
@@ -156,10 +154,15 @@ public final class SoyElementPass implements CompilerFileSetPass {
         continue;
       }
 
-      // If the template is a call, then it may be a Soy element if it's the last child.
+      // If the template is a static call, then it may be a Soy element if it's the last child.
       // TODO(tomnguyen): Merge this logic with velog validation pass.
-      if (openTag == null && child instanceof CallBasicNode && i == template.numChildren() - 1) {
-        return getTemplateMetadataForCall(
+      // TODO(cwgordon): There is no way to make guarantees about the root element of a dynamic
+      // call. Consider adding some way to indicate this constraint in template type declarations.
+      if (openTag == null
+          && child instanceof CallBasicNode
+          && ((CallBasicNode) child).isStaticCall()
+          && i == template.numChildren() - 1) {
+        return getTemplateMetadataForStaticCall(
             template, (CallBasicNode) child, templatesInLibrary, registry, visited);
       } else if (openTag == null && child instanceof HtmlOpenTagNode) {
         closeTag = checkHtmlOpenTag(template, (HtmlOpenTagNode) child, errorReporter, isSoyElement);
@@ -220,13 +223,14 @@ public final class SoyElementPass implements CompilerFileSetPass {
   }
 
   /**
-   * The templates processed here have exactly one call, which may or may not be an HTML template.
+   * The templates processed here have exactly one (static) call, which may or may not be an HTML
+   * template.
    */
-  private HtmlElementMetadataP getTemplateMetadataForCall(
+  private HtmlElementMetadataP getTemplateMetadataForStaticCall(
       TemplateNode template,
       CallBasicNode call,
       Map<String, TemplateNode> templatesInLibrary,
-      TemplateRegistry registry,
+      ImportsTemplateRegistry registry,
       Set<TemplateNode> visited) {
 
     String callee = call.getCalleeName();

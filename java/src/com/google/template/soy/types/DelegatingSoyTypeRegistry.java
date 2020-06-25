@@ -17,7 +17,6 @@
 package com.google.template.soy.types;
 
 import com.google.template.soy.types.RecordType.Member;
-import com.google.template.soy.types.TemplateType.Argument;
 import java.util.Collection;
 import javax.annotation.Nullable;
 
@@ -25,7 +24,7 @@ import javax.annotation.Nullable;
  * Implementation of {@link SoyTypeRegistry} that delegates all calls to another instance of {@link
  * SoyTypeRegistry}. Used for building chains of registries.
  */
-abstract class DelegatingSoyTypeRegistry implements SoyTypeRegistry {
+public abstract class DelegatingSoyTypeRegistry implements SoyTypeRegistry {
 
   private final SoyTypeRegistry delegate;
 
@@ -64,8 +63,8 @@ abstract class DelegatingSoyTypeRegistry implements SoyTypeRegistry {
   }
 
   @Override
-  public TemplateType getOrCreateTemplateType(Iterable<Argument> arguments, SoyType returnType) {
-    return delegate.getOrCreateTemplateType(arguments, returnType);
+  public TemplateType internTemplateType(TemplateType typeToIntern) {
+    return delegate.internTemplateType(typeToIntern);
   }
 
   @Override

@@ -59,10 +59,10 @@ import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateMetadata.Parameter;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
-import com.google.template.soy.soytree.TemplateSignature;
 import com.google.template.soy.soytree.Visibility;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.types.SoyTypeRegistry;
+import com.google.template.soy.types.TemplateType;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -484,8 +484,7 @@ public final class GenerateParseInfoVisitor
     TemplateMetadata nodeMetadata = templateRegistry.getMetadata(node);
     // Indirect params.
     IndirectParamsInfo indirectParamsInfo =
-        new IndirectParamsCalculator(templateRegistry)
-            .calculateIndirectParams(TemplateSignature.fromTemplateMetadata(nodeMetadata));
+        new IndirectParamsCalculator(templateRegistry).calculateIndirectParams(node);
 
     @SuppressWarnings("ConstantConditions") // for IntelliJ
     String upperUnderscoreName =
@@ -690,7 +689,7 @@ public final class GenerateParseInfoVisitor
     StringBuilder resultSb = new StringBuilder();
 
     if (template.getSourceLocation().getFilePath().equals(currSoyFile.getFilePath())
-        && template.getTemplateKind() != TemplateMetadata.Kind.DELTEMPLATE) {
+        && template.getTemplateKind() != TemplateType.TemplateKind.DELTEMPLATE) {
       resultSb.append(
           template.getTemplateName().substring(template.getTemplateName().lastIndexOf('.')));
     } else {
@@ -712,7 +711,7 @@ public final class GenerateParseInfoVisitor
     if (template.getVisibility() != Visibility.PUBLIC) {
       resultSb.append(" (private)");
     }
-    if (template.getTemplateKind() == TemplateMetadata.Kind.DELTEMPLATE) {
+    if (template.getTemplateKind() == TemplateType.TemplateKind.DELTEMPLATE) {
       resultSb.append(" (delegate)");
     }
 

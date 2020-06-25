@@ -15,7 +15,9 @@
  */
 package com.google.template.soy;
 
+
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Joiner;
 import com.google.common.base.Stopwatch;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -79,6 +81,12 @@ public abstract class AbstractSoyCompiler {
               + " Sources are typically required and read from this flag or as extra arguments.",
       handler = SoyCmdLineParser.FileListOptionHandler.class)
   List<File> srcs = new ArrayList<>();
+
+  @Option(
+      name = "--generated_files",
+      usage = "A map of generated files that map back to their short name",
+      handler = SoyCmdLineParser.StringStringMapHandler.class)
+  private Map<String, String> generatedFiles = new HashMap<>();
 
   @Option(
       name = "--depHeaders",
@@ -169,12 +177,12 @@ public abstract class AbstractSoyCompiler {
   /** The remaining arguments after parsing command-line flags. */
   @Argument private List<String> arguments = new ArrayList<>();
 
-  private final SoyCompilerFileReader soyCompilerFileReader;
+  protected final SoyCompilerFileReader soyCompilerFileReader;
 
   final PluginLoader pluginLoader;
   private final SoyInputCache cache;
 
-  AbstractSoyCompiler(
+  protected AbstractSoyCompiler(
       PluginLoader pluginLoader, SoyInputCache cache, SoyCompilerFileReader soyCompilerFileReader) {
     this.cache = cache;
     this.pluginLoader = pluginLoader;
@@ -186,7 +194,7 @@ public abstract class AbstractSoyCompiler {
     this(pluginLoader, SoyInputCache.DEFAULT, soyCompilerFileReader);
   }
 
-  AbstractSoyCompiler(PluginLoader pluginLoader, SoyInputCache cache) {
+  protected AbstractSoyCompiler(PluginLoader pluginLoader, SoyInputCache cache) {
     this(pluginLoader, cache, FileSystemSoyFileReader.INSTANCE);
   }
 
@@ -199,7 +207,6 @@ public abstract class AbstractSoyCompiler {
     System.exit(status);
   }
 
-  @VisibleForTesting
   @CheckReturnValue
   public int run(final String[] args, PrintStream err) {
     try {
@@ -243,8 +250,8 @@ public abstract class AbstractSoyCompiler {
     validateFlags();
     if (!arguments.isEmpty()) {
       exitWithError(
-          "Found extra arguments passed on the command line. If these are sources, use --srcs=..."
-              + " instead.");
+          "Found unexpected extra arguments passed on the command line:\n  "
+              + Joiner.on(" ").join(arguments));
     }
     if (requireSources() && srcs.isEmpty()) {
       exitWithError("Must provide list of source Soy files (--srcs).");
@@ -281,12 +288,14 @@ public abstract class AbstractSoyCompiler {
         // Set experimental features that are not generally available.
         .setExperimentalFeatures(experimentalFeatures)
         .addProtoDescriptors(parseProtos(protoFileDescriptors, cache, soyCompilerFileReader, err))
-        .setCompileTimeGlobals(parseGlobals());
+        .setCompileTimeGlobals(parseGlobals())
+        .setSoyAstCache(cache.astCache());
 
     // add sources
     for (File src : srcs) {
       try {
-        sfsBuilder.addFile(cache.read(src, CacheLoaders.SOY_FILE_LOADER, soyCompilerFileReader));
+        String normalizedPath = generatedFiles.getOrDefault(src.getPath(), src.getPath());
+        sfsBuilder.addFile(cache.createFileSupplier(src, normalizedPath, soyCompilerFileReader));
       } catch (FileNotFoundException fnfe) {
         throw new CommandLineError(
             "File: " + src.getPath() + " passed to --srcs does not exist", fnfe);
@@ -452,7 +461,7 @@ public abstract class AbstractSoyCompiler {
    * Extension point for subtypes to perform additional logic to validate compiler specific flags.
    */
   @ForOverride
-  void validateFlags() {}
+  protected void validateFlags() {}
 
   /** Extension point for subclasses to disable soy sources being required. */
   @ForOverride
@@ -487,7 +496,7 @@ public abstract class AbstractSoyCompiler {
    *
    * @param errorMsg The error message to print.
    */
-  static final RuntimeException exitWithError(String errorMsg) {
+  protected static final RuntimeException exitWithError(String errorMsg) {
     throw new CommandLineError(errorMsg);
   }
 }

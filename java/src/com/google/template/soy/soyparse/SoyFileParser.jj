@@ -53,6 +53,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.primitives.Ints;
 import com.google.common.primitives.Longs;
+import com.google.errorprone.annotations.CheckReturnValue;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.SourceLocation.Point;
 import com.google.template.soy.base.internal.BaseUtils;
@@ -85,7 +86,6 @@ import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.TemplateLiteralNode;
-import com.google.template.soy.exprtree.VarDefn;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.exprtree.VeLiteralNode;
 import com.google.template.soy.soytree.AliasDeclaration;
@@ -626,6 +626,7 @@ public class SoyFileParser {
    *
    * See https://javacc.org/tutorials/errorrecovery
    */
+  @CheckReturnValue
   private Token reportTemplateBodyErrorAndSkipTo(ParseException error, int... kinds) {
     ParseErrors.reportSoyFileParseException(
         errorReporter, filePath, error, token_source.curLexState);
@@ -640,13 +641,15 @@ public class SoyFileParser {
    *
    * See https://javacc.org/tutorials/errorrecovery
    */
-    private Token reportTemplateBodyErrorAndSkipTo(ParseException error, String adviceToUser,
+  @CheckReturnValue
+  private Token reportTemplateBodyErrorAndSkipTo(ParseException error, String adviceToUser,
         int... kinds) {
     ParseErrors.reportSoyFileParseException(
         errorReporter, filePath, error, token_source.curLexState, adviceToUser);
     return skipToTemplateToken(kinds);
   }
 
+  @CheckReturnValue
   private Token skipToTemplateToken(int... kinds) {
     ImmutableSet<Integer> skipTo = ImmutableSet.copyOf(Ints.asList(kinds));
     Token t;
@@ -663,6 +666,7 @@ public class SoyFileParser {
     }
   }
 
+  @CheckReturnValue
   Point getPointJustBeforeNextToken() {
     return ((SoySimpleCharStream) (token_source.input_stream)).getPointJustBeforeNextToken();
   }
@@ -993,10 +997,10 @@ TOKEN_MGR_DECLS: {
 
 // exits the attribute value
 <EXPR_NO_DOUBLE_QUOTE> TOKEN: {
-  < END_DQ_EXPR_ATTR: "\"" >
+  < END_DQ_EXPR_ATTR: "\"" > : IN_CMD_TAG
 }
 <EXPR_NO_SINGLE_QUOTE> TOKEN: {
-  < END_SQ_EXPR_ATTR: "'" >
+  < END_SQ_EXPR_ATTR: "'" >: IN_CMD_TAG
 }
 
 
@@ -1098,7 +1102,7 @@ TOKEN_MGR_DECLS: {
 
 | < CMD_OPEN_LITERAL             : "{literal}"      > : IN_LITERAL_BLOCK
 
-| < CMD_BEGIN_CALL               : "{call" <WS>     > : IN_CMD_TAG
+| < CMD_BEGIN_CALL               : "{call" <WS>     > : EXPR
 | < CMD_BEGIN_DELCALL            : "{delcall" <WS>  > : IN_CMD_TAG
 | < CMD_CLOSE_CALL               : "{/call}"        >
 | < CMD_CLOSE_DELCALL            : "{/delcall}"     >
@@ -1369,9 +1373,7 @@ private SoyFileNode SoyFile() :
         aliases.add(alias);
       }
     }
-  )*
-
-  (
+|
     importNode = Import()
     {
       if (importNode != null) {
@@ -1453,7 +1455,9 @@ private ImportNode Import() :
   Token open, close;
   StringNode path = null;
   Token identifier = null;
-  ImmutableList.Builder<VarDefn> identifiers = new ImmutableList.Builder<VarDefn>();
+  Token alias = null;
+  SourceLocation loc;
+  ImmutableList.Builder<ImportedVar> identifiers = new ImmutableList.Builder<ImportedVar>();
 }
 {
   (
@@ -1461,14 +1465,36 @@ private ImportNode Import() :
     [
     <LCURLY>
     identifier = <IDENT>
+    [
+      Keyword("as")
+      alias = <IDENT>
+    ]
     {
-      identifiers.add(new ImportedVar(identifier.image, createSrcLoc(identifier)));
+      String a1 = null;
+      loc = createSrcLoc(identifier);
+      if (alias != null) {
+        a1 = alias.image;
+        loc = loc.extend(createSrcLoc(alias));
+      }
+      identifiers.add(new ImportedVar(identifier.image, a1, loc));
+      alias = null;
     }
     (
     <DEFAULT_COMMA>
     identifier = <IDENT>
+    [
+      Keyword("as")
+      alias = <IDENT>
+    ]
     {
-      identifiers.add(new ImportedVar(identifier.image, createSrcLoc(identifier)));
+      String a2 = null;
+      loc = createSrcLoc(identifier);
+      if (alias != null) {
+        a2 = alias.image;
+        loc = loc.extend(createSrcLoc(alias));
+      }
+      identifiers.add(new ImportedVar(identifier.image, a2, loc));
+      alias = null;
     }
     )*
     <RCURLY>
@@ -1591,13 +1617,10 @@ private CommandTagAttribute Attribute() :
           exprList = ExprList()
         ]
         qToken = <END_DQ_EXPR_ATTR>
-        {
-          token_source.SwitchTo(IN_CMD_TAG);
-        }
       } catch (ParseException e) {
         token_source.SwitchTo(IN_CMD_TAG);
         exprList = ImmutableList.of(errorExpr(e.currentToken));
-        qToken = reportTemplateBodyErrorAndSkipTo(e, DOUBLE_QUOTE);
+        qToken = reportTemplateBodyErrorAndSkipTo(e, CMD_DOUBLE_QUOTE, END_DQ_EXPR_ATTR);
       }
     |
       <CMD_SINGLE_QUOTE>
@@ -1613,13 +1636,10 @@ private CommandTagAttribute Attribute() :
           exprList = ExprList()
         ]
         qToken = <END_SQ_EXPR_ATTR>
-        {
-          token_source.SwitchTo(IN_CMD_TAG);
-        }
       } catch (ParseException e) {
         token_source.SwitchTo(IN_CMD_TAG);
         exprList = ImmutableList.of(errorExpr(e.currentToken));
-        qToken = reportTemplateBodyErrorAndSkipTo(e, SINGLE_QUOTE);
+        qToken = reportTemplateBodyErrorAndSkipTo(e, CMD_SINGLE_QUOTE, END_SQ_EXPR_ATTR);
       }
     )
     {
@@ -2097,7 +2117,7 @@ private TemplateHeaderVarDefn ParamDecl(@Nullable String desc) :
     )
     tagEnd = <CMD_END>
   } catch (ParseException parseException) {
-    reportTemplateBodyErrorAndSkipTo(parseException, CMD_END);
+    tagEnd = reportTemplateBodyErrorAndSkipTo(parseException, CMD_END);
   }
 
   {
@@ -2581,7 +2601,7 @@ private MsgSelectNode MsgSelect() :
     tagBeginEnd = <CMD_END>
   } catch (ParseException e) {
     selectExpr = errorExpr(tagBegin);
-    reportTemplateBodyErrorAndSkipTo(e, CMD_END);
+    tagBeginEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
   }
 
   {
@@ -2838,7 +2858,7 @@ private LetNode LetStmt() :
       attr = Attribute()
       tagBeginEnd = <CMD_END>
     } catch (ParseException e) {
-      reportTemplateBodyErrorAndSkipTo(e, CMD_END, CMD_SELF_CLOSE);
+      tagBeginEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END, CMD_SELF_CLOSE);
     }
 
     templateBlock = TemplateBlock()
@@ -2885,7 +2905,7 @@ private IfNode IfStmt() :
     tagBeginEnd = <CMD_END>
   } catch (ParseException e) {
     ifExpr = errorExpr(tagBegin);
-    reportTemplateBodyErrorAndSkipTo(e, CMD_END);
+    tagBeginEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
   }
   templateBlock = TemplateBlock()
 
@@ -2908,7 +2928,7 @@ private IfNode IfStmt() :
       tagBeginEnd = <CMD_END>
     } catch (ParseException e) {
       ifExpr = errorExpr(condTagBegin);
-      reportTemplateBodyErrorAndSkipTo(e, CMD_END);
+      tagBeginEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
     }
     templateBlock = TemplateBlock()
 
@@ -2916,7 +2936,7 @@ private IfNode IfStmt() :
       ifCondNode = new IfCondNode(
           nodeIdGen.genId(),
           createSrcLoc(condTagBegin, getPointJustBeforeNextToken()),
-          tagBeginEnd == null ? createSrcLoc(tagBegin) : createSrcLoc(tagBegin, tagBeginEnd),
+          tagBeginEnd == null ? createSrcLoc(condTagBegin) : createSrcLoc(condTagBegin, tagBeginEnd),
           "elseif",
           ifExpr);
       condNodes.add(ifCondNode);
@@ -3010,7 +3030,7 @@ private SwitchNode SwitchStmt() :
     tagBeginEnd = <CMD_END>
   } catch (ParseException e) {
     switchExpr = errorExpr(tagBegin);
-    reportTemplateBodyErrorAndSkipTo(e, CMD_END);
+    tagBeginEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
   }
 
   {
@@ -3096,7 +3116,7 @@ private ForNode ForStmt() :
 
     tagBeginEnd = <CMD_END>
   } catch (ParseException e) {
-    reportTemplateBodyErrorAndSkipTo(
+    tagBeginEnd = reportTemplateBodyErrorAndSkipTo(
         e,
         "\nFor-loops should be formatted as: \"{for $foo in <listExpression>}\".",
         CMD_END);
@@ -3157,6 +3177,7 @@ private CallNode CallStmt() :
   Token tagBegin, tagClose;
   Token tagBeginEnd = null;
   Identifier calleeName = null;
+  ExprNode calleeExpr = null;
   boolean selfClosing = false;
   List<CommandTagAttribute> attributes = ImmutableList.of();
   List<CallParamNode> params = ImmutableList.of();
@@ -3167,7 +3188,11 @@ private CallNode CallStmt() :
     tagBegin = <CMD_BEGIN_CALL>
 
     try {
-      calleeName = TemplateName()
+      (
+        calleeExpr = Expr()
+      |
+        calleeName = PartialTemplateNameInExpression()
+      )
       attributes = Attributes()
       (
         tagClose = <CMD_SELF_CLOSE>
@@ -3179,21 +3204,36 @@ private CallNode CallStmt() :
       )
     } catch (ParseException e) {
       tagClose = reportTemplateBodyErrorAndSkipTo(e, CMD_SELF_CLOSE, CMD_CLOSE_CALL);
-      if (calleeName == null) {
-        calleeName = Identifier.create(".error", createSrcLoc(tagBegin));
+      if (calleeExpr == null && calleeName == null) {
+        calleeExpr = new TemplateLiteralNode(Identifier.create(".error", createSrcLoc(tagBegin)),  createSrcLoc(tagBegin), false /* isSynthetic */);
       }
     }
 
     {
-      Identifier name =
-          SoyParseUtils.calculateFullCalleeName(calleeName, headerInfo, errorReporter);
-
       SourceLocation loc = createSrcLoc(tagBegin, tagClose);
+      if (calleeExpr == null) {
+        calleeExpr = new TemplateLiteralNode(
+            calleeName,
+            calleeName.location(),
+            true /* isSynthetic */);
+      } else if (calleeExpr.getKind() == ExprNode.Kind.GLOBAL_NODE) {
+        // De-alias the identifier in the global node, since we want to run the normal validation
+        // for template aliasing.
+        // See SoyFileParserTest.testCalleeNameExpansion() for an example that fails without this.
+        GlobalNode calleeAsGlobalNode = (GlobalNode) calleeExpr;
+        Identifier originalIdentifier = Identifier.create(
+            calleeAsGlobalNode.getIdentifier().originalName(),
+            calleeAsGlobalNode.getIdentifier().location());
+        calleeExpr = new TemplateLiteralNode(
+            originalIdentifier,
+            calleeExpr.getSourceLocation(),
+            true /* isSynthetic */);
+      }
       CallBasicNode node = new CallBasicNode(
           nodeIdGen.genId(),
           createSrcLoc(tagBegin, tagClose),
           (tagBeginEnd != null) ? createSrcLoc(tagBegin, tagBeginEnd) : loc,
-          name,
+          calleeExpr,
           attributes,
           selfClosing,
           errorReporter);
@@ -3322,7 +3362,7 @@ private CallParamNode CallParam() :
       attr = Attribute()
       tagBeginEnd = <CMD_END>
     } catch (ParseException e) {
-      reportTemplateBodyErrorAndSkipTo(e, CMD_END, CMD_SELF_CLOSE);
+      tagBeginEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END, CMD_SELF_CLOSE);
     }
 
     templateBlock = TemplateBlock()
@@ -4316,8 +4356,9 @@ private TemplateLiteralNode TemplateLiteral(Identifier ident) :
   closeParen = <RPAREN>
   {
     return new TemplateLiteralNode(
-        SoyParseUtils.calculateFullCalleeName(templateName, headerInfo, errorReporter),
-        ident.location().extend(createSrcLoc(closeParen)));
+        templateName,
+        ident.location().extend(createSrcLoc(closeParen)),
+        false /* isSynthetic */);
   }
 }
 
@@ -4469,25 +4510,25 @@ private TypeNode PrimaryType() :
  */
 private TypeNode TemplateType() :
 {
-  List<TemplateTypeNode.Argument> arguments = ImmutableList.of();
+  List<TemplateTypeNode.Parameter> parameters = ImmutableList.of();
   Token open, close, arrow;
   TypeNode returnType;
-  TemplateTypeNode.Argument argument;
+  TemplateTypeNode.Parameter parameter;
 }
 {
   open = <LPAREN>
 
   (
-    argument = TemplateArgument()
+    parameter = TemplateParameter()
     {
-      arguments = new ArrayList<TemplateTypeNode.Argument>();
-      arguments.add(argument);
+      parameters = new ArrayList<TemplateTypeNode.Parameter>();
+      parameters.add(parameter);
     }
     (
       <COMMA>
-      argument = TemplateArgument()
+      parameter = TemplateParameter()
       {
-        arguments.add(argument);
+        parameters.add(parameter);
       }
     )*
   )?
@@ -4500,25 +4541,25 @@ private TypeNode TemplateType() :
 
   {
     SourceLocation srcLoc = createSrcLoc(open, close, arrow);
-    return TemplateTypeNode.create(srcLoc, arguments, returnType);
+    return TemplateTypeNode.create(srcLoc, parameters, returnType);
   }
 }
 
 /**
  * TemplateArgument -> IDENT ":" TypeExpr
  */
-private TemplateTypeNode.Argument TemplateArgument() :
+private TemplateTypeNode.Parameter TemplateParameter() :
 {
-  Token argumentName;
-  TypeNode argumentType;
+  Token parameterName;
+  TypeNode parameterType;
 }
 {
-  argumentName = <IDENT>
+  parameterName = <IDENT>
   <COLON>
-  argumentType = TypeExpr()
+  parameterType = TypeExpr()
 
   {
-    return TemplateTypeNode.Argument.create(createSrcLoc(argumentName), argumentName.image, argumentType);
+    return TemplateTypeNode.Parameter.create(createSrcLoc(parameterName), parameterName.image, parameterType);
   }
 }
 

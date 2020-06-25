@@ -16,13 +16,14 @@
 
 package com.google.template.soy.soytree;
 
+import static com.google.common.collect.ImmutableList.toImmutableList;
 import static java.util.stream.Collectors.joining;
 
+import com.google.common.collect.ImmutableList;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.exprtree.StringNode;
-import com.google.template.soy.exprtree.VarDefn;
-import com.google.template.soy.soytree.SoyNode.Kind;
+import com.google.template.soy.soytree.defn.ImportedVar;
 import java.util.List;
 
 /**
@@ -34,20 +35,63 @@ import java.util.List;
 public final class ImportNode extends AbstractSoyNode {
 
   /** The value expression that the variable is set to. */
-  private final List<VarDefn> identifiers;
+  private final ImmutableList<ImportedVar> identifiers;
 
   private final StringNode path;
 
-  /** Only CSS is supported right now. */
+  private final ImportType importType;
+
+  /**
+   * Whether the import has been resolved/validated yet (some import types need to be processed in
+   * multiple passes).
+   */
+  private boolean isResolved;
+
+  /** Only Proto is supported right now. */
   public enum ImportType {
-    CSS,
-    UNKNOWN,
+    PROTO {
+      @Override
+      public boolean requiresSymbols() {
+        return true;
+      }
+
+      @Override
+      public boolean isGa() {
+        return true;
+      }
+    },
+    TEMPLATE {
+      @Override
+      public boolean requiresSymbols() {
+        return true;
+      }
+
+      @Override
+      public boolean isGa() {
+        return false;
+      }
+    },
+    UNKNOWN;
+
+    public boolean allowsSymbols() {
+      return true;
+    }
+
+    public boolean requiresSymbols() {
+      return false;
+    }
+
+    public boolean isGa() {
+      return false;
+    }
   }
 
-  public ImportNode(int id, SourceLocation location, StringNode path, List<VarDefn> defns) {
+  public ImportNode(int id, SourceLocation location, StringNode path, List<ImportedVar> defns) {
     super(id, location);
-    this.identifiers = defns;
+    this.identifiers = ImmutableList.copyOf(defns);
     this.path = path;
+    this.importType = importTypeForPath(path.getValue());
+    this.isResolved = false;
   }
 
   /**
@@ -57,8 +101,10 @@ public final class ImportNode extends AbstractSoyNode {
    */
   private ImportNode(ImportNode orig, CopyState copyState) {
     super(orig, copyState);
-    this.identifiers = orig.identifiers;
+    this.identifiers = orig.identifiers.stream().map(ImportedVar::clone).collect(toImmutableList());
     this.path = orig.path.copy(copyState);
+    this.importType = orig.importType;
+    this.isResolved = orig.isResolved;
   }
 
   @Override
@@ -75,24 +121,40 @@ public final class ImportNode extends AbstractSoyNode {
     return identifiers.isEmpty();
   }
 
-  private ImportType getImportType() {
-    // TODO(tomnguyen): Throw an error if any aliases are extracted from CSS imports, as they do not
-    // exist yet.
-    if (path.getValue().endsWith(".gss") || path.getValue().endsWith(".scss")) {
-      return ImportType.CSS;
+  public ImportType getImportType() {
+    return importType;
+  }
+
+  private static ImportType importTypeForPath(String path) {
+    if (path.endsWith(".proto")) {
+      return ImportType.PROTO;
+    } else if (path.endsWith(".soy")) {
+      return ImportType.TEMPLATE;
     }
     return ImportType.UNKNOWN;
+  }
+
+  public StringNode getPathNode() {
+    return path;
   }
 
   public String getPath() {
     return path.getValue();
   }
 
-  public boolean isCss() {
-    return getImportType() == ImportType.CSS;
+  public boolean isResolved() {
+    return isResolved;
   }
 
-  public List<VarDefn> getIdentifiers() {
+  public void setIsResolved() {
+    this.isResolved = true;
+  }
+
+  public SourceLocation getPathSourceLocation() {
+    return path.getSourceLocation();
+  }
+
+  public ImmutableList<ImportedVar> getIdentifiers() {
     return identifiers;
   }
 
@@ -102,7 +164,10 @@ public final class ImportNode extends AbstractSoyNode {
     if (!identifiers.isEmpty()) {
       exprs =
           String.format(
-              "{%s} from ", identifiers.stream().map(VarDefn::name).collect(joining(",")));
+              "{%s} from ",
+              identifiers.stream()
+                  .map(i -> i.isAliased() ? i.name() + " as " + i.getAlias() : i.name())
+                  .collect(joining(",")));
     }
     return String.format("import %s'%s'", exprs, path.getValue());
   }

@@ -25,6 +25,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
 import com.google.template.soy.base.internal.UniqueNameGenerator;
+import com.google.template.soy.css.CssRegistry;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
 import com.google.template.soy.jssrc.SoyJsSrcOptions;
@@ -78,7 +79,7 @@ public final class GenJsCodeVisitorTest {
 
         @Override
         public ImmutableSet<String> getRequiredJsLibNames() {
-          return ImmutableSet.of("for.function", "also.for.function");
+          return ImmutableSet.of("some.function", "also.some.function");
         }
 
         @Override
@@ -189,7 +190,7 @@ public final class GenJsCodeVisitorTest {
             + "\n"
             + "/** Test template. */\n"
             + "{template .goo}\n"
-            + "  {call for.function.aaa data=\"all\" /}\n"
+            + "  {call some.function.aaa data=\"all\" /}\n"
             + "  {noopRequire()}\n"
             + "{/template}\n";
 
@@ -211,9 +212,9 @@ public final class GenJsCodeVisitorTest {
             + "\n"
             + "goog.provide('boo.foo');\n"
             + "\n"
-            + "goog.require('also.for.function');\n"
-            + "goog.require('for.function');\n"
+            + "goog.require('also.some.function');\n"
             + "goog.require('goog.soy');\n"
+            + "goog.require('some.function');\n"
             + "goog.require('soydata.VERY_UNSAFE');\n"
             + "\n";
 
@@ -239,7 +240,12 @@ public final class GenJsCodeVisitorTest {
             + "  blah\n"
             + "{/template}\n";
 
-    ParseResult parseResult = SoyFileSetParserBuilder.forFileContents(testFileContent).parse();
+    ParseResult parseResult =
+        SoyFileSetParserBuilder.forFileContents(testFileContent)
+            .cssRegistry(
+                CssRegistry.create(
+                    ImmutableSet.of("ddd.eee.fff.ggg", "aaa.bbb.ccc"), ImmutableMap.of()))
+            .parse();
 
     String expectedJsFileContentStart =
         ""
@@ -399,7 +405,7 @@ public final class GenJsCodeVisitorTest {
             + "/** @desc  */\n"
             + "const MSG_UNNAMED = goog.getMsg("
             + "'Unable to reach {$productNameHtml}. Eeeek!', "
-            + "{'productNameHtml': PRODUCT_NAME_HTML});\n"
+            + "{'productNameHtml': PRODUCT_NAME_HTML}, {html: true});\n"
             + "output += MSG_UNNAMED;\n";
     assertGeneratedJsCode(soyCode, expectedJsCode);
 
@@ -419,7 +425,7 @@ public final class GenJsCodeVisitorTest {
             + "'aField': window._AField, "
             + "'forest': _window_.forest, "
             + "'x': window.size.x, "
-            + "'xxXx': window.size._xx_xx_});\n"
+            + "'xxXx': window.size._xx_xx_}, {html: true});\n"
             + "output += MSG_UNNAMED;\n";
     assertGeneratedJsCode(soyCode, expectedJsCode);
 
@@ -432,7 +438,7 @@ public final class GenJsCodeVisitorTest {
             + "const MSG_UNNAMED = goog.getMsg("
             + "'{$bar} {$originalServerName}', "
             + "{'bar': window.FOO.BAR, "
-            + "'originalServerName': window.ORIGINAL_SERVER_NAME});\n"
+            + "'originalServerName': window.ORIGINAL_SERVER_NAME}, {html: true});\n"
             + "output += MSG_UNNAMED;\n";
     assertGeneratedJsCode(soyCode, expectedJsCode);
 
@@ -444,7 +450,7 @@ public final class GenJsCodeVisitorTest {
             + "const MSG_UNNAMED = goog.getMsg("
             + "'{$camelCaseName}{$camelCase}.', "
             + "{'camelCaseName': camelCaseName, "
-            + "'camelCase': global.camelCase});\n"
+            + "'camelCase': global.camelCase}, {html: true});\n"
             + "output += MSG_UNNAMED;\n";
     assertGeneratedJsCode(soyCode, expectedJsCode);
 
@@ -455,7 +461,7 @@ public final class GenJsCodeVisitorTest {
             + "/** @desc  */\n"
             + "const MSG_UNNAMED = goog.getMsg("
             + "'Unable to reach {$camelCaseName}. Eeeek!', "
-            + "{'camelCaseName': CamelCaseName});\n"
+            + "{'camelCaseName': CamelCaseName}, {html: true});\n"
             + "output += MSG_UNNAMED;\n";
     assertGeneratedJsCode(soyCode, expectedJsCode);
 
@@ -476,7 +482,7 @@ public final class GenJsCodeVisitorTest {
             + "'thunderBar': _ThunderBar_, "
             + "'underCar': underCar__, "
             + "'car': window.__car__, "
-            + "'anotherBar': window.__AnotherBar__});\n"
+            + "'anotherBar': window.__AnotherBar__}, {html: true});\n"
             + "output += MSG_UNNAMED;\n";
     assertGeneratedJsCode(soyCode, expectedJsCode);
   }
@@ -500,7 +506,7 @@ public final class GenJsCodeVisitorTest {
             + "/** @desc  */\n"
             + "const MSG_UNNAMED = goog.getMsg("
             + "'Unable to reach {$productNameHtml}. Eeeek!', "
-            + "{'productNameHtml': opt_data.PRODUCT_NAME_HTML});\n"
+            + "{'productNameHtml': opt_data.PRODUCT_NAME_HTML}, {html: true});\n"
             + "output += MSG_UNNAMED;\n";
     assertGeneratedJsCode(soyCode, expectedJsCode);
 
@@ -520,7 +526,7 @@ public final class GenJsCodeVisitorTest {
             + "'{$bar}{$originalServer}{$xxXx}', "
             + "{'bar': opt_data.myvar.foo.bar, "
             + "'originalServer': opt_data.myvar.ORIGINAL_SERVER, "
-            + "'xxXx': opt_data.window.size._xx_xx_});\n"
+            + "'xxXx': opt_data.window.size._xx_xx_}, {html: true});\n"
             + "output += MSG_UNNAMED;\n";
     assertGeneratedJsCode(soyCode, expectedJsCode);
 
@@ -538,7 +544,7 @@ public final class GenJsCodeVisitorTest {
             + "'{$bar}{$trail}{$barBarBar}', "
             + "{'bar': opt_data.myvar.foo._bar, "
             + "'trail': opt_data.myvar.foo.trail_, "
-            + "'barBarBar': opt_data.myvar.foo._bar_bar_bar_});\n"
+            + "'barBarBar': opt_data.myvar.foo._bar_bar_bar_}, {html: true});\n"
             + "output += MSG_UNNAMED;\n";
     assertGeneratedJsCode(soyCode, expectedJsCode);
 
@@ -555,11 +561,10 @@ public final class GenJsCodeVisitorTest {
             + "const MSG_UNNAMED = goog.getMsg("
             + "'{$productName}{$otherProductName}', "
             + "{'productName': opt_data.productName, "
-            + "'otherProductName': opt_data.OtherProductName});\n"
+            + "'otherProductName': opt_data.OtherProductName}, {html: true});\n"
             + "output += MSG_UNNAMED;\n";
     assertGeneratedJsCode(soyCode, expectedJsCode);
   }
-
 
   @Test
   public void testPrint() {
@@ -588,17 +593,17 @@ public final class GenJsCodeVisitorTest {
         ""
             + "if (opt_data.boo) {\n"
             + "  const alpha__soy5 = opt_data.boo.foo;\n"
-            + "  let beta__soy8 = 'Boo!';\n"
-            + "  let gamma__soy18 = '';\n"
-            + "  const i16ListLen = Math.max(0, Math.ceil((alpha__soy5 - 0) / 1));\n"
-            + "  for (let i16Index = 0; i16Index < i16ListLen; i16Index++) {\n"
-            + "    const i16Data = 0 + i16Index * 1;\n"
-            + "    gamma__soy18 += i16Data + beta__soy8;\n"
+            + "  let beta__soy6 = 'Boo!';\n"
+            + "  let gamma__soy8 = '';\n"
+            + "  const i9ListLen = Math.max(0, Math.ceil((alpha__soy5 - 0) / 1));\n"
+            + "  for (let i9Index = 0; i9Index < i9ListLen; i9Index++) {\n"
+            + "    const i9Data = 0 + i9Index * 1;\n"
+            + "    gamma__soy8 += i9Data + beta__soy6;\n"
             + "  }\n"
-            + "  let delta__soy21 = 'Boop!';\n"
-            + "  const delta__wrapped21 = soydata.VERY_UNSAFE"
-            + ".$$ordainSanitizedHtmlForInternalBlocks(delta__soy21);\n"
-            + "  output += alpha__soy5 + beta__soy8 + gamma__soy18 + delta__wrapped21;\n"
+            + "  let delta__soy13 = 'Boop!';\n"
+            + "  const delta__wrapped13 = soydata.VERY_UNSAFE"
+            + ".$$ordainSanitizedHtmlForInternalBlocks(delta__soy13);\n"
+            + "  output += alpha__soy5 + beta__soy6 + gamma__soy8 + delta__wrapped13;\n"
             + "}\n";
     assertGeneratedJsCode(soyNodeCode, expectedJsCode);
   }
@@ -668,10 +673,10 @@ public final class GenJsCodeVisitorTest {
     expectedJsCode =
         ""
             + "if (opt_data.boo.foo > 0) {\n"
-            + "  const i10ListLen = Math.max(0, Math.ceil((4 - 0) / 1));\n"
-            + "  for (let i10Index = 0; i10Index < i10ListLen; i10Index++) {\n"
-            + "    const i10Data = 0 + i10Index * 1;\n"
-            + "    output += i10Data + 1 + '<br>';\n"
+            + "  const i5ListLen = Math.max(0, Math.ceil((4 - 0) / 1));\n"
+            + "  for (let i5Index = 0; i5Index < i5ListLen; i5Index++) {\n"
+            + "    const i5Data = 0 + i5Index * 1;\n"
+            + "    output += i5Data + 1 + '<br>';\n"
             + "  }\n"
             + "} else if (!soy.$$strContains('' + gooData8, 'goo')) {\n"
             + "  output += 'Bleh';\n"
@@ -704,13 +709,13 @@ public final class GenJsCodeVisitorTest {
             + "{/call}\n";
     String expectedJsCode =
         ""
-            + "let param11 = '';\n"
-            + "const i9ListLen = Math.max(0, Math.ceil((7 - 0) / 1));\n"
-            + "for (let i9Index = 0; i9Index < i9ListLen; i9Index++) {\n"
-            + "  const i9Data = 0 + i9Index * 1;\n"
-            + "  param11 += i9Data;\n"
+            + "let param4 = '';\n"
+            + "const i5ListLen = Math.max(0, Math.ceil((7 - 0) / 1));\n"
+            + "for (let i5Index = 0; i5Index < i5ListLen; i5Index++) {\n"
+            + "  const i5Data = 0 + i5Index * 1;\n"
+            + "  param4 += i5Data;\n"
             + "}\n"
-            + "output += some.func(soy.$$assignDefaults({goo: param11}, opt_data.boo),"
+            + "output += some.func(soy.$$assignDefaults({goo: param4}, opt_data.boo),"
             + " opt_ijData);\n";
     assertGeneratedJsCode(soyNodeCode, expectedJsCode);
   }
@@ -861,7 +866,7 @@ public final class GenJsCodeVisitorTest {
             + "other{{PERSON_1} added {PERSON_2} and some friends to his circle.}"
             + "}"
             + "}"
-            + "}');\n"
+            + "}', {}, {html: true});\n"
             + "const msg_s = new goog.i18n.MessageFormat(MSG_UNNAMED).formatIgnoringPound("
             + "{'FORMAT': opt_data.format, "
             + "'GENDER_1': opt_data.user.gender, "
@@ -920,7 +925,7 @@ public final class GenJsCodeVisitorTest {
             + "other{{PERSON_1} added {PERSON_2} and some friends to his circle.}"
             + "}"
             + "}"
-            + "}');\n"
+            + "}', {}, {html: true});\n"
             + "const msg_s = new goog.i18n.MessageFormat(MSG_UNNAMED).formatIgnoringPound("
             + "{'FORMAT': opt_data.format, "
             + "'USER': opt_data.gender.user, "
@@ -979,7 +984,7 @@ public final class GenJsCodeVisitorTest {
             + "other{{PERSON_1} added {PERSON_2} and some friends to his circle.}"
             + "}"
             + "}"
-            + "}');\n"
+            + "}', {}, {html: true});\n"
             + "const msg_s = new goog.i18n.MessageFormat(MSG_UNNAMED).formatIgnoringPound("
             + "{'FORMAT': opt_data.format, "
             + "'STATUS_1': opt_data.gender[/** @type {?} */ (0)], "
@@ -1035,7 +1040,7 @@ public final class GenJsCodeVisitorTest {
             + "other{{PERSON} added {XXX_2} to his/her circle.}"
             + "}"
             + "}"
-            + "}');\n"
+            + "}', {}, {html: true});\n"
             + "const msg_s = new goog.i18n.MessageFormat(MSG_UNNAMED).formatIgnoringPound("
             + "{'STATUS': opt_data.values.gender[/** @type {?} */ (0)], "
             + "'NUM_1': opt_data.values.people[/** @type {?} */ (0)], "
@@ -1084,7 +1089,7 @@ public final class GenJsCodeVisitorTest {
             + "other{{PERSON_4} added {PERSON_5} to his/her circle.}"
             + "}"
             + "}"
-            + "}');\n"
+            + "}', {}, {html: true});\n"
             + "const msg_s = new goog.i18n.MessageFormat(MSG_UNNAMED).formatIgnoringPound("
             + "{'PERSON_1': opt_data.gender.person, "
             + "'PERSON_2': opt_data.number.person, "
@@ -1133,7 +1138,7 @@ public final class GenJsCodeVisitorTest {
             + "other{{PERSON_5} added {PERSON_6} people to his/her circle.}"
             + "}"
             + "}"
-            + "}');\n"
+            + "}', {}, {html: true});\n"
             + "const msg_s = new goog.i18n.MessageFormat(MSG_UNNAMED).formatIgnoringPound("
             + "{'PERSON_1': opt_data.gender.person, "
             + "'PERSON_2': opt_data.number.person, "
@@ -1182,7 +1187,7 @@ public final class GenJsCodeVisitorTest {
             + "other{{PERSON_1} added {PERSON_2} and some friends to his circle.}"
             + "}"
             + "}"
-            + "}');\n"
+            + "}', {}, {html: true});\n"
             + "const msg_s = new goog.i18n.MessageFormat(MSG_UNNAMED).formatIgnoringPound("
             + "{'GENDER_1': opt_data.user.gender, "
             + "'GENDER_2': opt_data.friend.gender, "
@@ -1210,7 +1215,7 @@ public final class GenJsCodeVisitorTest {
             + "{'startSpan': '<span class=\"'"
             + " + goog.getCssName('sharebox-id-email-number') + '\">', "
             + "'num': opt_data.num, "
-            + "'endSpan': '</span>'});\n"
+            + "'endSpan': '</span>'}, {html: true});\n"
             + "output += MSG_UNNAMED;\n";
     assertGeneratedJsCode(soyNodeCode, expectedJsCode);
 
@@ -1229,20 +1234,16 @@ public final class GenJsCodeVisitorTest {
             + "  {/plural}\n"
             + "{/msg}\n";
     expectedJsCode =
-        ""
-            + "/** @desc [ICU Syntax] */\n"
-            + "const MSG_UNNAMED = goog.getMsg("
-            + "'{NUM_1,plural,=0{      Notify people via email &rsaquo;}"
-            + "=1{      Notify {START_SPAN_1}{NUM_2}{END_SPAN} person via email &rsaquo;}"
-            + "other{Notify {START_SPAN_2}{NUM_2}{END_SPAN} people via email &rsaquo;}}');\n"
-            + "const msg_s = new goog.i18n.MessageFormat(MSG_UNNAMED).formatIgnoringPound("
-            + "{'NUM_1': opt_data.num, "
-            + "'START_SPAN_1': '<span class=\"' + goog.getCssName('sharebox-id-email-number') "
-            + "+ '\">', "
-            + "'NUM_2': opt_data.num, "
-            + "'END_SPAN': '</span>', "
-            + "'START_SPAN_2': '<span class=\"' + goog.getCssName('sharebox-id-email-number')"
-            + " + '\">'});\n"
+        "/** @desc [ICU Syntax] */\n"
+            + "const MSG_UNNAMED = goog.getMsg('{NUM_1,plural,=0{      Notify people via email"
+            + " &rsaquo;}=1{      Notify {START_SPAN_1}{NUM_2}{END_SPAN} person via email"
+            + " &rsaquo;}other{Notify {START_SPAN_2}{NUM_2}{END_SPAN} people via email"
+            + " &rsaquo;}}', {}, {html: true});\n"
+            + "const msg_s = new"
+            + " goog.i18n.MessageFormat(MSG_UNNAMED).formatIgnoringPound({'NUM_1': opt_data.num,"
+            + " 'START_SPAN_1': '<span class=\"' + goog.getCssName('sharebox-id-email-number') +"
+            + " '\">', 'NUM_2': opt_data.num, 'END_SPAN': '</span>', 'START_SPAN_2': '<span"
+            + " class=\"' + goog.getCssName('sharebox-id-email-number') + '\">'});\n"
             + "output += msg_s;\n";
     assertGeneratedJsCode(soyNodeCode, expectedJsCode);
   }
@@ -1307,6 +1308,7 @@ public final class GenJsCodeVisitorTest {
             + "/**\n"
             + " * @fileoverview Templates in namespace boo.foo.\n"
             + " * @public\n"
+            + " * @suppress {missingRequire}\n"
             + " */\n"
             + "\n"
             + "goog.module('boo.foo');\n"
@@ -1520,9 +1522,7 @@ public final class GenJsCodeVisitorTest {
    */
   private void assertGeneratedJsCode(String soyCode, String expectedJsCode) {
     ParseResult parseResult =
-        SoyFileSetParserBuilder.forTemplateContents(soyCode)
-            .allowUnboundGlobals(true)
-            .parse();
+        SoyFileSetParserBuilder.forTemplateContents(soyCode).allowUnboundGlobals(true).parse();
     TemplateNode templateNode = (TemplateNode) parseResult.fileSet().getChild(0).getChild(0);
 
     // Setup the GenJsCodeVisitor's state before the node is visited.

@@ -68,7 +68,9 @@ $jscomp.polyfill = function(target, polyfill, fromLang, toLang) {
 $jscomp.polyfillUnisolated = function(target, polyfill) {
   for (var obj = $jscomp.global, split = target.split("."), i = 0; i < split.length - 1; i++) {
     var key = split[i];
-    key in obj || (obj[key] = {});
+    if (!(key in obj)) {
+      return;
+    }
     obj = obj[key];
   }
   var property = split[split.length - 1], orig = obj[property], impl = polyfill(orig);
@@ -79,7 +81,9 @@ $jscomp.polyfillIsolated = function(target, polyfill, fromLang) {
   var obj = !isNativeClass && root in $jscomp.polyfills ? $jscomp.polyfills : $jscomp.global;
   for (var i = 0; i < split.length - 1; i++) {
     var key = split[i];
-    key in obj || (obj[key] = {});
+    if (!(key in obj)) {
+      return;
+    }
     obj = obj[key];
   }
   var property = split[split.length - 1], nativeImpl = $jscomp.IS_SYMBOL_NATIVE && "es6" === fromLang ? obj[property] : null, impl = polyfill(nativeImpl);
@@ -233,14 +237,16 @@ $jscomp.polyfill("WeakMap", function(NativeWeakMap) {
     }
   }
   function patch(name) {
-    var prev = Object[name];
-    prev && (Object[name] = function(target) {
-      if (target instanceof WeakMapMembership) {
-        return target;
-      }
-      insert(target);
-      return prev(target);
-    });
+    if (!$jscomp.ISOLATE_POLYFILLS) {
+      var prev = Object[name];
+      prev && (Object[name] = function(target) {
+        if (target instanceof WeakMapMembership) {
+          return target;
+        }
+        Object.isExtensible(target) && insert(target);
+        return prev(target);
+      });
+    }
   }
   if ($jscomp.USE_PROXY_FOR_ES6_CONFORMANCE_CHECKS) {
     if (NativeWeakMap && $jscomp.ES6_CONFORMANCE) {
@@ -526,12 +532,6 @@ goog.getObjectByName = function(name, opt_obj) {
   }
   return cur;
 };
-goog.globalize = function(obj, opt_global) {
-  var global = opt_global || goog.global, x;
-  for (x in obj) {
-    global[x] = obj[x];
-  }
-};
 goog.addDependency = function() {
 };
 goog.useStrictRequires = !1;
@@ -652,33 +652,7 @@ goog.transpile_ = function(code$jscomp$0, path$jscomp$0, target) {
 };
 goog.typeOf = function(value) {
   var s = typeof value;
-  if ("object" == s) {
-    if (value) {
-      if (value instanceof Array) {
-        return "array";
-      }
-      if (value instanceof Object) {
-        return s;
-      }
-      var className = Object.prototype.toString.call(value);
-      if ("[object Window]" == className) {
-        return "object";
-      }
-      if ("[object Array]" == className || "number" == typeof value.length && "undefined" != typeof value.splice && "undefined" != typeof value.propertyIsEnumerable && !value.propertyIsEnumerable("splice")) {
-        return "array";
-      }
-      if ("[object Function]" == className || "undefined" != typeof value.call && "undefined" != typeof value.propertyIsEnumerable && !value.propertyIsEnumerable("call")) {
-        return "function";
-      }
-    } else {
-      return "null";
-    }
-  } else {
-    if ("function" == s && "undefined" == typeof value.call) {
-      return "object";
-    }
-  }
-  return s;
+  return "object" != s ? s : value ? Array.isArray(value) ? "array" : s : "null";
 };
 goog.isArray = function(val) {
   return Array.isArray(val);
@@ -712,8 +686,6 @@ goog.removeUid = function(obj) {
 };
 goog.UID_PROPERTY_ = "closure_uid_" + (1e9 * Math.random() >>> 0);
 goog.uidCounter_ = 0;
-goog.getHashCode = goog.getUid;
-goog.removeHashCode = goog.removeUid;
 goog.cloneObject = function(obj) {
   var type = goog.typeOf(obj);
   if ("object" == type || "array" == type) {
@@ -764,37 +736,10 @@ goog.mixin = function(target, source) {
     target[x] = source[x];
   }
 };
-goog.now = goog.TRUSTED_SITE && Date.now || function() {
-  return +new Date;
-};
+goog.now = Date.now;
 goog.globalEval = function(script) {
-  if (goog.global.execScript) {
-    goog.global.execScript(script, "JavaScript");
-  } else {
-    if (goog.global.eval) {
-      if (null == goog.evalWorks_) {
-        try {
-          goog.global.eval(""), goog.evalWorks_ = !0;
-        } catch (ignore) {
-          goog.evalWorks_ = !1;
-        }
-      }
-      if (goog.evalWorks_) {
-        goog.global.eval(script);
-      } else {
-        var doc = goog.global.document, scriptElt = doc.createElement("script");
-        scriptElt.type = "text/javascript";
-        scriptElt.defer = !1;
-        scriptElt.appendChild(doc.createTextNode(script));
-        doc.head.appendChild(scriptElt);
-        doc.head.removeChild(scriptElt);
-      }
-    } else {
-      throw Error("goog.globalEval not available");
-    }
-  }
+  (0,eval)(script);
 };
-goog.evalWorks_ = null;
 goog.getCssName = function(className, opt_modifier) {
   if ("." == String(className).charAt(0)) {
     throw Error('className passed in goog.getCssName must not start with ".". You passed: ' + className);
@@ -876,7 +821,7 @@ goog.defineClass.applyProperties_ = function(target, source) {
     key = goog.defineClass.OBJECT_PROTOTYPE_FIELDS_[i], Object.prototype.hasOwnProperty.call(source, key) && (target[key] = source[key]);
   }
 };
-goog.TRUSTED_TYPES_POLICY_NAME = "";
+goog.TRUSTED_TYPES_POLICY_NAME = "goog";
 goog.identity_ = function(s) {
   return s;
 };
@@ -1808,31 +1753,14 @@ goog.dom.tags.VOID_TAGS_ = {area:!0, base:!0, br:!0, col:!0, command:!0, embed:!
 goog.dom.tags.isVoidTag = function(tagName) {
   return !0 === goog.dom.tags.VOID_TAGS_[tagName];
 };
-goog.memoize = function(f, opt_serializer) {
-  var serializer = opt_serializer || goog.memoize.simpleSerializer;
-  return function() {
-    if (goog.memoize.ENABLE_MEMOIZE) {
-      var thisOrGlobal = this || goog.global, cache = thisOrGlobal[goog.memoize.CACHE_PROPERTY_] || (thisOrGlobal[goog.memoize.CACHE_PROPERTY_] = {}), key = serializer(goog.getUid(f), arguments);
-      return cache.hasOwnProperty(key) ? cache[key] : cache[key] = f.apply(this, arguments);
-    }
-    return f.apply(this, arguments);
-  };
-};
-goog.memoize.ENABLE_MEMOIZE = !0;
-goog.memoize.clearCache = function(cacheOwner) {
-  cacheOwner[goog.memoize.CACHE_PROPERTY_] = {};
-};
-goog.memoize.CACHE_PROPERTY_ = "closure_memoize_cache_";
-goog.memoize.simpleSerializer = function(functionUid, args) {
-  for (var context = [functionUid], i = args.length - 1; 0 <= i; --i) {
-    context.push(typeof args[i], args[i]);
-  }
-  return context.join("\x0B");
-};
 goog.html = {};
 goog.html.trustedtypes = {};
 goog.html.trustedtypes.getPolicyPrivateDoNotAccessOrElse = function() {
-  return goog.TRUSTED_TYPES_POLICY_NAME ? goog.memoize(goog.createTrustedTypesPolicy)(goog.TRUSTED_TYPES_POLICY_NAME + "#html") : null;
+  if (!goog.TRUSTED_TYPES_POLICY_NAME) {
+    return null;
+  }
+  void 0 === goog.html.trustedtypes.cachedPolicy_ && (goog.html.trustedtypes.cachedPolicy_ = goog.createTrustedTypesPolicy(goog.TRUSTED_TYPES_POLICY_NAME + "#html"));
+  return goog.html.trustedtypes.cachedPolicy_;
 };
 goog.string = {};
 goog.string.TypedString = function() {
@@ -2301,9 +2229,13 @@ goog.html.SafeUrl.fromMediaSource = function(mediaSource) {
   return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(url);
 };
 goog.html.DATA_URL_PATTERN_ = /^data:(.*);base64,[a-z0-9+\/]+=*$/i;
+goog.html.SafeUrl.tryFromDataUrl = function(dataUrl) {
+  dataUrl = String(dataUrl);
+  var filteredDataUrl = dataUrl.replace(/(%0A|%0D)/g, ""), match = filteredDataUrl.match(goog.html.DATA_URL_PATTERN_);
+  return match && goog.html.SafeUrl.isSafeMimeType(match[1]) ? goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(filteredDataUrl) : null;
+};
 goog.html.SafeUrl.fromDataUrl = function(dataUrl) {
-  var filteredDataUrl = dataUrl.replace(/(%0A|%0D)/g, ""), match = filteredDataUrl.match(goog.html.DATA_URL_PATTERN_), valid = match && goog.html.SafeUrl.isSafeMimeType(match[1]);
-  return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(valid ? filteredDataUrl : goog.html.SafeUrl.INNOCUOUS_STRING);
+  return goog.html.SafeUrl.tryFromDataUrl(dataUrl) || goog.html.SafeUrl.INNOCUOUS_URL;
 };
 goog.html.SafeUrl.fromTelUrl = function(telUrl) {
   goog.string.internal.caseInsensitiveStartsWith(telUrl, "tel:") || (telUrl = goog.html.SafeUrl.INNOCUOUS_STRING);
@@ -2377,13 +2309,15 @@ goog.html.SafeUrl.fromTrustedResourceUrl = function(trustedResourceUrl) {
 };
 goog.html.SAFE_URL_PATTERN_ = /^(?:(?:https?|mailto|ftp):|[^:/?#]*(?:[/?#]|$))/i;
 goog.html.SafeUrl.SAFE_URL_PATTERN = goog.html.SAFE_URL_PATTERN_;
-goog.html.SafeUrl.sanitize = function(url) {
+goog.html.SafeUrl.trySanitize = function(url) {
   if (url instanceof goog.html.SafeUrl) {
     return url;
   }
   url = "object" == typeof url && url.implementsGoogStringTypedString ? url.getTypedStringValue() : String(url);
-  goog.html.SAFE_URL_PATTERN_.test(url) || (url = goog.html.SafeUrl.INNOCUOUS_STRING);
-  return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(url);
+  return goog.html.SAFE_URL_PATTERN_.test(url) ? goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(url) : null;
+};
+goog.html.SafeUrl.sanitize = function(url) {
+  return goog.html.SafeUrl.trySanitize(url) || goog.html.SafeUrl.INNOCUOUS_URL;
 };
 goog.html.SafeUrl.sanitizeAssertUnchanged = function(url, opt_allowDataUrl) {
   if (url instanceof goog.html.SafeUrl) {
@@ -2403,6 +2337,7 @@ goog.html.SafeUrl.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ = {};
 goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse = function(url) {
   return new goog.html.SafeUrl(goog.html.SafeUrl.CONSTRUCTOR_TOKEN_PRIVATE_, url);
 };
+goog.html.SafeUrl.INNOCUOUS_URL = goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(goog.html.SafeUrl.INNOCUOUS_STRING);
 goog.html.SafeUrl.ABOUT_BLANK = goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse("about:blank");
 goog.html.SafeUrl.CONSTRUCTOR_TOKEN_PRIVATE_ = {};
 goog.html.SafeStyle = function() {
@@ -3324,6 +3259,9 @@ goog.dom.safe.setInnerHtml = function(elem, html) {
   }
   goog.dom.safe.unsafeSetInnerHtmlDoNotUseOrElse(elem, html);
 };
+goog.dom.safe.setInnerHtmlFromConstant = function(element, constHtml) {
+  goog.dom.safe.setInnerHtml(element, goog.html.uncheckedconversions.safeHtmlFromStringKnownToSatisfyTypeContract(goog.string.Const.from("Constant HTML to be immediatelly used."), goog.string.Const.unwrap(constHtml)));
+};
 goog.dom.safe.setOuterHtml = function(elem, html) {
   elem.outerHTML = goog.html.SafeHtml.unwrapTrustedHTML(html);
 };
@@ -3397,7 +3335,7 @@ goog.dom.safe.setScriptSrc = function(script, url) {
 };
 goog.dom.safe.setScriptContent = function(script, content) {
   goog.dom.asserts.assertIsHTMLScriptElement(script);
-  script.text = goog.html.SafeScript.unwrapTrustedScript(content);
+  script.textContent = goog.html.SafeScript.unwrapTrustedScript(content);
   goog.dom.safe.setNonceForScriptElement_(script);
 };
 goog.dom.safe.setNonceForScriptElement_ = function(script) {
@@ -6064,7 +6002,7 @@ goog.i18n.currency.adjustPrecision = function(pattern, currencyCode) {
 };
 goog.i18n.currency.CurrencyInfo = {AED:[2, "dh", "\u062f.\u0625."], ALL:[0, "Lek", "Lek"], AUD:[2, "$", "AU$"], BDT:[2, "\u09f3", "Tk"], BGN:[2, "lev", "lev"], BRL:[2, "R$", "R$"], CAD:[2, "$", "C$"], CDF:[2, "FrCD", "CDF"], CHF:[2, "CHF", "CHF"], CLP:[0, "$", "CL$"], CNY:[2, "\u00a5", "RMB\u00a5"], COP:[32, "$", "COL$"], CRC:[0, "\u20a1", "CR\u20a1"], CZK:[50, "K\u010d", "K\u010d"], DKK:[50, "kr.", "kr."], DOP:[2, "RD$", "RD$"], EGP:[2, "\u00a3", "LE"], ETB:[2, "Birr", "Birr"], EUR:[2, "\u20ac", 
 "\u20ac"], GBP:[2, "\u00a3", "GB\u00a3"], HKD:[2, "$", "HK$"], HRK:[2, "kn", "kn"], HUF:[34, "Ft", "Ft"], IDR:[0, "Rp", "Rp"], ILS:[34, "\u20aa", "IL\u20aa"], INR:[2, "\u20b9", "Rs"], IRR:[0, "Rial", "IRR"], ISK:[0, "kr", "kr"], JMD:[2, "$", "JA$"], JPY:[0, "\u00a5", "JP\u00a5"], KRW:[0, "\u20a9", "KR\u20a9"], LKR:[2, "Rs", "SLRs"], LTL:[2, "Lt", "Lt"], MNT:[0, "\u20ae", "MN\u20ae"], MVR:[2, "Rf", "MVR"], MXN:[2, "$", "Mex$"], MYR:[2, "RM", "RM"], NOK:[50, "kr", "NOkr"], PAB:[2, "B/.", "B/."], PEN:[2, 
-"S/.", "S/."], PHP:[2, "\u20b1", "PHP"], PKR:[0, "Rs", "PKRs."], PLN:[50, "z\u0142", "z\u0142"], RON:[2, "RON", "RON"], RSD:[0, "din", "RSD"], RUB:[50, "\u20bd", "RUB"], SAR:[2, "Rial", "Rial"], SEK:[50, "kr", "kr"], SGD:[2, "$", "S$"], THB:[2, "\u0e3f", "THB"], TRY:[2, "\u20ba", "TRY"], TWD:[2, "NT$", "NT$"], TZS:[0, "TSh", "TSh"], UAH:[2, "\u0433\u0440\u043d.", "UAH"], USD:[2, "$", "US$"], UYU:[2, "$", "$U"], VND:[48, "\u20ab", "VN\u20ab"], YER:[0, "Rial", "Rial"], ZAR:[2, "R", "ZAR"]};
+"S/.", "S/."], PHP:[2, "\u20b1", "PHP"], PKR:[0, "Rs", "PKRs."], PLN:[50, "z\u0142", "z\u0142"], RON:[2, "RON", "RON"], RSD:[0, "din", "RSD"], RUB:[50, "\u20bd", "RUB"], SAR:[2, "Rial", "Rial"], SEK:[50, "kr", "kr"], SGD:[2, "$", "S$"], THB:[2, "\u0e3f", "THB"], TRY:[2, "\u20ba", "TRY"], TWD:[2, "$", "NT$"], TZS:[0, "TSh", "TSh"], UAH:[2, "\u0433\u0440\u043d.", "UAH"], USD:[2, "$", "US$"], UYU:[2, "$", "$U"], VND:[48, "\u20ab", "VN\u20ab"], YER:[0, "Rial", "Rial"], ZAR:[2, "R", "ZAR"]};
 goog.i18n.currency.CurrencyInfoTier2 = {AFN:[48, "Af.", "AFN"], AMD:[32, "Dram", "dram"], ANG:[2, "NAf.", "ANG"], AOA:[2, "Kz", "Kz"], ARS:[34, "$", "AR$"], AWG:[2, "Afl.", "Afl."], AZN:[34, "\u20bc", "AZN"], BAM:[2, "KM", "KM"], BBD:[2, "$", "Bds$"], BHD:[3, "din", "din"], BIF:[0, "FBu", "FBu"], BMD:[2, "$", "BD$"], BND:[2, "$", "B$"], BOB:[2, "Bs", "Bs"], BSD:[2, "$", "BS$"], BTN:[2, "Nu.", "Nu."], BWP:[2, "P", "pula"], BYN:[50, "\u0440.", "BYN"], BYR:[48, "\u0440.", "BYR"], BZD:[2, "$", "BZ$"], 
 CLF:[4, "UF", "CLF"], CNH:[2, "\u00a5", "RMB\u00a5"], CUC:[1, "$", "CUC$"], CUP:[2, "$", "CU$"], CVE:[2, "CVE", "Esc"], DJF:[0, "Fdj", "Fdj"], DZD:[2, "din", "din"], ERN:[2, "Nfk", "Nfk"], FJD:[2, "$", "FJ$"], FKP:[2, "\u00a3", "FK\u00a3"], GEL:[2, "GEL", "GEL"], GHS:[2, "GHS", "GHS"], GIP:[2, "\u00a3", "GI\u00a3"], GMD:[2, "GMD", "GMD"], GNF:[0, "FG", "FG"], GTQ:[2, "Q", "GTQ"], GYD:[0, "$", "GY$"], HNL:[2, "L", "HNL"], HTG:[2, "HTG", "HTG"], IQD:[0, "din", "IQD"], JOD:[3, "din", "JOD"], KES:[2, 
 "Ksh", "Ksh"], KGS:[2, "KGS", "KGS"], KHR:[2, "Riel", "KHR"], KMF:[0, "CF", "KMF"], KPW:[0, "\u20a9KP", "KPW"], KWD:[3, "din", "KWD"], KYD:[2, "$", "KY$"], KZT:[2, "\u20b8", "KZT"], LAK:[0, "\u20ad", "\u20ad"], LBP:[0, "L\u00a3", "LBP"], LRD:[2, "$", "L$"], LSL:[2, "LSL", "LSL"], LYD:[3, "din", "LD"], MAD:[2, "dh", "MAD"], MDL:[2, "MDL", "MDL"], MGA:[0, "Ar", "MGA"], MKD:[2, "din", "MKD"], MMK:[0, "K", "MMK"], MOP:[2, "MOP", "MOP$"], MRO:[0, "MRO", "MRO"], MUR:[0, "MURs", "MURs"], MWK:[2, "MWK", 
@@ -8459,6 +8397,12 @@ soy.$$listIndexOf = function(list, val) {
 };
 soy.$$listSlice = function(list, from, to) {
   return null == to ? goog.array.slice(list, from) : goog.array.slice(list, from, to);
+};
+soy.$$filterAndMap = function(list, filter, map) {
+  for (var array = [], i = 0; i < list.length; i++) {
+    filter(list[i], i) && array.push(map(list[i], i));
+  }
+  return array;
 };
 soy.$$numberListSort = function(list) {
   return goog.array.toArray(list).sort(function(a, b) {

@@ -18,13 +18,22 @@ package com.google.template.soy.passes;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.truth.Truth.assertThat;
+import static com.google.common.truth.Truth.assertWithMessage;
 import static org.junit.Assert.fail;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.Streams;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.passes.PassManager.PassContinuationRule;
 import com.google.template.soy.shared.SoyGeneralOptions;
 import com.google.template.soy.types.SoyTypeRegistryBuilder;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.Consumer;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -36,7 +45,8 @@ public final class PassManagerTest {
         .setGeneralOptions(new SoyGeneralOptions())
         .setSoyPrintDirectives(ImmutableList.of())
         .setTypeRegistry(SoyTypeRegistryBuilder.create())
-        .setErrorReporter(ErrorReporter.exploding());
+        .setErrorReporter(ErrorReporter.exploding())
+        .setCssRegistry(Optional.empty());
   }
 
   private static class NoSuchPass implements CompilerPass {}
@@ -62,16 +72,17 @@ public final class PassManagerTest {
   public void testContinuationRule_stopAfter() throws Exception {
     PassManager manager =
         builder()
-            .addPassContinuationRule(
-                ResolveTemplateParamTypesPass.class, PassContinuationRule.STOP_AFTER_PASS)
+            .addPassContinuationRule(ResolvePluginsPass.class, PassContinuationRule.STOP_AFTER_PASS)
             .build();
 
-    assertThat(names(manager.singleFilePasses))
+    assertThat(names(manager.partialTemplateRegistryPasses))
         .containsExactly(
-            "BanNonNullAssertionOperator",
-            "DesugarGroupNodes",
-            "ContentSecurityPolicyNonceInjection",
-            "ResolveTemplateParamTypes");
+            "ResolveProtoImports",
+            "ResolveTemplateImportsFromDeps",
+            "ResolveTemplateNames",
+            "ResolveTemplateParamTypes",
+            "ResolvePlugins")
+        .inOrder();
     assertThat(names(manager.crossTemplateCheckingPasses)).isEmpty();
   }
 
@@ -80,15 +91,156 @@ public final class PassManagerTest {
     PassManager manager =
         builder()
             .addPassContinuationRule(
-                ResolveTemplateParamTypesPass.class, PassContinuationRule.STOP_BEFORE_PASS)
+                ResolvePluginsPass.class, PassContinuationRule.STOP_BEFORE_PASS)
             .build();
 
-    assertThat(names(manager.singleFilePasses))
+    assertThat(names(manager.partialTemplateRegistryPasses))
         .containsExactly(
-            "BanNonNullAssertionOperator",
-            "DesugarGroupNodes",
-            "ContentSecurityPolicyNonceInjection");
+            "ResolveProtoImports", "ResolveTemplateImportsFromDeps",
+            "ResolveTemplateNames", "ResolveTemplateParamTypes")
+        .inOrder();
     assertThat(names(manager.crossTemplateCheckingPasses)).isEmpty();
+  }
+
+  @Test
+  public void testOrdering() {
+    // do nothing, passmanagers enforce ordering as a side effect of construction.
+    forAllPassManagers(manager -> {});
+  }
+
+  // Make sure new passes are annotated
+  @Test
+  public void testPassesAreAnnotated() {
+    Set<Class<? extends CompilerPass>> passesWithoutAnnotations = new LinkedHashSet<>();
+    forAllPassManagers(
+        manager -> {
+          Streams.<CompilerPass>concat(
+                  manager.parsePasses.stream(),
+                  manager.partialTemplateRegistryPasses.stream(),
+                  manager.crossTemplateCheckingPasses.stream())
+              .map(this::unwrapPassIfShimClass)
+              .filter(pass -> pass.runBefore().isEmpty() && pass.runAfter().isEmpty())
+              .map(pass -> pass.getClass())
+              .forEach(passesWithoutAnnotations::add);
+        });
+    // Over time this list should decrease in size, it is, however,  reasonable that some passes may
+    // never be removed for example if they could really run at any time or need to run at multiple
+    // times (e.g. CombineConsecutiveRawTextNodesPass)
+    ImmutableList<Class<? extends CompilerPass>> unannotatedAllowList =
+        ImmutableList.of(
+            AutoescaperPass.class,
+            BasicHtmlValidationPass.class,
+            CallAnnotationPass.class,
+            CheckBadContextualUsagePass.class,
+            CheckDeclaredTypesPass.class,
+            CheckDelegatesPass.class,
+            CheckEscapingSanityFilePass.class,
+            CheckGlobalsPass.class,
+            CheckNoNamedTemplateTypesPass.class,
+            CheckNonEmptyMsgNodesPass.class,
+            CheckTemplateCallsPass.class,
+            CheckTemplateHeaderVarsPass.class,
+            CheckTemplateVisibilityPass.class,
+            CombineConsecutiveRawTextNodesPass.class,
+            DesugarGroupNodesPass.class,
+            DesugarHtmlNodesPass.class,
+            DesugarStateNodesPass.class,
+            EnforceExperimentalFeaturesPass.class,
+            GetExtensionRewriteParamPass.class,
+            InsertMsgPlaceholderNodesPass.class,
+            KeyCommandPass.class,
+            NullSafeAccessPass.class,
+            OptimizationPass.class,
+            ResolveExpressionTypesPass.class,
+            ResolveNamesPass.class,
+            ResolvePackageRelativeCssNamesPass.class,
+            ResolvePluginsPass.class,
+            ResolveTemplateNamesPass.class, // Needs to run multiple times.
+            ResolveTemplateParamTypesPass.class,
+            RewriteGenderMsgsPass.class,
+            SimplifyAssertNonNullPass.class,
+            SoyElementPass.class,
+            StrictDepsPass.class,
+            UnknownJsGlobalPass.class,
+            UpgradeTemplateTypesPass.class,
+            V1ExpressionPass.class,
+            ValidateAliasesPass.class,
+            ValidateSkipNodesPass.class,
+            VeLogRewritePass.class,
+            VeLogValidationPass.class,
+            VeRewritePass.class,
+            XidPass.class);
+    assertWithMessage("Passes with annotations should be removed from the allowlist")
+        .that(passesWithoutAnnotations)
+        .containsAtLeastElementsIn(unannotatedAllowList);
+    assertWithMessage("New passes should be annotated")
+        .that(unannotatedAllowList)
+        .containsAtLeastElementsIn(passesWithoutAnnotations);
+  }
+
+  private static void forAllPassManagers(Consumer<PassManager> consumer) {
+    for (SoyGeneralOptions soyGeneralOptions : allOptions()) {
+      for (boolean allowUnknownGlobals : bools()) {
+        for (boolean allowV1Expression : bools()) {
+          for (boolean allowUnknownJsGlobals : bools()) {
+            for (boolean disableAllTypeChecking : bools()) {
+              for (boolean desugarHtmlAndStateNodes : bools()) {
+                for (boolean optimize : bools()) {
+                  for (boolean insertEscapingDirectives : bools()) {
+                    for (boolean addHtmlAttributesForDebugging : bools()) {
+                      PassManager.Builder builder = builder().setGeneralOptions(soyGeneralOptions);
+                      if (allowUnknownGlobals) {
+                        builder.allowUnknownGlobals();
+                      }
+                      if (allowV1Expression) {
+                        builder.allowV1Expression();
+                      }
+                      if (allowUnknownJsGlobals) {
+                        builder.allowUnknownJsGlobals();
+                      }
+                      if (disableAllTypeChecking) {
+                        builder.disableAllTypeChecking();
+                      }
+                      builder
+                          .desugarHtmlAndStateNodes(desugarHtmlAndStateNodes)
+                          .optimize(optimize)
+                          .insertEscapingDirectives(insertEscapingDirectives)
+                          .addHtmlAttributesForDebugging(addHtmlAttributesForDebugging);
+                      consumer.accept(builder.build());
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  private CompilerPass unwrapPassIfShimClass(CompilerPass pass) {
+    return pass instanceof CompilerFilePassToFileSetPassShim
+        ? ((CompilerFilePassToFileSetPassShim) pass).getDelegate()
+        : pass;
+  }
+
+  private static Iterable<Boolean> bools() {
+    return Arrays.asList(true, false);
+  }
+
+  private static Iterable<SoyGeneralOptions> allOptions() {
+    List<SoyGeneralOptions> allOptions = new ArrayList<>();
+    for (boolean enableNonNullAssertionOperator : bools()) {
+      for (boolean allowExternalCalls : bools()) {
+        SoyGeneralOptions options = new SoyGeneralOptions();
+        if (enableNonNullAssertionOperator) {
+          options.setExperimentalFeatures(Arrays.asList("enableNonNullAssertionOperator"));
+        }
+        options.setAllowExternalCalls(allowExternalCalls);
+        allOptions.add(options);
+      }
+    }
+    return allOptions;
   }
 
   private static <T extends CompilerPass> ImmutableList<String> names(ImmutableList<T> passes) {

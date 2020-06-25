@@ -35,7 +35,7 @@ public final class SoyMsgTest {
   private static final SoyMsg MSG =
       SoyMsg.builder()
           .setId(2222)
-          .setAltId(5555)
+          .setAlternateId(123456)
           .setLocaleString("de-DE")
           .setDesc("Fake description")
           .setMeaning("Fake meaning")
@@ -66,7 +66,7 @@ public final class SoyMsgTest {
   public void toBuilder_modify() {
     assertThat(
             MSG_MINIMAL.toBuilder()
-                .setAltId(5555)
+                .setAlternateId(123456)
                 .setLocaleString("de-DE")
                 .setDesc("Fake description")
                 .setMeaning("Fake meaning")

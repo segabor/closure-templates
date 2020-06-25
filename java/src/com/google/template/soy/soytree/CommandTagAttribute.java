@@ -39,6 +39,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalLong;
 import java.util.Set;
 import javax.annotation.Nullable;
 
@@ -192,6 +193,17 @@ public final class CommandTagAttribute {
     }
   }
 
+  public OptionalLong valueAsOptionalLong(ErrorReporter errorReporter) {
+    checkState(valueExprList == null);
+
+    try {
+      return OptionalLong.of(Long.parseLong(value));
+    } catch (NumberFormatException e) {
+      errorReporter.report(valueLocation, INVALID_ATTRIBUTE, key.identifier(), "a number");
+      return OptionalLong.empty();
+    }
+  }
+
   boolean valueAsEnabled(ErrorReporter errorReporter) {
     checkState(valueExprList == null);
 
@@ -230,6 +242,12 @@ public final class CommandTagAttribute {
       }
     }
     return hasError ? ImmutableList.of() : ImmutableList.copyOf(namespaces);
+  }
+
+  ImmutableList<String> valueAsRequireCssPath() {
+    checkState(valueExprList == null);
+
+    return ImmutableList.copyOf(SPLITTER.split(value));
   }
 
   @Nullable

@@ -26,7 +26,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.truth.StringSubject;
 import com.google.template.soy.jssrc.dsl.CodeChunk;
-import com.google.template.soy.testing.Proto3Message;
+import com.google.template.soy.testing3.Proto3Message;
 import com.google.template.soy.types.AnyType;
 import com.google.template.soy.types.BoolType;
 import com.google.template.soy.types.IntType;
@@ -133,12 +133,12 @@ public final class JsTypeTest {
   @Test
   public void testForSoyTypeStrict() {
     assertThatTypeExprStrict(new SoyProtoEnumType(Proto3Message.AnEnum.getDescriptor()))
-        .isEqualTo("!proto.soy.test.Proto3Message.AnEnum");
+        .isEqualTo("!proto.soy.test3.Proto3Message.AnEnum");
 
     assertThatTypeExprStrict(
             new SoyProtoType(
                 SoyTypeRegistryBuilder.create(), Proto3Message.getDescriptor(), ImmutableSet.of()))
-        .isEqualTo("!proto.soy.test.Proto3Message");
+        .isEqualTo("!proto.soy.test3.Proto3Message");
 
     assertThatTypeExprStrict(HtmlType.getInstance())
         .isEqualTo(
@@ -151,11 +151,10 @@ public final class JsTypeTest {
   public void testGetTypeAssertion() {
     assertThat(getTypeAssertion(StringType.getInstance(), "x")).isEqualTo("typeof x === 'string'");
     assertThat(getTypeAssertion(IntType.getInstance(), "x")).isEqualTo("typeof x === 'number'");
-    assertThat(getTypeAssertion(BoolType.getInstance(), "x"))
-        .isEqualTo("typeof x === 'boolean' || x === 1 || x === 0");
+    assertThat(getTypeAssertion(BoolType.getInstance(), "x")).isEqualTo("typeof x === 'boolean'");
 
     assertThat(getTypeAssertion(SoyTypes.makeNullable(BoolType.getInstance()), "x"))
-        .isEqualTo("x == null || (typeof x === 'boolean' || x === 1 || x === 0)");
+        .isEqualTo("x == null || typeof x === 'boolean'");
     assertThat(getTypeAssertion(HtmlType.getInstance(), "x"))
         .isEqualTo("goog.soy.data.SanitizedHtml.isCompatibleWith(x)");
 
@@ -172,8 +171,6 @@ public final class JsTypeTest {
 
   @Test
   public void testGetSoyTypeAssertionStrict() {
-    assertThat(getSoyTypeAssertionStrict(BoolType.getInstance(), "x"))
-        .isEqualTo("soy.asserts.assertType(typeof x === 'boolean', 'x', x, 'boolean')");
     assertThat(
             getSoyTypeAssertionStrict(
                 UnionType.of(BoolType.getInstance(), IntType.getInstance()), "x"))
