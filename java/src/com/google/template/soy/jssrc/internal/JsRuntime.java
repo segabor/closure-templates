@@ -54,6 +54,9 @@ public final class JsRuntime {
   public static final GoogRequire SOY_VELOG = GoogRequire.create("soy.velog");
   public static final GoogRequire GOOG_SOY_ALIAS =
       GoogRequire.createWithAlias("goog.soy", "$googSoy");
+
+  private static final GoogRequire SOY_TEMPLATES = GoogRequire.create("soy.templates");
+
   public static final GoogRequire GOOG_SOY = GoogRequire.create("goog.soy");
 
   private static final GoogRequire XID_REQUIRE = GoogRequire.create("xid");
@@ -72,7 +75,7 @@ public final class JsRuntime {
 
   public static final Expression ARRAY_IS_ARRAY = dottedIdNoRequire("Array.isArray");
 
-  public static final Expression GOOG_IS_FUNCTION = dottedIdNoRequire("goog.isFunction");
+  public static final Expression GOOG_IS_FUNCTION = SOY.dotAccess("$$isFunction");
 
   public static final Expression SOY_EQUALS = SOY.dotAccess("$$equals");
 
@@ -139,6 +142,15 @@ public final class JsRuntime {
   public static final Expression OPT_IJ_DATA = id("opt_ijData");
 
   public static final Expression EXPORTS = id("exports");
+
+  public static final Expression MARK_TEMPLATE =
+      SOY_TEMPLATES.googModuleGet().dotAccess("$$markTemplate");
+  public static final Expression ASSERT_TEMPLATE =
+      SOY_TEMPLATES.googModuleGet().dotAccess("$$assertTemplate");
+  public static final Expression BIND_TEMPLATE_PARAMS =
+      SOY_TEMPLATES.googModuleGet().dotAccess("$$bindTemplateParams");
+  public static final Expression BIND_TEMPLATE_PARAMS_FOR_IDOM =
+      SOY_TEMPLATES.googModuleGet().dotAccess("$$bindTemplateParamsForIdom");
 
   /** The JavaScript method to pack a sanitized object into a safe proto. */
   public static final ImmutableMap<String, Expression> JS_TO_PROTO_PACK_FN_BASE =

@@ -30,10 +30,12 @@ import static com.google.template.soy.jssrc.dsl.Expression.not;
 import static com.google.template.soy.jssrc.dsl.Expression.number;
 import static com.google.template.soy.jssrc.dsl.Expression.operation;
 import static com.google.template.soy.jssrc.dsl.Expression.stringLiteral;
+import static com.google.template.soy.jssrc.internal.JsRuntime.BIND_TEMPLATE_PARAMS;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_ARRAY_MAP;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_DEBUG;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_GET_CSS_NAME;
 import static com.google.template.soy.jssrc.internal.JsRuntime.JS_TO_PROTO_PACK_FN;
+import static com.google.template.soy.jssrc.internal.JsRuntime.MARK_TEMPLATE;
 import static com.google.template.soy.jssrc.internal.JsRuntime.OPT_DATA;
 import static com.google.template.soy.jssrc.internal.JsRuntime.OPT_IJ_DATA;
 import static com.google.template.soy.jssrc.internal.JsRuntime.SERIALIZE_KEY;
@@ -91,6 +93,7 @@ import com.google.template.soy.exprtree.OperatorNodes.OrOpNode;
 import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
+import com.google.template.soy.exprtree.TemplateLiteralNode;
 import com.google.template.soy.exprtree.VarDefn;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.exprtree.VeLiteralNode;
@@ -99,7 +102,6 @@ import com.google.template.soy.jssrc.dsl.CodeChunk;
 import com.google.template.soy.jssrc.dsl.Expression;
 import com.google.template.soy.jssrc.dsl.JsDoc;
 import com.google.template.soy.jssrc.dsl.SoyJsPluginUtils;
-import com.google.template.soy.jssrc.dsl.Statement;
 import com.google.template.soy.jssrc.internal.NullSafeAccumulator.FieldAccess;
 import com.google.template.soy.jssrc.internal.NullSafeAccumulator.ProtoCall;
 import com.google.template.soy.jssrc.restricted.JsExpr;
@@ -115,6 +117,7 @@ import com.google.template.soy.soytree.MsgFallbackGroupNode;
 import com.google.template.soy.soytree.defn.LocalVar;
 import com.google.template.soy.soytree.defn.TemplateStateVar;
 import com.google.template.soy.types.ListType;
+import com.google.template.soy.types.MapType;
 import com.google.template.soy.types.SoyProtoType;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyType.Kind;
@@ -196,15 +199,18 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
   private final JavaScriptValueFactoryImpl javascriptValueFactory;
   private final ErrorReporter errorReporter;
   private final CodeChunk.Generator codeGenerator;
+  private final TemplateAliases templateAliases;
 
   public TranslateExprNodeVisitor(
       JavaScriptValueFactoryImpl javascriptValueFactory,
       TranslationContext translationContext,
+      TemplateAliases templateAliases,
       ErrorReporter errorReporter) {
     this.javascriptValueFactory = javascriptValueFactory;
     this.errorReporter = errorReporter;
     this.variableMappings = translationContext.soyToJsVariableMappings();
     this.codeGenerator = translationContext.codeGenerator();
+    this.templateAliases = templateAliases;
   }
 
   /**
@@ -350,17 +356,19 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
 
   @Override
   protected Expression visitMapLiteralNode(MapLiteralNode node) {
-    Expression map =
-        codeGenerator.declarationBuilder().setRhs(Expression.construct(id("Map"))).build().ref();
-    ImmutableList.Builder<Statement> setCalls = ImmutableList.builder();
+    Expression map = Expression.constructMap();
+    if (node.getType() != MapType.EMPTY_MAP) {
+      map = map.castAs(JsType.forJsSrc(node.getType()).typeExpr());
+    }
+
     for (int i = 0; i < node.numChildren(); i += 2) {
       ExprNode keyNode = node.getChild(i);
       // Constructing a map literal with a null key is a runtime error.
       Expression key = SOY_CHECK_NOT_NULL.call(genMapKeyCode(keyNode));
       Expression value = visit(node.getChild(i + 1));
-      setCalls.add(map.dotAccess("set").call(key, value).asStatement());
+      map = map.dotAccess("set").call(key, value);
     }
-    return map.withInitialStatements(setCalls.build());
+    return map;
   }
 
   private Expression genMapKeyCode(ExprNode keyNode) {
@@ -547,22 +555,29 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
     SoyMethod soyMethod = methodCallNode.getSoyMethod();
     if (soyMethod instanceof BuiltinMethod) {
       BuiltinMethod builtinMethod = (BuiltinMethod) soyMethod;
-      SoyProtoType baseType = (SoyProtoType) methodCallNode.getBaseType(nullSafe);
+      SoyType baseType = methodCallNode.getBaseType(nullSafe);
       switch (builtinMethod) {
         case GET_EXTENSION:
           String extName = BuiltinMethod.getProtoExtensionIdFromMethodCall(methodCallNode);
           return base.dotAccess(
-              ProtoCall.getField(extName, baseType.getFieldDescriptor(extName)),
+              ProtoCall.getField(extName, ((SoyProtoType) baseType).getFieldDescriptor(extName)),
               nullSafe,
               assertNonNull);
         case HAS_PROTO_FIELD:
           String fieldName = BuiltinMethod.getProtoFieldNameFromMethodCall(methodCallNode);
           return base.dotAccess(
-              ProtoCall.hasField(fieldName, baseType.getFieldDescriptor(fieldName)),
+              ProtoCall.hasField(
+                  fieldName, ((SoyProtoType) baseType).getFieldDescriptor(fieldName)),
               nullSafe,
               assertNonNull);
           // When adding new built-in methods it may be necessary to assert that the base expression
           // is not null in order to prevent a method call on a null instance from ever succeeding.
+        case BIND:
+          return base.functionCall(
+              nullSafe,
+              assertNonNull,
+              (baseExpr) ->
+                  genCodeForBind(baseExpr, visit(methodCallNode.getParams().get(0)), baseType));
       }
       throw new AssertionError(builtinMethod);
     } else if (soyMethod instanceof SoySourceFunctionMethod) {
@@ -585,6 +600,11 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
     } else {
       throw new AssertionError(soyMethod.getClass());
     }
+  }
+
+  protected Expression genCodeForBind(
+      Expression template, Expression paramRecord, SoyType templateType) {
+    return BIND_TEMPLATE_PARAMS.call(template, paramRecord);
   }
 
   @Override
@@ -747,7 +767,12 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
                   ProtoUtils.getMapValueMessageType(fieldDesc));
           fieldValue = SOY_NEWMAPS_TRANSFORM_VALUES.call(fieldValue, sanitizedContentPackFn);
         }
-        proto = SOY_MAP_POPULATE.call(protoVar, protoVar.dotAccess(getFn).call(), fieldValue);
+        // JSCompiler cannot infer that jspb.Map and soy.Map or Map are the same.
+        proto =
+            SOY_MAP_POPULATE.call(
+                protoVar,
+                protoVar.dotAccess(getFn).call().castAs("!soy.map.Map<?,?>"),
+                fieldValue.castAs("!soy.map.Map<?,?>"));
       } else {
         String setFn = "set" + LOWER_CAMEL.to(UPPER_CAMEL, fieldName);
         proto = proto.dotAccess(setFn).call(fieldValue);
@@ -940,5 +965,18 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
                 Expression.stringLiteral(node.getName().identifier())))
         .setElse(construct(SOY_VISUAL_ELEMENT, Expression.number(node.getId())))
         .build(codeGenerator);
+  }
+
+  @Override
+  protected Expression visitTemplateLiteralNode(TemplateLiteralNode node) {
+    // TODO(b/80597216): remove the call to dottedIdNoRequire here by calculating the goog.require
+    // this will require knowing the current require strategy and whether or not the template is
+    // defined in this file.
+    Expression templateLiteral =
+        Expression.dottedIdNoRequire(templateAliases.get(node.getResolvedName()));
+    // Skip checks for the common case of synthetic template literals.
+    return node.isSynthetic()
+        ? templateLiteral
+        : MARK_TEMPLATE.call(templateLiteral, Expression.stringLiteral(node.getResolvedName()));
   }
 }

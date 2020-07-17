@@ -25,9 +25,14 @@ import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableCollection;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMultimap;
+import com.google.common.collect.ImmutableSet;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor.JavaType;
 import com.google.protobuf.Descriptors.FileDescriptor.Syntax;
+import com.google.template.soy.error.ErrorReporter;
+import com.google.template.soy.error.SoyErrorKind;
+import com.google.template.soy.error.SoyErrorKind.StyleAllowance;
+import com.google.template.soy.error.SoyErrors;
 import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.exprtree.MethodCallNode;
@@ -35,16 +40,21 @@ import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.internal.proto.ProtoUtils;
 import com.google.template.soy.shared.restricted.SoyMethod;
 import com.google.template.soy.types.BoolType;
+import com.google.template.soy.types.ErrorType;
+import com.google.template.soy.types.RecordType;
 import com.google.template.soy.types.SoyProtoType;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyType.Kind;
+import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.SoyTypes;
+import com.google.template.soy.types.TemplateBindingUtil;
 import java.util.Arrays;
 import java.util.List;
 
 /** Enum of built-in functions supported in Soy expressions. */
 public enum BuiltinMethod implements SoyMethod {
   GET_EXTENSION("getExtension", 1) {
+
     @Override
     public boolean appliesToBase(SoyType baseType) {
       Preconditions.checkArgument(!SoyTypes.isNullable(baseType));
@@ -52,18 +62,38 @@ public enum BuiltinMethod implements SoyMethod {
     }
 
     @Override
-    public SoyType getReturnType(String methodName, SoyType baseType, List<ExprNode> params) {
+    public SoyType getReturnType(
+        String methodName,
+        SoyType baseType,
+        List<ExprNode> params,
+        SoyTypeRegistry soyTypeRegistry,
+        ErrorReporter errorReporter) {
       Preconditions.checkArgument(!SoyTypes.isNullable(baseType));
       Preconditions.checkArgument(params.size() == 1);
       SoyProtoType protoType = (SoyProtoType) baseType;
       ExprNode param = params.get(0);
-      if (param instanceof GlobalNode) {
-        String fieldName = ((GlobalNode) param).getName();
-        if (protoType.getExtensionFieldNames().contains(fieldName)) {
-          return protoType.getFieldType(fieldName);
-        }
+      // Fully qualified name parameter should initially be parsed as a global node.
+      if (param.getKind() != ExprNode.Kind.GLOBAL_NODE) {
+        errorReporter.report(
+            param.getSourceLocation(), GET_EXTENSION_GLOBAL_REQUIRED, param.getType().toString());
+        return ErrorType.getInstance();
       }
-      throw new IllegalArgumentException("Bad parameter " + param);
+      GlobalNode parameter = (GlobalNode) param;
+      ImmutableSet<String> fields = protoType.getExtensionFieldNames();
+      String fieldName = parameter.getName();
+      if (!fields.contains(fieldName)) {
+        String extraErrorMessage =
+            SoyErrors.getDidYouMeanMessageForProtoFields(
+                fields, protoType.getDescriptor(), fieldName);
+        errorReporter.report(
+            parameter.getSourceLocation(),
+            PROTO_EXTENSION_DOES_NOT_EXIST,
+            fieldName,
+            protoType.getDescriptor().getFullName(),
+            extraErrorMessage);
+        return ErrorType.getInstance();
+      }
+      return protoType.getFieldType(fieldName);
     }
   },
 
@@ -102,7 +132,12 @@ public enum BuiltinMethod implements SoyMethod {
     }
 
     @Override
-    public SoyType getReturnType(String methodName, SoyType baseType, List<ExprNode> params) {
+    public SoyType getReturnType(
+        String methodName,
+        SoyType baseType,
+        List<ExprNode> params,
+        SoyTypeRegistry soyTypeRegistry,
+        ErrorReporter errorReporter) {
       return BoolType.getInstance();
     }
 
@@ -128,7 +163,49 @@ public enum BuiltinMethod implements SoyMethod {
           .map(BuiltinMethod::fieldToHasMethodName)
           .collect(toImmutableSet());
     }
+  },
+
+  BIND("bind", 1) {
+
+    @Override
+    public boolean appliesToBase(SoyType baseType) {
+      Preconditions.checkArgument(!SoyTypes.isNullable(baseType));
+      return SoyTypes.isKindOrUnionOfKinds(
+          baseType, ImmutableSet.of(SoyType.Kind.TEMPLATE, SoyType.Kind.NAMED_TEMPLATE));
+    }
+
+    @Override
+    public SoyType getReturnType(
+        String methodName,
+        SoyType baseType,
+        List<ExprNode> params,
+        SoyTypeRegistry soyTypeRegistry,
+        ErrorReporter errorReporter) {
+      Preconditions.checkArgument(!SoyTypes.isNullable(baseType));
+      Preconditions.checkArgument(params.size() == 1);
+      ExprNode param = params.get(0);
+      if (param.getKind() != ExprNode.Kind.RECORD_LITERAL_NODE) {
+        errorReporter.report(param.getSourceLocation(), BIND_PARAMETER_MUST_BE_RECORD_LITERAL);
+        return ErrorType.getInstance();
+      }
+      return TemplateBindingUtil.bindParameters(
+          baseType,
+          (RecordType) param.getType(),
+          soyTypeRegistry,
+          errorReporter,
+          param.getSourceLocation());
+    }
   };
+
+  private static final SoyErrorKind GET_EXTENSION_GLOBAL_REQUIRED =
+      SoyErrorKind.of(
+          "The parameter of method ''getExtension'' must be a dotted identifier. Found ''{0}''");
+  private static final SoyErrorKind PROTO_EXTENSION_DOES_NOT_EXIST =
+      SoyErrorKind.of(
+          "Proto extension field ''{0}'' does not exist on the proto ''{1}''.{2}",
+          StyleAllowance.NO_PUNCTUATION);
+  private static final SoyErrorKind BIND_PARAMETER_MUST_BE_RECORD_LITERAL =
+      SoyErrorKind.of("Parameter to bind() must be a record literal.");
 
   public static final SoyMethod.Registry REGISTRY =
       new Registry() {
@@ -191,11 +268,21 @@ public enum BuiltinMethod implements SoyMethod {
   protected abstract boolean appliesToBase(SoyType baseType);
 
   protected abstract SoyType getReturnType(
-      String methodName, SoyType baseType, List<ExprNode> params);
+      String methodName,
+      SoyType baseType,
+      List<ExprNode> params,
+      SoyTypeRegistry soyTypeRegistry,
+      ErrorReporter errorReporter);
 
-  public final SoyType getReturnType(MethodCallNode node) {
+  public final SoyType getReturnType(
+      MethodCallNode node, SoyTypeRegistry soyTypeRegistry, ErrorReporter errorReporter) {
     String methodName = node.getMethodName().identifier();
-    return getReturnType(methodName, node.getBaseType(/* nullSafe= */ true), node.getParams());
+    return getReturnType(
+        methodName,
+        node.getBaseType(/* nullSafe= */ true),
+        node.getParams(),
+        soyTypeRegistry,
+        errorReporter);
   }
 
   @Override
@@ -205,14 +292,7 @@ public enum BuiltinMethod implements SoyMethod {
 
   @Override
   public boolean appliesToArgs(List<SoyType> argTypes) {
-    switch (this) {
-      case GET_EXTENSION:
-        // Custom validation in ResolveExpressionTypesPass.
-        return argTypes.size() == 1;
-      case HAS_PROTO_FIELD:
-        return argTypes.isEmpty();
-    }
-    throw new AssertionError(this);
+    return argTypes.size() == getNumArgs();
   }
 
   /**
@@ -231,6 +311,8 @@ public enum BuiltinMethod implements SoyMethod {
                 ((SoyProtoType) SoyTypes.removeNull(methodNode.getBaseExprChild().getType()))
                     .getFieldDescriptor(getProtoExtensionIdFromMethodCall(methodNode))));
       case HAS_PROTO_FIELD:
+        return ImmutableList.of();
+      case BIND:
         return ImmutableList.of();
     }
     throw new AssertionError(this);

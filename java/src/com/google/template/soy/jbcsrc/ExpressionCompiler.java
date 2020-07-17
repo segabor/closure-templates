@@ -1174,6 +1174,11 @@ final class ExpressionCompiler {
           case HAS_PROTO_FIELD:
             return ProtoUtils.hasserField(
                 baseExpr, BuiltinMethod.getProtoFieldNameFromMethodCall(node));
+          case BIND:
+            return SoyExpression.forSoyValue(
+                node.getType(),
+                MethodRef.RUNTIME_BIND_TEMPLATE_PARAMS.invoke(
+                    visit(node.getChild(0)), visit(node.getChild(1))));
         }
       } else if (function instanceof SoySourceFunctionMethod) {
         SoySourceFunctionMethod sourceMethod = (SoySourceFunctionMethod) function;
@@ -1415,7 +1420,7 @@ final class ExpressionCompiler {
       return SoyExpression.forBool(
           parameters
               .getRenderContext()
-              .usePrimaryMsg(
+              .usePrimaryMsgIfFallback(
                   ((IntegerNode) node.getChild(1)).getValue(),
                   ((IntegerNode) node.getChild(2)).getValue()));
     }
@@ -1524,7 +1529,7 @@ final class ExpressionCompiler {
     @Override
     protected SoyExpression visitTemplateLiteralNode(TemplateLiteralNode node) {
       CompiledTemplateMetadata callee =
-          compiledTemplateRegistry.getTemplateInfoByTemplateName(node.getResolvedName());
+          compiledTemplateRegistry.getBasicTemplateInfoByTemplateName(node.getResolvedName());
       // TODO(cwgordon): It used to be that factories were only ever constructed by
       // CompiledTemplates, which would cache them. If this turns out to be too expensive, consider
       // always using CompiledTemplates to create them, or otherwise 'singletonify' them.

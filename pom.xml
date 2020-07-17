@@ -85,12 +85,6 @@
 
   <dependencies>
     <dependency>
-      <groupId>javax.inject</groupId>
-      <artifactId>javax.inject</artifactId>
-      <version>1</version>
-      <scope>compile</scope>
-    </dependency>
-    <dependency>
       <groupId>com.google.inject</groupId>
       <artifactId>guice</artifactId>
       <version>${guice.version}</version>
@@ -341,6 +335,23 @@
       <scope>test</scope>
     </dependency>
 
+    <dependency>
+      <groupId>com.google.escapevelocity</groupId>
+      <artifactId>escapevelocity</artifactId>
+      <version>0.9.1</version>
+      <!-- escapevelocity depends on guava 23.5-jre. exclude it. -->
+      <exclusions>
+        <exclusion>
+          <groupId>com.google.guava</groupId>
+          <artifactId>guava</artifactId>
+        </exclusion>
+        <exclusion>
+          <groupId>com.google.guava</groupId>
+          <artifactId>guava-testlib</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+
   </dependencies>
 
   <profiles>
@@ -556,6 +567,7 @@
             <!-- Exclude testonly Java sources from the main (non-test) compilation. -->
             <exclude>com/google/template/soy/testing/**</exclude>
             <exclude>com/google/template/soy/exprtree/testing/**</exclude>
+            <exclude>com/google/template/soy/logging/testing/**</exclude>
           </excludes>
         </configuration>
       </plugin>
@@ -759,6 +771,7 @@
                 <!-- For compiling the tests, include testonly sources that are in the main source tree, but not compiled with it. -->
                 <source>java/src/com/google/template/soy/testing</source>
                 <source>java/src/com/google/template/soy/exprtree/testing</source>
+                <source>java/src/com/google/template/soy/logging/testing</source>
               </sources>
             </configuration>
           </execution>

@@ -355,6 +355,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     final List<Statement> initializers = new ArrayList<>();
     final Variable sizeVar;
     final Variable itemVar;
+    final Variable userIndexVar;
     if (exprAsRangeArgs.isPresent()) {
       final CompiledForeachRangeArgs compiledArgs = calculateRangeArgs(node, scope);
       initializers.addAll(compiledArgs.initStatements());
@@ -369,6 +370,16 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
       indexVar =
           scope.createSynthetic(
               SyntheticVarName.foreachLoopIndex(nonEmptyNode), constant(0), STORE);
+      userIndexVar =
+          nonEmptyNode.getIndexVar() == null
+              ? null
+              : scope.create(
+                  nonEmptyNode.getIndexVarName(),
+                  SoyExpression.forInt(
+                          BytecodeUtils.numericConversion(indexVar.local(), Type.LONG_TYPE))
+                      .boxAsSoyValueProvider()
+                      .checkedCast(SOY_VALUE_PROVIDER_TYPE),
+                  DERIVED);
       itemVar =
           scope.create(
               nonEmptyNode.getVarName(),
@@ -398,6 +409,16 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
       indexVar =
           scope.createSynthetic(
               SyntheticVarName.foreachLoopIndex(nonEmptyNode), constant(0), STORE);
+      userIndexVar =
+          nonEmptyNode.getIndexVar() == null
+              ? null
+              : scope.create(
+                  nonEmptyNode.getIndexVarName(),
+                  SoyExpression.forInt(
+                          BytecodeUtils.numericConversion(indexVar.local(), Type.LONG_TYPE))
+                      .boxAsSoyValueProvider()
+                      .checkedCast(SOY_VALUE_PROVIDER_TYPE),
+                  DERIVED);
       itemVar =
           scope.create(
               nonEmptyNode.getVarName(),
@@ -425,6 +446,9 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
         indexVar.initializer().gen(adapter);
         Label loopStart = adapter.mark();
         itemVar.initializer().gen(adapter);
+        if (userIndexVar != null) {
+          userIndexVar.initializer().gen(adapter);
+        }
 
         loopBody.gen(adapter);
 
@@ -812,12 +836,35 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
       // it would save some lookups.  Right now we will do to 2- 3 calls to
       // SoyMsgBundle.getMsgParts (each of which requires a binary search).  We could reduce that
       // to 1-2 in the worse case by inlining and storing the lists in local variables.
-      IfBlock ifAvailableRenderDefault =
-          IfBlock.create(
-              parameterLookup
-                  .getRenderContext()
-                  .usePrimaryMsg(idAndParts.id, fallbackIdAndParts.id),
-              renderDefault);
+      Expression cond =
+          msg.getAlternateId().isPresent()
+              ? (fallback.getAlternateId().isPresent()
+                  // msg > alternate > fallback > fb alternate
+                  ? parameterLookup
+                      .getRenderContext()
+                      .usePrimaryOrAlternateIfFallbackOrFallbackAlternate(
+                          idAndParts.id,
+                          msg.getAlternateId().getAsLong(),
+                          fallbackIdAndParts.id,
+                          fallback.getAlternateId().getAsLong())
+                  // msg > alternate > fallback
+                  : parameterLookup
+                      .getRenderContext()
+                      .usePrimaryOrAlternateIfFallback(
+                          idAndParts.id, msg.getAlternateId().getAsLong(), fallbackIdAndParts.id))
+              : (fallback.getAlternateId().isPresent()
+                  // msg > fallback > fb alternate
+                  ? parameterLookup
+                      .getRenderContext()
+                      .usePrimaryIfFallbackOrFallbackAlternate(
+                          idAndParts.id,
+                          fallbackIdAndParts.id,
+                          fallback.getAlternateId().getAsLong())
+                  // msg > fallback
+                  : parameterLookup
+                      .getRenderContext()
+                      .usePrimaryMsgIfFallback(idAndParts.id, fallbackIdAndParts.id));
+      IfBlock ifAvailableRenderDefault = IfBlock.create(cond, renderDefault);
       return ControlFlow.ifElseChain(
           ImmutableList.of(ifAvailableRenderDefault),
           Optional.of(
@@ -879,7 +926,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     Expression ijRecord = parameterLookup.getIjRecord();
     if (node.isStaticCall()) {
       CompiledTemplateMetadata callee =
-          registry.getTemplateInfoByTemplateName(node.getCalleeName());
+          registry.getBasicTemplateInfoByTemplateName(node.getCalleeName());
       // If possible, use the constructor to instantiate the template, otherwise go through the
       // classloader. We do this for templates that are declared as sources in the same fileset.
       // These are guaranteed to be bundled in the same jar, thus loaded atomically with the same

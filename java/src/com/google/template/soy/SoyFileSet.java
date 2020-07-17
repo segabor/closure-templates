@@ -28,6 +28,7 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.io.ByteSink;
+import com.google.common.io.ByteSource;
 import com.google.common.io.CharSource;
 import com.google.protobuf.Descriptors.GenericDescriptor;
 import com.google.template.soy.SoyFileSetParser.CompilationUnitAndKind;
@@ -52,8 +53,10 @@ import com.google.template.soy.jbcsrc.api.SoySauceImpl;
 import com.google.template.soy.jbcsrc.shared.CompiledTemplates;
 import com.google.template.soy.jssrc.SoyJsSrcOptions;
 import com.google.template.soy.jssrc.internal.JsSrcMain;
-import com.google.template.soy.logging.LoggingConfig;
+import com.google.template.soy.logging.AnnotatedLoggingConfig;
+import com.google.template.soy.logging.AnnotatedLoggingConfigGenerator;
 import com.google.template.soy.logging.ValidatedLoggingConfig;
+import com.google.template.soy.logging.VeMetadataGenerator;
 import com.google.template.soy.msgs.SoyMsgBundle;
 import com.google.template.soy.msgs.SoyMsgBundleHandler;
 import com.google.template.soy.msgs.SoyMsgBundleHandler.OutputFileOptions;
@@ -556,7 +559,7 @@ public final class SoyFileSet {
      *     multiple elements with the same {@code name} or {@code id}, or if the name not a valid
      *     identifier.
      */
-    public Builder setLoggingConfig(LoggingConfig config) {
+    public Builder setLoggingConfig(AnnotatedLoggingConfig config) {
       return setValidatedLoggingConfig(ValidatedLoggingConfig.create(config));
     }
 
@@ -739,8 +742,7 @@ public final class SoyFileSet {
           TemplateRegistry registry = result.registry();
 
           // Do renaming of package-relative class names.
-          return new GenerateParseInfoVisitor(
-                  javaPackage, javaClassNameSource, registry, typeRegistry)
+          return new GenerateParseInfoVisitor(javaPackage, javaClassNameSource, registry)
               .exec(soyTree);
         });
   }
@@ -793,6 +795,17 @@ public final class SoyFileSet {
                   .addPassContinuationRule(
                       SoyConformancePass.class, PassContinuationRule.STOP_AFTER_PASS));
         });
+  }
+
+  AnnotatedLoggingConfig generateAnnotatedLoggingConfig(
+      CharSource rawLoggingConfig, String javaPackage, String className) throws IOException {
+    return new AnnotatedLoggingConfigGenerator(
+            rawLoggingConfig, javaPackage, className, typeRegistry)
+        .generate();
+  }
+
+  String generateVeMetadata(ByteSource loggingConfigBytes, String generator) throws IOException {
+    return new VeMetadataGenerator(loggingConfigBytes, generator, typeRegistry).generate();
   }
 
   /**

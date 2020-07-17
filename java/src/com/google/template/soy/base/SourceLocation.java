@@ -23,6 +23,7 @@ import static com.google.common.base.Preconditions.checkState;
 import com.google.auto.value.AutoValue;
 import com.google.common.base.CharMatcher;
 import com.google.common.collect.ComparisonChain;
+import com.google.errorprone.annotations.CheckReturnValue;
 import com.google.errorprone.annotations.Immutable;
 import java.util.Optional;
 import javax.annotation.Nonnull;
@@ -36,6 +37,7 @@ import javax.annotation.ParametersAreNonnullByDefault;
  */
 @ParametersAreNonnullByDefault
 @Immutable
+@CheckReturnValue
 public final class SourceLocation implements Comparable<SourceLocation> {
 
   /** A file path or URI useful for error messages. */
@@ -74,6 +76,9 @@ public final class SourceLocation implements Comparable<SourceLocation> {
   }
 
   public SourceLocation(String filePath, Point begin, Point end) {
+    checkNotNull(filePath, "filePath is null");
+    checkNotNull(begin, "begin is null");
+    checkNotNull(end, "end is null");
     checkArgument(
         begin.isKnown() == end.isKnown(),
         "Either both the begin and end locations should be known, or neither should be. Got [%s,"
@@ -86,9 +91,9 @@ public final class SourceLocation implements Comparable<SourceLocation> {
         begin,
         end,
         filePath);
-    this.filePath = checkNotNull(filePath);
-    this.begin = checkNotNull(begin);
-    this.end = checkNotNull(end);
+    this.filePath = filePath;
+    this.begin = begin;
+    this.end = end;
   }
 
   /**
@@ -143,6 +148,13 @@ public final class SourceLocation implements Comparable<SourceLocation> {
 
     return this.getEndLine() == that.getBeginLine()
         && this.getEndColumn() + 1 == that.getBeginColumn();
+  }
+
+  public boolean isBefore(SourceLocation that) {
+    if (!this.filePath.equals(that.filePath)) {
+      return false;
+    }
+    return this.getEndPoint().isBefore(that.getBeginPoint());
   }
 
   /** True iff this location has valid begin and end locations. */

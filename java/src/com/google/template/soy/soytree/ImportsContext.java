@@ -18,9 +18,11 @@ package com.google.template.soy.soytree;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
+import static com.google.common.collect.Streams.stream;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Streams;
 import com.google.protobuf.Descriptors.FileDescriptor;
 import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.soytree.TemplateNode.SoyFileHeaderInfo;
@@ -164,6 +166,14 @@ public final class ImportsContext {
           ? ((TypeRegistry.ProtoRegistry) delegate).getFileDescriptors()
           : ImmutableSet.of();
     }
+
+    @Override
+    public Iterable<String> getAllSortedTypeNames() {
+      return () ->
+          Streams.concat(messagesAndEnums.keySet().stream(), stream(super.getAllSortedTypeNames()))
+              .sorted()
+              .iterator();
+    }
   }
 
   /**
@@ -172,14 +182,19 @@ public final class ImportsContext {
   public static final class ImportsTemplateRegistry extends DelegatingTemplateRegistry {
     // Map of import symbol (possibly aliased) to the template it refers to.
     private final ImmutableMap<String, TemplateName> symbolToTemplateMap;
-    private final TemplateRegistry fileSetTemplateRegistry;
+
+    // Which file this registry is for. Used to get the delegate file set registry.
+    private final SoyFileNode file;
 
     public ImportsTemplateRegistry(
-        TemplateRegistry fileSetTemplateRegistry,
-        ImmutableMap<String, TemplateName> symbolToTemplateMap) {
-      super(fileSetTemplateRegistry);
+        SoyFileNode file, ImmutableMap<String, TemplateName> symbolToTemplateMap) {
       this.symbolToTemplateMap = symbolToTemplateMap;
-      this.fileSetTemplateRegistry = fileSetTemplateRegistry;
+      this.file = file;
+    }
+
+    @Override
+    public FileSetTemplateRegistry getDelegate() {
+      return fileSetRegistry();
     }
 
     @Override
@@ -187,11 +202,11 @@ public final class ImportsContext {
       // If the template name matches an imported template symbol, return the symbol's corresponding
       // template info.
       if (symbolToTemplateMap.containsKey(callTmplName)) {
-        return fileSetTemplateRegistry.getBasicTemplateOrElement(
-            symbolToTemplateMap.get(callTmplName).fullyQualifiedName());
+        return fileSetRegistry()
+            .getBasicTemplateOrElement(symbolToTemplateMap.get(callTmplName).fullyQualifiedName());
       }
       // Otherwise, check the file set's template registry (which uses fully qualified names).
-      return fileSetTemplateRegistry.getBasicTemplateOrElement(callTmplName);
+      return fileSetRegistry().getBasicTemplateOrElement(callTmplName);
     }
 
     public ImmutableMap<String, TemplateName> getSymbolsToTemplateNamesMap() {
@@ -200,6 +215,10 @@ public final class ImportsContext {
 
     public ImmutableSet<String> getImportedSymbols() {
       return symbolToTemplateMap.keySet();
+    }
+
+    private FileSetTemplateRegistry fileSetRegistry() {
+      return file.getParent().getFileSetTemplateRegistry();
     }
   }
 }

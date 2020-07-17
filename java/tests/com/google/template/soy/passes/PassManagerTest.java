@@ -78,7 +78,7 @@ public final class PassManagerTest {
     assertThat(names(manager.partialTemplateRegistryPasses))
         .containsExactly(
             "ResolveProtoImports",
-            "ResolveTemplateImportsFromDeps",
+            "ResolveTemplateImports",
             "ResolveTemplateNames",
             "ResolveTemplateParamTypes",
             "ResolvePlugins")
@@ -96,7 +96,7 @@ public final class PassManagerTest {
 
     assertThat(names(manager.partialTemplateRegistryPasses))
         .containsExactly(
-            "ResolveProtoImports", "ResolveTemplateImportsFromDeps",
+            "ResolveProtoImports", "ResolveTemplateImports",
             "ResolveTemplateNames", "ResolveTemplateParamTypes")
         .inOrder();
     assertThat(names(manager.crossTemplateCheckingPasses)).isEmpty();
@@ -155,7 +155,6 @@ public final class PassManagerTest {
             ResolveNamesPass.class,
             ResolvePackageRelativeCssNamesPass.class,
             ResolvePluginsPass.class,
-            ResolveTemplateNamesPass.class, // Needs to run multiple times.
             ResolveTemplateParamTypesPass.class,
             RewriteGenderMsgsPass.class,
             SimplifyAssertNonNullPass.class,
@@ -188,25 +187,30 @@ public final class PassManagerTest {
                 for (boolean optimize : bools()) {
                   for (boolean insertEscapingDirectives : bools()) {
                     for (boolean addHtmlAttributesForDebugging : bools()) {
-                      PassManager.Builder builder = builder().setGeneralOptions(soyGeneralOptions);
-                      if (allowUnknownGlobals) {
-                        builder.allowUnknownGlobals();
+                      for (boolean rewritePlugins : bools()) {
+                        PassManager.Builder builder =
+                            builder()
+                                .setGeneralOptions(soyGeneralOptions)
+                                .rewritePlugins(rewritePlugins);
+                        if (allowUnknownGlobals) {
+                          builder.allowUnknownGlobals();
+                        }
+                        if (allowV1Expression) {
+                          builder.allowV1Expression();
+                        }
+                        if (allowUnknownJsGlobals) {
+                          builder.allowUnknownJsGlobals();
+                        }
+                        if (disableAllTypeChecking) {
+                          builder.disableAllTypeChecking();
+                        }
+                        builder
+                            .desugarHtmlAndStateNodes(desugarHtmlAndStateNodes)
+                            .optimize(optimize)
+                            .insertEscapingDirectives(insertEscapingDirectives)
+                            .addHtmlAttributesForDebugging(addHtmlAttributesForDebugging);
+                        consumer.accept(builder.build());
                       }
-                      if (allowV1Expression) {
-                        builder.allowV1Expression();
-                      }
-                      if (allowUnknownJsGlobals) {
-                        builder.allowUnknownJsGlobals();
-                      }
-                      if (disableAllTypeChecking) {
-                        builder.disableAllTypeChecking();
-                      }
-                      builder
-                          .desugarHtmlAndStateNodes(desugarHtmlAndStateNodes)
-                          .optimize(optimize)
-                          .insertEscapingDirectives(insertEscapingDirectives)
-                          .addHtmlAttributesForDebugging(addHtmlAttributesForDebugging);
-                      consumer.accept(builder.build());
                     }
                   }
                 }

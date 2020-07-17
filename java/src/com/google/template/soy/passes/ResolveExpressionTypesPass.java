@@ -240,10 +240,6 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       SoyErrorKind.of("Unknown proto type ''{0}''.");
   private static final SoyErrorKind PROTO_FIELD_DOES_NOT_EXIST =
       SoyErrorKind.of("Proto field ''{0}'' does not exist.{1}", StyleAllowance.NO_PUNCTUATION);
-  private static final SoyErrorKind PROTO_EXTENSION_DOES_NOT_EXIST =
-      SoyErrorKind.of(
-          "Proto extension field ''{0}'' does not exist on the proto ''{1}''.{2}",
-          StyleAllowance.NO_PUNCTUATION);
   private static final SoyErrorKind PROTO_MISSING_REQUIRED_FIELD =
       SoyErrorKind.of("Missing required proto field ''{0}''.");
   private static final SoyErrorKind PROTO_NULL_ARG_TYPE =
@@ -278,9 +274,6 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       SoyErrorKind.of("Method ''{0}'' called with {1} parameter(s) but expected {2}.");
   private static final SoyErrorKind METHOD_INVALID_PARAM_TYPES =
       SoyErrorKind.of("Method ''{0}'' called with parameter types ({1}) but expected ({2}).");
-  private static final SoyErrorKind GET_EXTENSION_GLOBAL_REQUIRED =
-      SoyErrorKind.of(
-          "The parameter of method ''getExtension'' must be a dotted identifier. Found ''{0}''");
   private static final SoyErrorKind METHOD_BASE_TYPE_NULL_SAFE_REQUIRED =
       SoyErrorKind.of(
           "Method calls are not allowed on objects with nullable types (''{0}''). Either ensure"
@@ -312,6 +305,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
   private ExprEquivalence exprEquivalence;
   private SoyTypeRegistry typeRegistry;
   private TypeNodeConverter typeNodeConverter;
+  private final PluginResolver.Mode pluginResolutionMode;
 
   ResolveExpressionTypesPass(
       ErrorReporter errorReporter,
@@ -319,6 +313,10 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       PluginResolver pluginResolver) {
     this.errorReporter = errorReporter;
     this.loggingConfig = loggingConfig;
+    this.pluginResolutionMode =
+        pluginResolver == null
+            ? PluginResolver.Mode.REQUIRE_DEFINITIONS
+            : pluginResolver.getPluginResolutionMode();
     this.methodRegistry =
         new CompositeMethodRegistry(
             ImmutableList.of(BuiltinMethod.REGISTRY, new PluginMethodRegistry(pluginResolver)));
@@ -544,6 +542,10 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       // Set the inferred type of the loop variable.
       node.getVar().setType(getElementType(node.getExpr().getType(), node));
       // Visit the node body
+      if (node.getIndexVar() != null) {
+        // Set the type of the optional index to integer.
+        node.getIndexVar().setType(IntType.getInstance());
+      }
       visitChildren(node);
     }
 
@@ -1009,19 +1011,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       node.setSoyMethod(method);
 
       if (method instanceof BuiltinMethod) {
-        BuiltinMethod builtinMethod = (BuiltinMethod) method;
-
-        switch (builtinMethod) {
-          case GET_EXTENSION:
-            if (checkHasExtension(node, baseType)) {
-              node.setType(builtinMethod.getReturnType(node));
-            } else {
-              node.setType(ErrorType.getInstance());
-            }
-            break;
-          default:
-            node.setType(builtinMethod.getReturnType(node));
-        }
+        node.setType(((BuiltinMethod) method).getReturnType(node, typeRegistry, errorReporter));
       } else if (method instanceof SoySourceFunctionMethod) {
         SoySourceFunctionMethod sourceMethod = (SoySourceFunctionMethod) method;
         SoySourceFunction sourceFunction = sourceMethod.getImpl();
@@ -1042,39 +1032,8 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       }
     }
 
-    private boolean checkHasExtension(MethodCallNode node, SoyType baseType) {
-      SoyProtoType protoType = (SoyProtoType) baseType;
-      ExprNode child = node.getChild(1);
-      // Fully qualified name parameter should initially be parsed as a global node.
-      if (child.getKind() != ExprNode.Kind.GLOBAL_NODE) {
-        errorReporter.report(
-            child.getSourceLocation(), GET_EXTENSION_GLOBAL_REQUIRED, child.getType().toString());
-        return false;
-      }
-
-      GlobalNode parameter = (GlobalNode) node.getChild(1);
-      ImmutableSet<String> fields = protoType.getExtensionFieldNames();
-      String fieldName = parameter.getName();
-
-      if (!fields.contains(fieldName)) {
-        String extraErrorMessage =
-            SoyErrors.getDidYouMeanMessageForProtoFields(
-                fields, protoType.getDescriptor(), fieldName);
-        errorReporter.report(
-            parameter.getSourceLocation(),
-            PROTO_EXTENSION_DOES_NOT_EXIST,
-            fieldName,
-            protoType.getDescriptor().getFullName(),
-            extraErrorMessage);
-        return false;
-      }
-
-      return true;
-    }
-
     @Nullable
     private SoyMethod resolveMethodFromBaseType(MethodCallNode node, SoyType baseType) {
-
       if (SoyTypes.isNullable(baseType)) {
         errorReporter.report(
             node.getBaseExprChild().getSourceLocation(),
@@ -1113,7 +1072,9 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
 
       if (andMatchArgType.size() == 1) {
         // Matched exactly one method. Success!
-        return andMatchArgCount.get(0);
+        SoyMethod method = andMatchArgCount.get(0);
+        PluginResolver.warnIfDeprecated(errorReporter, methodName, method, srcLoc);
+        return method;
       }
 
       if (!andMatchArgType.isEmpty()) {
@@ -1134,7 +1095,14 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
           didYouMean = SoyErrors.getDidYouMeanMessage(matching, methodName);
         }
         // We did not match base type and method name. No method found.
-        errorReporter.report(srcLoc, INVALID_METHOD_BASE, methodName, baseType, didYouMean);
+        if (pluginResolutionMode == PluginResolver.Mode.REQUIRE_DEFINITIONS) {
+          errorReporter.report(srcLoc, INVALID_METHOD_BASE, methodName, baseType, didYouMean);
+        } else if (pluginResolutionMode == PluginResolver.Mode.ALLOW_UNDEFINED_AND_WARN) {
+          errorReporter.warn(srcLoc, INVALID_METHOD_BASE, methodName, baseType, didYouMean);
+        } else {
+          // :( this is for kythe since we can't load plugin definitions since they are too
+          // heavyweight.
+        }
       }
 
       return null;
@@ -2061,9 +2029,6 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
           node.setType(StringType.getInstance());
           break;
         case UNKNOWN_JS_GLOBAL:
-          checkArgIsStringLiteral(node, 0, builtinFunction);
-          node.setType(UnknownType.getInstance());
-          break;
         case V1_EXPRESSION:
           checkArgIsStringLiteral(node, 0, builtinFunction);
           node.setType(UnknownType.getInstance());

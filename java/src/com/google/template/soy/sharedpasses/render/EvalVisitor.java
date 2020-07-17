@@ -40,6 +40,7 @@ import com.google.template.soy.data.SoyList;
 import com.google.template.soy.data.SoyMap;
 import com.google.template.soy.data.SoyProtoValue;
 import com.google.template.soy.data.SoyRecord;
+import com.google.template.soy.data.SoyRecords;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.SoyValueConverter;
 import com.google.template.soy.data.SoyValueProvider;
@@ -585,6 +586,14 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
           return BooleanData.forValue(
               ((SoyProtoValue) base)
                   .hasProtoField(BuiltinMethod.getProtoFieldNameFromMethodCall(methodNode)));
+        case BIND:
+          TofuTemplateValue template = (TofuTemplateValue) base;
+          SoyRecord params = (SoyRecord) visit(methodNode.getParams().get(0));
+          return TofuTemplateValue.createWithBoundParameters(
+              template.getTemplateName(),
+              template.getBoundParameters().isPresent()
+                  ? SoyRecords.merge(template.getBoundParameters().get(), params)
+                  : params);
       }
     } else if (method instanceof SoySourceFunctionMethod) {
       SoySourceFunctionMethod sourceMethod = (SoySourceFunctionMethod) method;
