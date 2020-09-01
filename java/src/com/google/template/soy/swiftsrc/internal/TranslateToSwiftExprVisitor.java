@@ -26,10 +26,8 @@ import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
 import com.google.template.soy.exprtree.NullNode;
 import com.google.template.soy.exprtree.Operator;
-import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.exprtree.OperatorNodes.ConditionalOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.EqualOpNode;
-import com.google.template.soy.exprtree.OperatorNodes.NegativeOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.NotEqualOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.NotOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.NullCoalescingOpNode;
@@ -76,8 +74,6 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
 
   private static final SoyErrorKind PROTO_ACCESS_NOT_SUPPORTED =
       SoyErrorKind.of("Proto accessors are not supported in Swift src.");
-  private static final SoyErrorKind PROTO_INIT_NOT_SUPPORTED =
-      SoyErrorKind.of("Proto init is not supported in Swift src.");
   private static final SoyErrorKind SOY_SWIFT_SRC_FUNCTION_NOT_FOUND =
       SoyErrorKind.of("Failed to find SoySwiftSrcFunction ''{0}''.");
   private static final SoyErrorKind UNTYPED_BRACKET_ACCESS_NOT_SUPPORTED =
@@ -604,12 +600,6 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
             .append(SwiftExprUtils.maybeProtect(falseExpr, conditionalPrecedence).getText());
 
     return new SwiftExpr(exprSb.toString(), conditionalPrecedence);
-  }
-
-  @Override
-  protected SwiftExpr visitProtoInitNode(ProtoInitNode node) {
-    errorReporter.report(node.getSourceLocation(), PROTO_INIT_NOT_SUPPORTED);
-    return ERROR;
   }
 
   // -----------------------------------------------------------------------------------------------
