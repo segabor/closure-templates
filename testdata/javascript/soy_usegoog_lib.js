@@ -3812,7 +3812,7 @@ goog.identity_ = function(s) {
 /**
  * Creates Trusted Types policy if Trusted Types are supported by the browser.
  * The policy just blesses any string as a Trusted Type. It is not visibility
- * restricted because anyone can also call TrustedTypes.createPolicy directly.
+ * restricted because anyone can also call trustedTypes.createPolicy directly.
  * However, the allowed names should be restricted by a HTTP header and the
  * reference to the created policy should be visibility restricted.
  * @param {string} name
@@ -4405,7 +4405,7 @@ goog.asserts.getType_ = function(value) {
 };
 
 //third_party/javascript/closure/array/array.js
-/**
+goog.loadModule(function(exports) {'use strict';/**
  * @license
  * Copyright The Closure Library Authors.
  * SPDX-License-Identifier: Apache-2.0
@@ -4416,9 +4416,10 @@ goog.asserts.getType_ = function(value) {
  */
 
 
-goog.provide('goog.array');
+goog.module('goog.array');
+goog.module.declareLegacyNamespace();
 
-goog.require('goog.asserts');
+const asserts = goog.require('goog.asserts');
 
 
 /**
@@ -4445,30 +4446,32 @@ goog.NATIVE_ARRAY_PROTOTYPES =
  * array functions where appropriate (e.g., `Array#filter`) and remove the
  * unused pure JS implementation.
  */
-goog.array.ASSUME_NATIVE_FUNCTIONS = goog.define(
+const ASSUME_NATIVE_FUNCTIONS = goog.define(
     'goog.array.ASSUME_NATIVE_FUNCTIONS', goog.FEATURESET_YEAR > 2012);
+exports.ASSUME_NATIVE_FUNCTIONS = ASSUME_NATIVE_FUNCTIONS;
 
 
 /**
  * Returns the last element in an array without removing it.
- * Same as goog.array.last.
+ * Same as {@link goog.array.last}.
  * @param {IArrayLike<T>|string} array The array.
  * @return {T} Last item in array.
  * @template T
  */
-goog.array.peek = function(array) {
+function peek(array) {
   return array[array.length - 1];
-};
+}
+exports.peek = peek;
 
 
 /**
  * Returns the last element in an array without removing it.
- * Same as goog.array.peek.
+ * Same as {@link goog.array.peek}.
  * @param {IArrayLike<T>|string} array The array.
  * @return {T} Last item in array.
  * @template T
  */
-goog.array.last = goog.array.peek;
+exports.last = peek;
 
 // NOTE(arv): Since most of the array functions are generic it allows you to
 // pass an array-like object. Strings have a length and are considered array-
@@ -4490,10 +4493,10 @@ goog.array.last = goog.array.peek;
  * @return {number} The index of the first matching array element.
  * @template T
  */
-goog.array.indexOf = goog.NATIVE_ARRAY_PROTOTYPES &&
-        (goog.array.ASSUME_NATIVE_FUNCTIONS || Array.prototype.indexOf) ?
+const indexOf = goog.NATIVE_ARRAY_PROTOTYPES &&
+        (ASSUME_NATIVE_FUNCTIONS || Array.prototype.indexOf) ?
     function(arr, obj, opt_fromIndex) {
-      goog.asserts.assert(arr.length != null);
+      asserts.assert(arr.length != null);
 
       return Array.prototype.indexOf.call(arr, obj, opt_fromIndex);
     } :
@@ -4516,6 +4519,7 @@ goog.array.indexOf = goog.NATIVE_ARRAY_PROTOTYPES &&
       }
       return -1;
     };
+exports.indexOf = indexOf;
 
 
 /**
@@ -4531,10 +4535,10 @@ goog.array.indexOf = goog.NATIVE_ARRAY_PROTOTYPES &&
  * @return {number} The index of the last matching array element.
  * @template T
  */
-goog.array.lastIndexOf = goog.NATIVE_ARRAY_PROTOTYPES &&
-        (goog.array.ASSUME_NATIVE_FUNCTIONS || Array.prototype.lastIndexOf) ?
+const lastIndexOf = goog.NATIVE_ARRAY_PROTOTYPES &&
+        (ASSUME_NATIVE_FUNCTIONS || Array.prototype.lastIndexOf) ?
     function(arr, obj, opt_fromIndex) {
-      goog.asserts.assert(arr.length != null);
+      asserts.assert(arr.length != null);
 
       // Firefox treats undefined and null as 0 in the fromIndex argument which
       // leads it to always return -1
@@ -4561,6 +4565,7 @@ goog.array.lastIndexOf = goog.NATIVE_ARRAY_PROTOTYPES &&
       }
       return -1;
     };
+exports.lastIndexOf = lastIndexOf;
 
 
 /**
@@ -4575,10 +4580,10 @@ goog.array.lastIndexOf = goog.NATIVE_ARRAY_PROTOTYPES &&
  * @param {S=} opt_obj The object to be used as the value of 'this' within f.
  * @template T,S
  */
-goog.array.forEach = goog.NATIVE_ARRAY_PROTOTYPES &&
-        (goog.array.ASSUME_NATIVE_FUNCTIONS || Array.prototype.forEach) ?
+const forEach = goog.NATIVE_ARRAY_PROTOTYPES &&
+        (ASSUME_NATIVE_FUNCTIONS || Array.prototype.forEach) ?
     function(arr, f, opt_obj) {
-      goog.asserts.assert(arr.length != null);
+      asserts.assert(arr.length != null);
 
       Array.prototype.forEach.call(arr, f, opt_obj);
     } :
@@ -4591,6 +4596,7 @@ goog.array.forEach = goog.NATIVE_ARRAY_PROTOTYPES &&
         }
       }
     };
+exports.forEach = forEach;
 
 
 /**
@@ -4607,7 +4613,7 @@ goog.array.forEach = goog.NATIVE_ARRAY_PROTOTYPES &&
  *     within f.
  * @template T,S
  */
-goog.array.forEachRight = function(arr, f, opt_obj) {
+function forEachRight(arr, f, opt_obj) {
   var l = arr.length;  // must be fixed during loop... see docs
   var arr2 = (typeof arr === 'string') ? arr.split('') : arr;
   for (var i = l - 1; i >= 0; --i) {
@@ -4615,7 +4621,8 @@ goog.array.forEachRight = function(arr, f, opt_obj) {
       f.call(/** @type {?} */ (opt_obj), arr2[i], i, arr);
     }
   }
-};
+}
+exports.forEachRight = forEachRight;
 
 
 /**
@@ -4637,10 +4644,10 @@ goog.array.forEachRight = function(arr, f, opt_obj) {
  *     are present.
  * @template T,S
  */
-goog.array.filter = goog.NATIVE_ARRAY_PROTOTYPES &&
-        (goog.array.ASSUME_NATIVE_FUNCTIONS || Array.prototype.filter) ?
+const filter = goog.NATIVE_ARRAY_PROTOTYPES &&
+        (ASSUME_NATIVE_FUNCTIONS || Array.prototype.filter) ?
     function(arr, f, opt_obj) {
-      goog.asserts.assert(arr.length != null);
+      asserts.assert(arr.length != null);
 
       return Array.prototype.filter.call(arr, f, opt_obj);
     } :
@@ -4659,6 +4666,7 @@ goog.array.filter = goog.NATIVE_ARRAY_PROTOTYPES &&
       }
       return res;
     };
+exports.filter = filter;
 
 
 /**
@@ -4677,10 +4685,10 @@ goog.array.filter = goog.NATIVE_ARRAY_PROTOTYPES &&
  * @return {!Array<RESULT>} a new array with the results from f.
  * @template THIS, VALUE, RESULT
  */
-goog.array.map = goog.NATIVE_ARRAY_PROTOTYPES &&
-        (goog.array.ASSUME_NATIVE_FUNCTIONS || Array.prototype.map) ?
+const map = goog.NATIVE_ARRAY_PROTOTYPES &&
+        (ASSUME_NATIVE_FUNCTIONS || Array.prototype.map) ?
     function(arr, f, opt_obj) {
-      goog.asserts.assert(arr.length != null);
+      asserts.assert(arr.length != null);
 
       return Array.prototype.map.call(arr, f, opt_obj);
     } :
@@ -4695,16 +4703,20 @@ goog.array.map = goog.NATIVE_ARRAY_PROTOTYPES &&
       }
       return res;
     };
+exports.map = map;
 
 
 /**
  * Passes every element of an array into a function and accumulates the result.
  *
  * See {@link http://tinyurl.com/developer-mozilla-org-array-reduce}
+ * Note that this implementation differs from the native Array.prototype.reduce
+ * in that the initial value is assumed to be defined (the MDN docs linked above
+ * recommend not omitting this parameter, although it is technically optional).
  *
  * For example:
  * var a = [1, 2, 3, 4];
- * goog.array.reduce(a, function(r, v, i, arr) {return r + v;}, 0);
+ * reduce(a, function(r, v, i, arr) {return r + v;}, 0);
  * returns 10
  *
  * @param {IArrayLike<T>|string} arr Array or array
@@ -4721,10 +4733,10 @@ goog.array.map = goog.NATIVE_ARRAY_PROTOTYPES &&
  * @return {R} Result of evaluating f repeatedly across the values of the array.
  * @template T,S,R
  */
-goog.array.reduce = goog.NATIVE_ARRAY_PROTOTYPES &&
-        (goog.array.ASSUME_NATIVE_FUNCTIONS || Array.prototype.reduce) ?
+const reduce = goog.NATIVE_ARRAY_PROTOTYPES &&
+        (ASSUME_NATIVE_FUNCTIONS || Array.prototype.reduce) ?
     function(arr, f, val, opt_obj) {
-      goog.asserts.assert(arr.length != null);
+      asserts.assert(arr.length != null);
       if (opt_obj) {
         f = goog.bind(f, opt_obj);
       }
@@ -4732,11 +4744,12 @@ goog.array.reduce = goog.NATIVE_ARRAY_PROTOTYPES &&
     } :
     function(arr, f, val, opt_obj) {
       var rval = val;
-      goog.array.forEach(arr, function(val, index) {
+      forEach(arr, function(val, index) {
         rval = f.call(/** @type {?} */ (opt_obj), rval, val, index, arr);
       });
       return rval;
     };
+exports.reduce = reduce;
 
 
 /**
@@ -4747,7 +4760,7 @@ goog.array.reduce = goog.NATIVE_ARRAY_PROTOTYPES &&
  *
  * For example:
  * var a = ['a', 'b', 'c'];
- * goog.array.reduceRight(a, function(r, v, i, arr) {return r + v;}, '');
+ * reduceRight(a, function(r, v, i, arr) {return r + v;}, '');
  * returns 'cba'
  *
  * @param {IArrayLike<T>|string} arr Array or array
@@ -4765,11 +4778,11 @@ goog.array.reduce = goog.NATIVE_ARRAY_PROTOTYPES &&
  *     values of the array.
  * @template T,S,R
  */
-goog.array.reduceRight = goog.NATIVE_ARRAY_PROTOTYPES &&
-        (goog.array.ASSUME_NATIVE_FUNCTIONS || Array.prototype.reduceRight) ?
+const reduceRight = goog.NATIVE_ARRAY_PROTOTYPES &&
+        (ASSUME_NATIVE_FUNCTIONS || Array.prototype.reduceRight) ?
     function(arr, f, val, opt_obj) {
-      goog.asserts.assert(arr.length != null);
-      goog.asserts.assert(f != null);
+      asserts.assert(arr.length != null);
+      asserts.assert(f != null);
       if (opt_obj) {
         f = goog.bind(f, opt_obj);
       }
@@ -4777,11 +4790,12 @@ goog.array.reduceRight = goog.NATIVE_ARRAY_PROTOTYPES &&
     } :
     function(arr, f, val, opt_obj) {
       var rval = val;
-      goog.array.forEachRight(arr, function(val, index) {
+      forEachRight(arr, function(val, index) {
         rval = f.call(/** @type {?} */ (opt_obj), rval, val, index, arr);
       });
       return rval;
     };
+exports.reduceRight = reduceRight;
 
 
 /**
@@ -4801,10 +4815,10 @@ goog.array.reduceRight = goog.NATIVE_ARRAY_PROTOTYPES &&
  * @return {boolean} true if any element passes the test.
  * @template T,S
  */
-goog.array.some = goog.NATIVE_ARRAY_PROTOTYPES &&
-        (goog.array.ASSUME_NATIVE_FUNCTIONS || Array.prototype.some) ?
+const some = goog.NATIVE_ARRAY_PROTOTYPES &&
+        (ASSUME_NATIVE_FUNCTIONS || Array.prototype.some) ?
     function(arr, f, opt_obj) {
-      goog.asserts.assert(arr.length != null);
+      asserts.assert(arr.length != null);
 
       return Array.prototype.some.call(arr, f, opt_obj);
     } :
@@ -4818,6 +4832,7 @@ goog.array.some = goog.NATIVE_ARRAY_PROTOTYPES &&
       }
       return false;
     };
+exports.some = some;
 
 
 /**
@@ -4837,10 +4852,10 @@ goog.array.some = goog.NATIVE_ARRAY_PROTOTYPES &&
  * @return {boolean} false if any element fails the test.
  * @template T,S
  */
-goog.array.every = goog.NATIVE_ARRAY_PROTOTYPES &&
-        (goog.array.ASSUME_NATIVE_FUNCTIONS || Array.prototype.every) ?
+const every = goog.NATIVE_ARRAY_PROTOTYPES &&
+        (ASSUME_NATIVE_FUNCTIONS || Array.prototype.every) ?
     function(arr, f, opt_obj) {
-      goog.asserts.assert(arr.length != null);
+      asserts.assert(arr.length != null);
 
       return Array.prototype.every.call(arr, f, opt_obj);
     } :
@@ -4854,6 +4869,7 @@ goog.array.every = goog.NATIVE_ARRAY_PROTOTYPES &&
       }
       return true;
     };
+exports.every = every;
 
 
 /**
@@ -4868,15 +4884,16 @@ goog.array.every = goog.NATIVE_ARRAY_PROTOTYPES &&
  * @return {number} The number of the matching elements.
  * @template T,S
  */
-goog.array.count = function(arr, f, opt_obj) {
+function count(arr, f, opt_obj) {
   var count = 0;
-  goog.array.forEach(arr, function(element, index, arr) {
+  forEach(arr, function(element, index, arr) {
     if (f.call(/** @type {?} */ (opt_obj), element, index, arr)) {
       ++count;
     }
   }, opt_obj);
   return count;
-};
+}
+exports.count = count;
 
 
 /**
@@ -4892,10 +4909,11 @@ goog.array.count = function(arr, f, opt_obj) {
  *     element is found.
  * @template T,S
  */
-goog.array.find = function(arr, f, opt_obj) {
-  var i = goog.array.findIndex(arr, f, opt_obj);
+function find(arr, f, opt_obj) {
+  var i = findIndex(arr, f, opt_obj);
   return i < 0 ? null : typeof arr === 'string' ? arr.charAt(i) : arr[i];
-};
+}
+exports.find = find;
 
 
 /**
@@ -4912,7 +4930,7 @@ goog.array.find = function(arr, f, opt_obj) {
  *     or -1 if no element is found.
  * @template T,S
  */
-goog.array.findIndex = function(arr, f, opt_obj) {
+function findIndex(arr, f, opt_obj) {
   var l = arr.length;  // must be fixed during loop... see docs
   var arr2 = (typeof arr === 'string') ? arr.split('') : arr;
   for (var i = 0; i < l; i++) {
@@ -4921,7 +4939,8 @@ goog.array.findIndex = function(arr, f, opt_obj) {
     }
   }
   return -1;
-};
+}
+exports.findIndex = findIndex;
 
 
 /**
@@ -4938,10 +4957,11 @@ goog.array.findIndex = function(arr, f, opt_obj) {
  *     element is found.
  * @template T,S
  */
-goog.array.findRight = function(arr, f, opt_obj) {
-  var i = goog.array.findIndexRight(arr, f, opt_obj);
+function findRight(arr, f, opt_obj) {
+  var i = findIndexRight(arr, f, opt_obj);
   return i < 0 ? null : typeof arr === 'string' ? arr.charAt(i) : arr[i];
-};
+}
+exports.findRight = findRight;
 
 
 /**
@@ -4958,7 +4978,7 @@ goog.array.findRight = function(arr, f, opt_obj) {
  *     or -1 if no element is found.
  * @template T,S
  */
-goog.array.findIndexRight = function(arr, f, opt_obj) {
+function findIndexRight(arr, f, opt_obj) {
   var l = arr.length;  // must be fixed during loop... see docs
   var arr2 = (typeof arr === 'string') ? arr.split('') : arr;
   for (var i = l - 1; i >= 0; i--) {
@@ -4967,7 +4987,8 @@ goog.array.findIndexRight = function(arr, f, opt_obj) {
     }
   }
   return -1;
-};
+}
+exports.findIndexRight = findIndexRight;
 
 
 /**
@@ -4977,9 +4998,10 @@ goog.array.findIndexRight = function(arr, f, opt_obj) {
  * @param {*} obj The object for which to test.
  * @return {boolean} true if obj is present.
  */
-goog.array.contains = function(arr, obj) {
-  return goog.array.indexOf(arr, obj) >= 0;
-};
+function contains(arr, obj) {
+  return indexOf(arr, obj) >= 0;
+}
+exports.contains = contains;
 
 
 /**
@@ -4987,16 +5009,17 @@ goog.array.contains = function(arr, obj) {
  * @param {IArrayLike<?>|string} arr The array to test.
  * @return {boolean} true if empty.
  */
-goog.array.isEmpty = function(arr) {
+function isEmpty(arr) {
   return arr.length == 0;
-};
+}
+exports.isEmpty = isEmpty;
 
 
 /**
  * Clears the array.
  * @param {IArrayLike<?>} arr Array or array like object to clear.
  */
-goog.array.clear = function(arr) {
+function clear(arr) {
   // For non real arrays we don't have the magic length so we delete the
   // indices.
   if (!Array.isArray(arr)) {
@@ -5005,7 +5028,8 @@ goog.array.clear = function(arr) {
     }
   }
   arr.length = 0;
-};
+}
+exports.clear = clear;
 
 
 /**
@@ -5014,11 +5038,12 @@ goog.array.clear = function(arr) {
  * @param {T} obj Value to add.
  * @template T
  */
-goog.array.insert = function(arr, obj) {
-  if (!goog.array.contains(arr, obj)) {
+function insert(arr, obj) {
+  if (!contains(arr, obj)) {
     arr.push(obj);
   }
-};
+}
+exports.insert = insert;
 
 
 /**
@@ -5028,9 +5053,10 @@ goog.array.insert = function(arr, obj) {
  * @param {number=} opt_i The index at which to insert the object. If omitted,
  *      treated as 0. A negative index is counted from the end of the array.
  */
-goog.array.insertAt = function(arr, obj, opt_i) {
-  goog.array.splice(arr, opt_i, 0, obj);
-};
+function insertAt(arr, obj, opt_i) {
+  splice(arr, opt_i, 0, obj);
+}
+exports.insertAt = insertAt;
 
 
 /**
@@ -5040,9 +5066,10 @@ goog.array.insertAt = function(arr, obj, opt_i) {
  * @param {number=} opt_i The index at which to insert the object. If omitted,
  *      treated as 0. A negative index is counted from the end of the array.
  */
-goog.array.insertArrayAt = function(arr, elementsToAdd, opt_i) {
-  goog.partial(goog.array.splice, arr, opt_i, 0).apply(null, elementsToAdd);
-};
+function insertArrayAt(arr, elementsToAdd, opt_i) {
+  goog.partial(splice, arr, opt_i, 0).apply(null, elementsToAdd);
+}
+exports.insertArrayAt = insertArrayAt;
 
 
 /**
@@ -5053,14 +5080,15 @@ goog.array.insertArrayAt = function(arr, elementsToAdd, opt_i) {
  *     is omitted or not found, obj is inserted at the end of the array.
  * @template T
  */
-goog.array.insertBefore = function(arr, obj, opt_obj2) {
+function insertBefore(arr, obj, opt_obj2) {
   var i;
-  if (arguments.length == 2 || (i = goog.array.indexOf(arr, opt_obj2)) < 0) {
+  if (arguments.length == 2 || (i = indexOf(arr, opt_obj2)) < 0) {
     arr.push(obj);
   } else {
-    goog.array.insertAt(arr, obj, i);
+    insertAt(arr, obj, i);
   }
-};
+}
+exports.insertBefore = insertBefore;
 
 
 /**
@@ -5071,14 +5099,15 @@ goog.array.insertBefore = function(arr, obj, opt_obj2) {
  * @return {boolean} True if an element was removed.
  * @template T
  */
-goog.array.remove = function(arr, obj) {
-  var i = goog.array.indexOf(arr, obj);
+function remove(arr, obj) {
+  var i = indexOf(arr, obj);
   var rv;
   if ((rv = i >= 0)) {
-    goog.array.removeAt(arr, i);
+    removeAt(arr, i);
   }
   return rv;
-};
+}
+exports.remove = remove;
 
 
 /**
@@ -5088,14 +5117,15 @@ goog.array.remove = function(arr, obj) {
  * @return {boolean} True if an element was removed.
  * @template T
  */
-goog.array.removeLast = function(arr, obj) {
-  var i = goog.array.lastIndexOf(arr, obj);
+function removeLast(arr, obj) {
+  var i = lastIndexOf(arr, obj);
   if (i >= 0) {
-    goog.array.removeAt(arr, i);
+    removeAt(arr, i);
     return true;
   }
   return false;
-};
+}
+exports.removeLast = removeLast;
 
 
 /**
@@ -5105,14 +5135,15 @@ goog.array.removeLast = function(arr, obj) {
  * @param {number} i The index to remove.
  * @return {boolean} True if an element was removed.
  */
-goog.array.removeAt = function(arr, i) {
-  goog.asserts.assert(arr.length != null);
+function removeAt(arr, i) {
+  asserts.assert(arr.length != null);
 
   // use generic form of splice
   // splice returns the removed items and if successful the length of that
   // will be 1
   return Array.prototype.splice.call(arr, i, 1).length == 1;
-};
+}
+exports.removeAt = removeAt;
 
 
 /**
@@ -5127,14 +5158,15 @@ goog.array.removeAt = function(arr, i) {
  * @return {boolean} True if an element was removed.
  * @template T,S
  */
-goog.array.removeIf = function(arr, f, opt_obj) {
-  var i = goog.array.findIndex(arr, f, opt_obj);
+function removeIf(arr, f, opt_obj) {
+  var i = findIndex(arr, f, opt_obj);
   if (i >= 0) {
-    goog.array.removeAt(arr, i);
+    removeAt(arr, i);
     return true;
   }
   return false;
-};
+}
+exports.removeIf = removeIf;
 
 
 /**
@@ -5149,17 +5181,18 @@ goog.array.removeIf = function(arr, f, opt_obj) {
  * @return {number} The number of items removed
  * @template T,S
  */
-goog.array.removeAllIf = function(arr, f, opt_obj) {
+function removeAllIf(arr, f, opt_obj) {
   var removedCount = 0;
-  goog.array.forEachRight(arr, function(val, index) {
+  forEachRight(arr, function(val, index) {
     if (f.call(/** @type {?} */ (opt_obj), val, index, arr)) {
-      if (goog.array.removeAt(arr, index)) {
+      if (removeAt(arr, index)) {
         removedCount++;
       }
     }
   });
   return removedCount;
-};
+}
+exports.removeAllIf = removeAllIf;
 
 
 /**
@@ -5170,9 +5203,9 @@ goog.array.removeAllIf = function(arr, f, opt_obj) {
  * Note that ArrayLike objects will be added as is, rather than having their
  * items added.
  *
- * goog.array.concat([1, 2], [3, 4]) -> [1, 2, 3, 4]
- * goog.array.concat(0, [1, 2]) -> [0, 1, 2]
- * goog.array.concat([1, 2], null) -> [1, 2, null]
+ * concat([1, 2], [3, 4]) -> [1, 2, 3, 4]
+ * concat(0, [1, 2]) -> [0, 1, 2]
+ * concat([1, 2], null) -> [1, 2, null]
  *
  * There is bug in all current versions of IE (6, 7 and 8) where arrays created
  * in an iframe become corrupted soon (not immediately) after the iframe is
@@ -5189,9 +5222,10 @@ goog.array.removeAllIf = function(arr, f, opt_obj) {
  *     added, while primitives and objects will be added as is.
  * @return {!Array<?>} The new resultant array.
  */
-goog.array.concat = function(var_args) {
+function concat(var_args) {
   return Array.prototype.concat.apply([], arguments);
-};
+}
+exports.concat = concat;
 
 
 /**
@@ -5200,9 +5234,10 @@ goog.array.concat = function(var_args) {
  * @return {!Array<T>}
  * @template T
  */
-goog.array.join = function(var_args) {
+function join(var_args) {
   return Array.prototype.concat.apply([], arguments);
-};
+}
+exports.join = join;
 
 
 /**
@@ -5215,7 +5250,7 @@ goog.array.join = function(var_args) {
  *     have a length property, an empty array will be returned.
  * @template T
  */
-goog.array.toArray = function(object) {
+function toArray(object) {
   var length = object.length;
 
   // If length is not a number the following is false. This case is kept for
@@ -5229,7 +5264,8 @@ goog.array.toArray = function(object) {
     return rv;
   }
   return [];
-};
+}
+exports.toArray = toArray;
 
 
 /**
@@ -5239,7 +5275,8 @@ goog.array.toArray = function(object) {
  * @return {!Array<T>} Clone of the input array.
  * @template T
  */
-goog.array.clone = goog.array.toArray;
+const clone = toArray;
+exports.clone = clone;
 
 
 /**
@@ -5248,9 +5285,9 @@ goog.array.clone = goog.array.toArray;
  *
  * Example:
  * var a = [];
- * goog.array.extend(a, [0, 1]);
+ * extend(a, [0, 1]);
  * a; // [0, 1]
- * goog.array.extend(a, 2);
+ * extend(a, 2);
  * a; // [0, 1, 2]
  *
  * @param {Array<VALUE>} arr1  The array to modify.
@@ -5258,7 +5295,7 @@ goog.array.clone = goog.array.toArray;
  *     elements to add to arr1.
  * @template VALUE
  */
-goog.array.extend = function(arr1, var_args) {
+function extend(arr1, var_args) {
   for (var i = 1; i < arguments.length; i++) {
     var arr2 = arguments[i];
     if (goog.isArrayLike(arr2)) {
@@ -5272,7 +5309,8 @@ goog.array.extend = function(arr1, var_args) {
       arr1.push(arr2);
     }
   }
-};
+}
+exports.extend = extend;
 
 
 /**
@@ -5291,11 +5329,12 @@ goog.array.extend = function(arr1, var_args) {
  * @return {!Array<T>} the removed elements.
  * @template T
  */
-goog.array.splice = function(arr, index, howMany, var_args) {
-  goog.asserts.assert(arr.length != null);
+function splice(arr, index, howMany, var_args) {
+  asserts.assert(arr.length != null);
 
-  return Array.prototype.splice.apply(arr, goog.array.slice(arguments, 1));
-};
+  return Array.prototype.splice.apply(arr, slice(arguments, 1));
+}
+exports.splice = splice;
 
 
 /**
@@ -5311,8 +5350,8 @@ goog.array.splice = function(arr, index, howMany, var_args) {
  *     original array.
  * @template T
  */
-goog.array.slice = function(arr, start, opt_end) {
-  goog.asserts.assert(arr.length != null);
+function slice(arr, start, opt_end) {
+  asserts.assert(arr.length != null);
 
   // passing 1 arg to slice is not the same as passing 2 where the second is
   // null or undefined (in that case the second argument is treated as 0).
@@ -5323,7 +5362,8 @@ goog.array.slice = function(arr, start, opt_end) {
   } else {
     return Array.prototype.slice.call(arr, start, opt_end);
   }
-};
+}
+exports.slice = slice;
 
 
 /**
@@ -5350,7 +5390,7 @@ goog.array.slice = function(arr, start, opt_end) {
  *     value for each item in the array it should consider unique.
  * @template T
  */
-goog.array.removeDuplicates = function(arr, opt_rv, opt_hashFn) {
+function removeDuplicates(arr, opt_rv, opt_hashFn) {
   var returnArray = opt_rv || arr;
   var defaultHashFn = function(item) {
     // Prefix each type with a single character representing the type to
@@ -5370,13 +5410,14 @@ goog.array.removeDuplicates = function(arr, opt_rv, opt_hashFn) {
     }
   }
   returnArray.length = cursorInsert;
-};
+}
+exports.removeDuplicates = removeDuplicates;
 
 
 /**
  * Searches the specified array for the specified target using the binary
  * search algorithm.  If no opt_compareFn is specified, elements are compared
- * using <code>goog.array.defaultCompare</code>, which compares the elements
+ * using <code>defaultCompare</code>, which compares the elements
  * using the built in < and > operators.  This will produce the expected
  * behavior for homogeneous arrays of String(s) and Number(s). The array
  * specified <b>must</b> be sorted in ascending order (as defined by the
@@ -5399,18 +5440,18 @@ goog.array.removeDuplicates = function(arr, opt_rv, opt_hashFn) {
  *     iff target is found.
  * @template TARGET, VALUE
  */
-goog.array.binarySearch = function(arr, target, opt_compareFn) {
-  return goog.array.binarySearch_(
-      arr, opt_compareFn || goog.array.defaultCompare, false /* isEvaluator */,
-      target);
-};
+function binarySearch(arr, target, opt_compareFn) {
+  return binarySearch_(
+      arr, opt_compareFn || defaultCompare, false /* isEvaluator */, target);
+}
+exports.binarySearch = binarySearch;
 
 
 /**
  * Selects an index in the specified array using the binary search algorithm.
  * The evaluator receives an element and determines whether the desired index
  * is before, at, or after it.  The evaluator must be consistent (formally,
- * goog.array.map(goog.array.map(arr, evaluator, opt_obj), goog.math.sign)
+ * map(map(arr, evaluator, opt_obj), goog.math.sign)
  * must be monotonically non-increasing).
  *
  * Runtime: O(log n)
@@ -5430,11 +5471,12 @@ goog.array.binarySearch = function(arr, target, opt_compareFn) {
  *     iff a match is found.
  * @template THIS, VALUE
  */
-goog.array.binarySelect = function(arr, evaluator, opt_obj) {
-  return goog.array.binarySearch_(
+function binarySelect(arr, evaluator, opt_obj) {
+  return binarySearch_(
       arr, evaluator, true /* isEvaluator */, undefined /* opt_target */,
       opt_obj);
-};
+}
+exports.binarySelect = binarySelect;
 
 
 /**
@@ -5465,8 +5507,7 @@ goog.array.binarySelect = function(arr, evaluator, opt_obj) {
  *     iff target is found.
  * @private
  */
-goog.array.binarySearch_ = function(
-    arr, compareFn, isEvaluator, opt_target, opt_selfObj) {
+function binarySearch_(arr, compareFn, isEvaluator, opt_target, opt_selfObj) {
   var left = 0;            // inclusive
   var right = arr.length;  // exclusive
   var found;
@@ -5494,13 +5535,13 @@ goog.array.binarySearch_ = function(
   // indexes outside the bounds of a 32-bit signed integer.  Array indexes have
   // a maximum value of 2^32-2 https://tc39.es/ecma262/#array-index
   return found ? left : -left - 1;
-};
+}
 
 
 /**
  * Sorts the specified array into ascending order.  If no opt_compareFn is
  * specified, elements are compared using
- * <code>goog.array.defaultCompare</code>, which compares the elements using
+ * <code>defaultCompare</code>, which compares the elements using
  * the built in < and > operators.  This will produce the expected behavior
  * for homogeneous arrays of String(s) and Number(s), unlike the native sort,
  * but will give unpredictable results for heterogeneous lists of strings and
@@ -5508,7 +5549,7 @@ goog.array.binarySearch_ = function(
  *
  * This sort is not guaranteed to be stable.
  *
- * Runtime: Same as <code>Array.prototype.sort</code>
+ * Runtime: Same as `Array.prototype.sort`
  *
  * @param {Array<T>} arr The array to be sorted.
  * @param {?function(T,T):number=} opt_compareFn Optional comparison
@@ -5518,20 +5559,21 @@ goog.array.binarySearch_ = function(
  *     first argument is less than, equal to, or greater than the second.
  * @template T
  */
-goog.array.sort = function(arr, opt_compareFn) {
+function sort(arr, opt_compareFn) {
   // TODO(arv): Update type annotation since null is not accepted.
-  arr.sort(opt_compareFn || goog.array.defaultCompare);
-};
+  arr.sort(opt_compareFn || defaultCompare);
+}
+exports.sort = sort;
 
 
 /**
  * Sorts the specified array into ascending order in a stable way.  If no
  * opt_compareFn is specified, elements are compared using
- * <code>goog.array.defaultCompare</code>, which compares the elements using
+ * <code>defaultCompare</code>, which compares the elements using
  * the built in < and > operators.  This will produce the expected behavior
  * for homogeneous arrays of String(s) and Number(s).
  *
- * Runtime: Same as <code>Array.prototype.sort</code>, plus an additional
+ * Runtime: Same as `Array.prototype.sort`, plus an additional
  * O(n) overhead of copying the array twice.
  *
  * @param {Array<T>} arr The array to be sorted.
@@ -5542,29 +5584,30 @@ goog.array.sort = function(arr, opt_compareFn) {
  *     second.
  * @template T
  */
-goog.array.stableSort = function(arr, opt_compareFn) {
+function stableSort(arr, opt_compareFn) {
   var compArr = new Array(arr.length);
   for (var i = 0; i < arr.length; i++) {
     compArr[i] = {index: i, value: arr[i]};
   }
-  var valueCompareFn = opt_compareFn || goog.array.defaultCompare;
+  var valueCompareFn = opt_compareFn || defaultCompare;
   function stableCompareFn(obj1, obj2) {
     return valueCompareFn(obj1.value, obj2.value) || obj1.index - obj2.index;
   }
-  goog.array.sort(compArr, stableCompareFn);
+  sort(compArr, stableCompareFn);
   for (var i = 0; i < arr.length; i++) {
     arr[i] = compArr[i].value;
   }
-};
+}
+exports.stableSort = stableSort;
 
 
 /**
  * Sort the specified array into ascending order based on item keys
  * returned by the specified key function.
  * If no opt_compareFn is specified, the keys are compared in ascending order
- * using <code>goog.array.defaultCompare</code>.
+ * using <code>defaultCompare</code>.
  *
- * Runtime: O(S(f(n)), where S is runtime of <code>goog.array.sort</code>
+ * Runtime: O(S(f(n)), where S is runtime of <code>sort</code>
  * and f(n) is runtime of the key function.
  *
  * @param {Array<T>} arr The array to be sorted.
@@ -5577,17 +5620,19 @@ goog.array.stableSort = function(arr, opt_compareFn) {
  *     second.
  * @template T,K
  */
-goog.array.sortByKey = function(arr, keyFn, opt_compareFn) {
-  var keyCompareFn = opt_compareFn || goog.array.defaultCompare;
-  goog.array.sort(
-      arr, function(a, b) { return keyCompareFn(keyFn(a), keyFn(b)); });
-};
+function sortByKey(arr, keyFn, opt_compareFn) {
+  var keyCompareFn = opt_compareFn || defaultCompare;
+  sort(arr, function(a, b) {
+    return keyCompareFn(keyFn(a), keyFn(b));
+  });
+}
+exports.sortByKey = sortByKey;
 
 
 /**
  * Sorts an array of objects by the specified object key and compare
  * function. If no compare function is provided, the key values are
- * compared in ascending order using <code>goog.array.defaultCompare</code>.
+ * compared in ascending order using <code>defaultCompare</code>.
  * This won't work for keys that get renamed by the compiler. So use
  * {'foo': 1, 'bar': 2} rather than {foo: 1, bar: 2}.
  * @param {Array<Object>} arr An array of objects to sort.
@@ -5595,9 +5640,12 @@ goog.array.sortByKey = function(arr, keyFn, opt_compareFn) {
  * @param {Function=} opt_compareFn The function to use to compare key
  *     values.
  */
-goog.array.sortObjectsByKey = function(arr, key, opt_compareFn) {
-  goog.array.sortByKey(arr, function(obj) { return obj[key]; }, opt_compareFn);
-};
+function sortObjectsByKey(arr, key, opt_compareFn) {
+  sortByKey(arr, function(obj) {
+    return obj[key];
+  }, opt_compareFn);
+}
+exports.sortObjectsByKey = sortObjectsByKey;
 
 
 /**
@@ -5612,8 +5660,8 @@ goog.array.sortObjectsByKey = function(arr, key, opt_compareFn) {
  * @return {boolean} Whether the array is sorted.
  * @template T
  */
-goog.array.isSorted = function(arr, opt_compareFn, opt_strict) {
-  var compare = opt_compareFn || goog.array.defaultCompare;
+function isSorted(arr, opt_compareFn, opt_strict) {
+  var compare = opt_compareFn || defaultCompare;
   for (var i = 1; i < arr.length; i++) {
     var compareResult = compare(arr[i - 1], arr[i]);
     if (compareResult > 0 || compareResult == 0 && opt_strict) {
@@ -5621,7 +5669,8 @@ goog.array.isSorted = function(arr, opt_compareFn, opt_strict) {
     }
   }
   return true;
-};
+}
+exports.isSorted = isSorted;
 
 
 /**
@@ -5639,20 +5688,21 @@ goog.array.isSorted = function(arr, opt_compareFn, opt_strict) {
  * @template A
  * @template B
  */
-goog.array.equals = function(arr1, arr2, opt_equalsFn) {
+function equals(arr1, arr2, opt_equalsFn) {
   if (!goog.isArrayLike(arr1) || !goog.isArrayLike(arr2) ||
       arr1.length != arr2.length) {
     return false;
   }
   var l = arr1.length;
-  var equalsFn = opt_equalsFn || goog.array.defaultCompareEquality;
+  var equalsFn = opt_equalsFn || defaultCompareEquality;
   for (var i = 0; i < l; i++) {
     if (!equalsFn(arr1[i], arr2[i])) {
       return false;
     }
   }
   return true;
-};
+}
+exports.equals = equals;
 
 
 /**
@@ -5671,8 +5721,8 @@ goog.array.equals = function(arr1, arr2, opt_equalsFn) {
  *     second.
  * @template VALUE
  */
-goog.array.compare3 = function(arr1, arr2, opt_compareFn) {
-  var compare = opt_compareFn || goog.array.defaultCompare;
+function compare3(arr1, arr2, opt_compareFn) {
+  var compare = opt_compareFn || defaultCompare;
   var l = Math.min(arr1.length, arr2.length);
   for (var i = 0; i < l; i++) {
     var result = compare(arr1[i], arr2[i]);
@@ -5680,8 +5730,9 @@ goog.array.compare3 = function(arr1, arr2, opt_compareFn) {
       return result;
     }
   }
-  return goog.array.defaultCompare(arr1.length, arr2.length);
-};
+  return defaultCompare(arr1.length, arr2.length);
+}
+exports.compare3 = compare3;
 
 
 /**
@@ -5694,9 +5745,10 @@ goog.array.compare3 = function(arr1, arr2, opt_compareFn) {
  *     respectively.
  * @template VALUE
  */
-goog.array.defaultCompare = function(a, b) {
+function defaultCompare(a, b) {
   return a > b ? 1 : a < b ? -1 : 0;
-};
+}
+exports.defaultCompare = defaultCompare;
 
 
 /**
@@ -5709,9 +5761,10 @@ goog.array.defaultCompare = function(a, b) {
  *     respectively.
  * @template VALUE
  */
-goog.array.inverseDefaultCompare = function(a, b) {
-  return -goog.array.defaultCompare(a, b);
-};
+function inverseDefaultCompare(a, b) {
+  return -defaultCompare(a, b);
+}
+exports.inverseDefaultCompare = inverseDefaultCompare;
 
 
 /**
@@ -5720,9 +5773,10 @@ goog.array.inverseDefaultCompare = function(a, b) {
  * @param {*} b The second object to compare.
  * @return {boolean} True if the two arguments are equal, false otherwise.
  */
-goog.array.defaultCompareEquality = function(a, b) {
+function defaultCompareEquality(a, b) {
   return a === b;
-};
+}
+exports.defaultCompareEquality = defaultCompareEquality;
 
 
 /**
@@ -5738,14 +5792,15 @@ goog.array.defaultCompareEquality = function(a, b) {
  * @return {boolean} True if an element was inserted.
  * @template VALUE
  */
-goog.array.binaryInsert = function(array, value, opt_compareFn) {
-  var index = goog.array.binarySearch(array, value, opt_compareFn);
+function binaryInsert(array, value, opt_compareFn) {
+  var index = binarySearch(array, value, opt_compareFn);
   if (index < 0) {
-    goog.array.insertAt(array, value, -(index + 1));
+    insertAt(array, value, -(index + 1));
     return true;
   }
   return false;
-};
+}
+exports.binaryInsert = binaryInsert;
 
 
 /**
@@ -5760,10 +5815,11 @@ goog.array.binaryInsert = function(array, value, opt_compareFn) {
  * @return {boolean} True if an element was removed.
  * @template VALUE
  */
-goog.array.binaryRemove = function(array, value, opt_compareFn) {
-  var index = goog.array.binarySearch(array, value, opt_compareFn);
-  return (index >= 0) ? goog.array.removeAt(array, index) : false;
-};
+function binaryRemove(array, value, opt_compareFn) {
+  var index = binarySearch(array, value, opt_compareFn);
+  return (index >= 0) ? removeAt(array, index) : false;
+}
+exports.binaryRemove = binaryRemove;
 
 
 /**
@@ -5780,7 +5836,7 @@ goog.array.binaryRemove = function(array, value, opt_compareFn) {
  *     which the splitter returned that key.
  * @template T,S
  */
-goog.array.bucket = function(array, sorter, opt_obj) {
+function bucket(array, sorter, opt_obj) {
   var buckets = {};
 
   for (var i = 0; i < array.length; i++) {
@@ -5794,7 +5850,8 @@ goog.array.bucket = function(array, sorter, opt_obj) {
   }
 
   return buckets;
-};
+}
+exports.bucket = bucket;
 
 
 /**
@@ -5813,14 +5870,15 @@ goog.array.bucket = function(array, sorter, opt_obj) {
  * @return {!Object<T>} The new object.
  * @template T,S
  */
-goog.array.toObject = function(arr, keyFunc, opt_obj) {
+function toObject(arr, keyFunc, opt_obj) {
   var ret = {};
-  goog.array.forEach(arr, function(element, index) {
+  forEach(arr, function(element, index) {
     ret[keyFunc.call(/** @type {?} */ (opt_obj), element, index, arr)] =
         element;
   });
   return ret;
-};
+}
+exports.toObject = toObject;
 
 
 /**
@@ -5843,7 +5901,7 @@ goog.array.toObject = function(arr, keyFunc, opt_obj) {
  *     an empty array if adding the step would not converge toward the end
  *     value.
  */
-goog.array.range = function(startOrEnd, opt_end, opt_step) {
+function range(startOrEnd, opt_end, opt_step) {
   var array = [];
   var start = 0;
   var end = startOrEnd;
@@ -5868,7 +5926,8 @@ goog.array.range = function(startOrEnd, opt_end, opt_step) {
     }
   }
   return array;
-};
+}
+exports.range = range;
 
 
 /**
@@ -5879,13 +5938,14 @@ goog.array.range = function(startOrEnd, opt_end, opt_step) {
  * @return {!Array<VALUE>} An array with the repeated value.
  * @template VALUE
  */
-goog.array.repeat = function(value, n) {
+function repeat(value, n) {
   var array = [];
   for (var i = 0; i < n; i++) {
     array[i] = value;
   }
   return array;
-};
+}
+exports.repeat = repeat;
 
 
 /**
@@ -5895,7 +5955,7 @@ goog.array.repeat = function(value, n) {
  * @param {...*} var_args The values to flatten.
  * @return {!Array<?>} An array containing the flattened values.
  */
-goog.array.flatten = function(var_args) {
+function flatten(var_args) {
   var CHUNK_SIZE = 8192;
 
   var result = [];
@@ -5903,8 +5963,8 @@ goog.array.flatten = function(var_args) {
     var element = arguments[i];
     if (Array.isArray(element)) {
       for (var c = 0; c < element.length; c += CHUNK_SIZE) {
-        var chunk = goog.array.slice(element, c, c + CHUNK_SIZE);
-        var recurseResult = goog.array.flatten.apply(null, chunk);
+        var chunk = slice(element, c, c + CHUNK_SIZE);
+        var recurseResult = flatten.apply(null, chunk);
         for (var r = 0; r < recurseResult.length; r++) {
           result.push(recurseResult[r]);
         }
@@ -5914,7 +5974,8 @@ goog.array.flatten = function(var_args) {
     }
   }
   return result;
-};
+}
+exports.flatten = flatten;
 
 
 /**
@@ -5931,8 +5992,8 @@ goog.array.flatten = function(var_args) {
  * @return {!Array<T>} The array.
  * @template T
  */
-goog.array.rotate = function(array, n) {
-  goog.asserts.assert(array.length != null);
+function rotate(array, n) {
+  asserts.assert(array.length != null);
 
   if (array.length) {
     n %= array.length;
@@ -5943,7 +6004,8 @@ goog.array.rotate = function(array, n) {
     }
   }
   return array;
-};
+}
+exports.rotate = rotate;
 
 
 /**
@@ -5953,19 +6015,20 @@ goog.array.rotate = function(array, n) {
  * elements has been dragged to a new position.
  * @param {!IArrayLike<?>} arr The array to modify.
  * @param {number} fromIndex Index of the item to move between 0 and
- *     {@code arr.length - 1}.
- * @param {number} toIndex Target index between 0 and {@code arr.length - 1}.
+ *     `arr.length - 1`.
+ * @param {number} toIndex Target index between 0 and `arr.length - 1`.
  */
-goog.array.moveItem = function(arr, fromIndex, toIndex) {
-  goog.asserts.assert(fromIndex >= 0 && fromIndex < arr.length);
-  goog.asserts.assert(toIndex >= 0 && toIndex < arr.length);
+function moveItem(arr, fromIndex, toIndex) {
+  asserts.assert(fromIndex >= 0 && fromIndex < arr.length);
+  asserts.assert(toIndex >= 0 && toIndex < arr.length);
   // Remove 1 item at fromIndex.
   var removedItems = Array.prototype.splice.call(arr, fromIndex, 1);
   // Insert the removed item at toIndex.
   Array.prototype.splice.call(arr, toIndex, 0, removedItems[0]);
   // We don't use goog.array.insertAt and goog.array.removeAt, because they're
   // significantly slower than splice.
-};
+}
+exports.moveItem = moveItem;
 
 
 /**
@@ -5981,7 +6044,7 @@ goog.array.moveItem = function(arr, fromIndex, toIndex) {
  * @return {!Array<!Array<?>>} A new array of arrays created from
  *     provided arrays.
  */
-goog.array.zip = function(var_args) {
+function zip(var_args) {
   if (!arguments.length) {
     return [];
   }
@@ -6000,7 +6063,8 @@ goog.array.zip = function(var_args) {
     result.push(value);
   }
   return result;
-};
+}
+exports.zip = zip;
 
 
 /**
@@ -6017,7 +6081,7 @@ goog.array.zip = function(var_args) {
  *     Takes no arguments, and returns a random number on the interval [0, 1).
  *     Defaults to Math.random() using JavaScript's built-in Math library.
  */
-goog.array.shuffle = function(arr, opt_randFn) {
+function shuffle(arr, opt_randFn) {
   var randFn = opt_randFn || Math.random;
 
   for (var i = arr.length - 1; i > 0; i--) {
@@ -6028,7 +6092,8 @@ goog.array.shuffle = function(arr, opt_randFn) {
     arr[i] = arr[j];
     arr[j] = tmp;
   }
-};
+}
+exports.shuffle = shuffle;
 
 
 /**
@@ -6041,11 +6106,14 @@ goog.array.shuffle = function(arr, opt_randFn) {
  * @return {!Array<T>} A new array of elements from arr in index_arr order.
  * @template T
  */
-goog.array.copyByIndex = function(arr, index_arr) {
+function copyByIndex(arr, index_arr) {
   var result = [];
-  goog.array.forEach(index_arr, function(index) { result.push(arr[index]); });
+  forEach(index_arr, function(index) {
+    result.push(arr[index]);
+  });
   return result;
-};
+}
+exports.copyByIndex = copyByIndex;
 
 
 /**
@@ -6063,9 +6131,12 @@ goog.array.copyByIndex = function(arr, index_arr) {
  *     returned from f.
  * @template THIS, VALUE, RESULT
  */
-goog.array.concatMap = function(arr, f, opt_obj) {
-  return goog.array.concat.apply([], goog.array.map(arr, f, opt_obj));
-};
+function concatMap(arr, f, opt_obj) {
+  return concat.apply([], map(arr, f, opt_obj));
+}
+exports.concatMap = concatMap;
+
+;return exports;});
 
 //third_party/javascript/closure/dom/htmlelement.js
 /**
@@ -7457,6 +7528,7 @@ goog.require('goog.string.TypedString');
  * @param {string=} opt_content package-internal implementation detail.
  */
 goog.string.Const = function(opt_token, opt_content) {
+  'use strict';
   /**
    * The wrapped value of this Const object.  The field has a purposely ugly
    * name to make (non-compiled) code that attempts to directly access this
@@ -7498,6 +7570,7 @@ goog.string.Const.prototype.implementsGoogStringTypedString = true;
  * @override
  */
 goog.string.Const.prototype.getTypedStringValue = function() {
+  'use strict';
   return this.stringConstValueWithSecurityContract__googStringSecurityPrivate_;
 };
 
@@ -7513,6 +7586,7 @@ if (goog.DEBUG) {
    * @override
    */
   goog.string.Const.prototype.toString = function() {
+    'use strict';
     return 'Const{' +
         this.stringConstValueWithSecurityContract__googStringSecurityPrivate_ +
         '}';
@@ -7530,6 +7604,7 @@ if (goog.DEBUG) {
  *     `goog.asserts.AssertionError`.
  */
 goog.string.Const.unwrap = function(stringConst) {
+  'use strict';
   // Perform additional run-time type-checking to ensure that stringConst is
   // indeed an instance of the expected type.  This provides some additional
   // protection against security bugs due to application code that disables type
@@ -7570,6 +7645,7 @@ goog.string.Const.unwrap = function(stringConst) {
  * @return {!goog.string.Const} A Const object initialized to stringConst.
  */
 goog.string.Const.from = function(s) {
+  'use strict';
   return new goog.string.Const(
       goog.string.Const.GOOG_STRING_CONSTRUCTOR_TOKEN_PRIVATE_, s);
 };
@@ -7596,7 +7672,7 @@ goog.string.Const.GOOG_STRING_CONSTRUCTOR_TOKEN_PRIVATE_ = {};
 goog.string.Const.EMPTY = goog.string.Const.from('');
 
 //third_party/javascript/closure/html/safescript.js
-/**
+goog.loadModule(function(exports) {'use strict';/**
  * @license
  * Copyright The Closure Library Authors.
  * SPDX-License-Identifier: Apache-2.0
@@ -7608,14 +7684,20 @@ goog.string.Const.EMPTY = goog.string.Const.from('');
  * TODO(xtof): Link to document stating type contract.
  */
 
-goog.provide('goog.html.SafeScript');
+goog.module('goog.html.SafeScript');
+goog.module.declareLegacyNamespace();
 
-goog.require('goog.asserts');
-goog.require('goog.html.trustedtypes');
-goog.require('goog.string.Const');
-goog.require('goog.string.TypedString');
+const Const = goog.require('goog.string.Const');
+const TypedString = goog.require('goog.string.TypedString');
+const trustedtypes = goog.require('goog.html.trustedtypes');
+const {fail} = goog.require('goog.asserts');
 
-
+/**
+ * Token used to ensure that object is created only from this file. No code
+ * outside of this file can access this token.
+ * @const {!Object}
+ */
+const CONSTRUCTOR_TOKEN_PRIVATE = {};
 
 /**
  * A string-like object which represents JavaScript code and that carries the
@@ -7624,10 +7706,10 @@ goog.require('goog.string.TypedString');
  * in a browser.
  *
  * Instances of this type must be created via the factory method
- * `goog.html.SafeScript.fromConstant` and not by invoking its
- * constructor. The constructor intentionally takes no parameters and the type
- * is immutable; hence only a default instance corresponding to the empty string
- * can be obtained via constructor invocation.
+ * `SafeScript.fromConstant` and not by invoking its constructor. The
+ * constructor intentionally takes an extra parameter that cannot be constructed
+ * outside of this file and the type is immutable; hence only a default instance
+ * corresponding to the empty string can be obtained via constructor invocation.
  *
  * A SafeScript's string representation can safely be interpolated as the
  * content of a script element within HTML. The SafeScript string should not be
@@ -7642,158 +7724,204 @@ goog.require('goog.string.TypedString');
  * A SafeScript can be constructed via security-reviewed unchecked
  * conversions. In this case producers of SafeScript must ensure themselves that
  * the SafeScript does not contain unsafe script. Note in particular that
- * {@code &lt;} is dangerous, even when inside JavaScript strings, and so should
+ * `&lt;` is dangerous, even when inside JavaScript strings, and so should
  * always be forbidden or JavaScript escaped in user controlled input. For
- * example, if {@code &lt;/script&gt;&lt;script&gt;evil&lt;/script&gt;"} were
+ * example, if `&lt;/script&gt;&lt;script&gt;evil&lt;/script&gt;"` were
  * interpolated inside a JavaScript string, it would break out of the context
  * of the original script element and `evil` would execute. Also note
  * that within an HTML script (raw text) element, HTML character references,
  * such as "&lt;" are not allowed. See
  * http://www.w3.org/TR/html5/scripting-1.html#restrictions-for-contents-of-script-elements.
- *
  * Creating SafeScript objects HAS SIDE-EFFECTS due to calling Trusted Types Web
  * API.
  *
- * @see goog.html.SafeScript#fromConstant
- * @constructor
+ * @see SafeScript#fromConstant
  * @final
- * @struct
- * @implements {goog.string.TypedString}
+ * @implements {TypedString}
  */
-goog.html.SafeScript = function() {
+class SafeScript {
   /**
-   * The contained value of this SafeScript.  The field has a purposely
-   * ugly name to make (non-compiled) code that attempts to directly access this
-   * field stand out.
-   * @private {!TrustedScript|string}
+   * @param {!TrustedScript|string} value
+   * @param {!Object} token package-internal implementation detail.
    */
-  this.privateDoNotAccessOrElseSafeScriptWrappedValue_ = '';
+  constructor(value, token) {
+    /**
+     * The contained value of this SafeScript.  The field has a purposely ugly
+     * name to make (non-compiled) code that attempts to directly access this
+     * field stand out.
+     * @private {!TrustedScript|string}
+     */
+    this.privateDoNotAccessOrElseSafeScriptWrappedValue_ =
+        (token === CONSTRUCTOR_TOKEN_PRIVATE) ? value : '';
+
+    /**
+     * @override
+     * @const
+     */
+    this.implementsGoogStringTypedString = true;
+  }
 
   /**
-   * A type marker used to implement additional run-time type checking.
-   * @see goog.html.SafeScript#unwrap
-   * @const {!Object}
+   * Creates a SafeScript object from a compile-time constant string.
+   *
+   * @param {!Const} script A compile-time-constant string from which to create
+   *     a SafeScript.
+   * @return {!SafeScript} A SafeScript object initialized to `script`.
+   */
+  static fromConstant(script) {
+    const scriptString = Const.unwrap(script);
+    if (scriptString.length === 0) {
+      return SafeScript.EMPTY;
+    }
+    return SafeScript.createSafeScriptSecurityPrivateDoNotAccessOrElse(
+        scriptString);
+  }
+
+  /**
+   * Creates a SafeScript from a compile-time constant string but with arguments
+   * that can vary at run-time. The code argument should be formatted as an
+   * inline function (see example below). The arguments will be JSON-encoded and
+   * provided as input to the function specified in code.
+   *
+   * Example Usage:
+   *
+   *     let safeScript = SafeScript.fromConstantAndArgs(
+   *         Const.from('function(arg1, arg2) { doSomething(arg1, arg2); }'),
+   *         arg1,
+   *         arg2);
+   *
+   * This produces a SafeScript equivalent to the following:
+   *
+   *     (function(arg1, arg2) { doSomething(arg1, arg2); })("value1",
+   * "value2");
+   *
+   * @param {!Const} code
+   * @param {...*} var_args
+   * @return {!SafeScript}
+   */
+  static fromConstantAndArgs(code, var_args) {
+    const args = [];
+    for (let i = 1; i < arguments.length; i++) {
+      args.push(SafeScript.stringify_(arguments[i]));
+    }
+    return SafeScript.createSafeScriptSecurityPrivateDoNotAccessOrElse(
+        '(' + Const.unwrap(code) + ')(' + args.join(', ') + ');');
+  }
+
+  /**
+   * Creates a SafeScript JSON representation from anything that could be passed
+   * to JSON.stringify.
+   * @param {*} val
+   * @return {!SafeScript}
+   */
+  static fromJson(val) {
+    return SafeScript.createSafeScriptSecurityPrivateDoNotAccessOrElse(
+        SafeScript.stringify_(val));
+  }
+
+  /**
+   * Returns this SafeScript's value as a string.
+   *
+   * IMPORTANT: In code where it is security relevant that an object's type is
+   * indeed `SafeScript`, use `SafeScript.unwrap` instead of
+   * this method. If in doubt, assume that it's security relevant. In
+   * particular, note that goog.html functions which return a goog.html type do
+   * not guarantee the returned instance is of the right type. For example:
+   *
+   * <pre>
+   * var fakeSafeHtml = new String('fake');
+   * fakeSafeHtml.__proto__ = goog.html.SafeHtml.prototype;
+   * var newSafeHtml = goog.html.SafeHtml.htmlEscape(fakeSafeHtml);
+   * // newSafeHtml is just an alias for fakeSafeHtml, it's passed through by
+   * // goog.html.SafeHtml.htmlEscape() as fakeSafeHtml
+   * // instanceof goog.html.SafeHtml.
+   * </pre>
+   *
+   * @see SafeScript#unwrap
+   * @override
+   */
+  getTypedStringValue() {
+    return this.privateDoNotAccessOrElseSafeScriptWrappedValue_.toString();
+  }
+
+  /**
+   * Performs a runtime check that the provided object is indeed a
+   * SafeScript object, and returns its value.
+   *
+   * @param {!SafeScript} safeScript The object to extract from.
+   * @return {string} The safeScript object's contained string, unless
+   *     the run-time type check fails. In that case, `unwrap` returns an
+   *     innocuous string, or, if assertions are enabled, throws
+   *     `asserts.AssertionError`.
+   */
+  static unwrap(safeScript) {
+    return SafeScript.unwrapTrustedScript(safeScript).toString();
+  }
+
+  /**
+   * Unwraps value as TrustedScript if supported or as a string if not.
+   * @param {!SafeScript} safeScript
+   * @return {!TrustedScript|string}
+   * @see SafeScript.unwrap
+   */
+  static unwrapTrustedScript(safeScript) {
+    // Perform additional Run-time type-checking to ensure that
+    // safeScript is indeed an instance of the expected type.  This
+    // provides some additional protection against security bugs due to
+    // application code that disables type checks.
+    // Specifically, the following checks are performed:
+    // 1. The object is an instance of the expected type.
+    // 2. The object is not an instance of a subclass.
+    if (safeScript instanceof SafeScript &&
+        safeScript.constructor === SafeScript) {
+      return safeScript.privateDoNotAccessOrElseSafeScriptWrappedValue_;
+    } else {
+      fail(
+          'expected object of type SafeScript, got \'' + safeScript +
+          '\' of type ' + goog.typeOf(safeScript));
+      return 'type_error:SafeScript';
+    }
+  }
+
+  /**
+   * Converts the given value to a embeddabel JSON string and returns it. The
+   * resulting string can be embedded in HTML because the '<' character is
+   * encoded.
+   *
+   * @param {*} val
+   * @return {string}
    * @private
    */
-  this.SAFE_SCRIPT_TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ =
-      goog.html.SafeScript.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_;
-};
-
-
-/**
- * @override
- * @const
- */
-goog.html.SafeScript.prototype.implementsGoogStringTypedString = true;
-
-
-/**
- * Type marker for the SafeScript type, used to implement additional
- * run-time type checking.
- * @const {!Object}
- * @private
- */
-goog.html.SafeScript.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ = {};
-
-
-/**
- * Creates a SafeScript object from a compile-time constant string.
- *
- * @param {!goog.string.Const} script A compile-time-constant string from which
- *     to create a SafeScript.
- * @return {!goog.html.SafeScript} A SafeScript object initialized to
- *     `script`.
- */
-goog.html.SafeScript.fromConstant = function(script) {
-  var scriptString = goog.string.Const.unwrap(script);
-  if (scriptString.length === 0) {
-    return goog.html.SafeScript.EMPTY;
+  static stringify_(val) {
+    const json = JSON.stringify(val);
+    return json.replace(/</g, '\\x3c');
   }
-  return goog.html.SafeScript.createSafeScriptSecurityPrivateDoNotAccessOrElse(
-      scriptString);
-};
 
-
-/**
- * Creates a SafeScript from a compile-time constant string but with arguments
- * that can vary at run-time. The code argument should be formatted as an
- * inline function (see example below). The arguments will be JSON-encoded and
- * provided as input to the function specified in code.
- *
- * Example Usage:
- *
- *     let safeScript = SafeScript.fromConstantAndArgs(
- *         Const.from('function(arg1, arg2) { doSomething(arg1, arg2); }'),
- *         arg1,
- *         arg2);
- *
- * This produces a SafeScript equivalent to the following:
- *
- *     (function(arg1, arg2) { doSomething(arg1, arg2); })("value1", "value2");
- *
- * @param {!goog.string.Const} code
- * @param {...*} var_args
- * @return {!goog.html.SafeScript}
- */
-goog.html.SafeScript.fromConstantAndArgs = function(code, var_args) {
-  var args = [];
-  for (var i = 1; i < arguments.length; i++) {
-    args.push(goog.html.SafeScript.stringify_(arguments[i]));
+  /**
+   * Package-internal utility method to create SafeScript instances.
+   *
+   * @param {string} script The string to initialize the SafeScript object with.
+   * @return {!SafeScript} The initialized SafeScript object.
+   * @package
+   */
+  static createSafeScriptSecurityPrivateDoNotAccessOrElse(script) {
+    const policy = trustedtypes.getPolicyPrivateDoNotAccessOrElse();
+    const trustedScript = policy ? policy.createScript(script) : script;
+    return new SafeScript(trustedScript, CONSTRUCTOR_TOKEN_PRIVATE);
   }
-  return goog.html.SafeScript.createSafeScriptSecurityPrivateDoNotAccessOrElse(
-      '(' + goog.string.Const.unwrap(code) + ')(' + args.join(', ') + ');');
-};
-
-
-/**
- * Creates a SafeScript JSON representation from anything that could be passed
- * to JSON.stringify.
- * @param {*} val
- * @return {!goog.html.SafeScript}
- */
-goog.html.SafeScript.fromJson = function(val) {
-  return goog.html.SafeScript.createSafeScriptSecurityPrivateDoNotAccessOrElse(
-      goog.html.SafeScript.stringify_(val));
-};
-
-
-/**
- * Returns this SafeScript's value as a string.
- *
- * IMPORTANT: In code where it is security relevant that an object's type is
- * indeed `SafeScript`, use `goog.html.SafeScript.unwrap` instead of
- * this method. If in doubt, assume that it's security relevant. In particular,
- * note that goog.html functions which return a goog.html type do not guarantee
- * the returned instance is of the right type. For example:
- *
- * <pre>
- * var fakeSafeHtml = new String('fake');
- * fakeSafeHtml.__proto__ = goog.html.SafeHtml.prototype;
- * var newSafeHtml = goog.html.SafeHtml.htmlEscape(fakeSafeHtml);
- * // newSafeHtml is just an alias for fakeSafeHtml, it's passed through by
- * // goog.html.SafeHtml.htmlEscape() as fakeSafeHtml
- * // instanceof goog.html.SafeHtml.
- * </pre>
- *
- * @see goog.html.SafeScript#unwrap
- * @override
- */
-goog.html.SafeScript.prototype.getTypedStringValue = function() {
-  return this.privateDoNotAccessOrElseSafeScriptWrappedValue_.toString();
-};
-
+}
 
 if (goog.DEBUG) {
   /**
    * Returns a debug string-representation of this value.
    *
    * To obtain the actual string value wrapped in a SafeScript, use
-   * `goog.html.SafeScript.unwrap`.
+   * `SafeScript.unwrap`.
    *
-   * @see goog.html.SafeScript#unwrap
+   * @see SafeScript#unwrap
    * @override
    */
-  goog.html.SafeScript.prototype.toString = function() {
+  SafeScript.prototype.toString = function() {
     return 'SafeScript{' +
         this.privateDoNotAccessOrElseSafeScriptWrappedValue_ + '}';
   };
@@ -7801,108 +7929,22 @@ if (goog.DEBUG) {
 
 
 /**
- * Performs a runtime check that the provided object is indeed a
- * SafeScript object, and returns its value.
- *
- * @param {!goog.html.SafeScript} safeScript The object to extract from.
- * @return {string} The safeScript object's contained string, unless
- *     the run-time type check fails. In that case, `unwrap` returns an
- *     innocuous string, or, if assertions are enabled, throws
- *     `goog.asserts.AssertionError`.
- */
-goog.html.SafeScript.unwrap = function(safeScript) {
-  return goog.html.SafeScript.unwrapTrustedScript(safeScript).toString();
-};
-
-
-/**
- * Unwraps value as TrustedScript if supported or as a string if not.
- * @param {!goog.html.SafeScript} safeScript
- * @return {!TrustedScript|string}
- * @see goog.html.SafeScript.unwrap
- */
-goog.html.SafeScript.unwrapTrustedScript = function(safeScript) {
-  // Perform additional Run-time type-checking to ensure that
-  // safeScript is indeed an instance of the expected type.  This
-  // provides some additional protection against security bugs due to
-  // application code that disables type checks.
-  // Specifically, the following checks are performed:
-  // 1. The object is an instance of the expected type.
-  // 2. The object is not an instance of a subclass.
-  // 3. The object carries a type marker for the expected type. "Faking" an
-  // object requires a reference to the type marker, which has names intended
-  // to stand out in code reviews.
-  if (safeScript instanceof goog.html.SafeScript &&
-      safeScript.constructor === goog.html.SafeScript &&
-      safeScript.SAFE_SCRIPT_TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ ===
-          goog.html.SafeScript.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_) {
-    return safeScript.privateDoNotAccessOrElseSafeScriptWrappedValue_;
-  } else {
-    goog.asserts.fail('expected object of type SafeScript, got \'' +
-        safeScript + '\' of type ' + goog.typeOf(safeScript));
-    return 'type_error:SafeScript';
-  }
-};
-
-
-/**
- * Converts the given value to a embeddabel JSON string and returns it. The
- * resulting string can be embedded in HTML because the '<' character is
- * encoded.
- *
- * @param {*} val
- * @return {string}
- * @private
- */
-goog.html.SafeScript.stringify_ = function(val) {
-  var json = JSON.stringify(val);
-  return json.replace(/</g, '\\x3c');
-};
-
-/**
- * Package-internal utility method to create SafeScript instances.
- *
- * @param {string} script The string to initialize the SafeScript object with.
- * @return {!goog.html.SafeScript} The initialized SafeScript object.
- * @package
- */
-goog.html.SafeScript.createSafeScriptSecurityPrivateDoNotAccessOrElse =
-    function(script) {
-  return new goog.html.SafeScript().initSecurityPrivateDoNotAccessOrElse_(
-      script);
-};
-
-
-/**
- * Called from createSafeScriptSecurityPrivateDoNotAccessOrElse(). This
- * method exists only so that the compiler can dead code eliminate static
- * fields (like EMPTY) when they're not accessed.
- * @param {string} script
- * @return {!goog.html.SafeScript}
- * @private
- */
-goog.html.SafeScript.prototype.initSecurityPrivateDoNotAccessOrElse_ = function(
-    script) {
-  const policy = goog.html.trustedtypes.getPolicyPrivateDoNotAccessOrElse();
-  this.privateDoNotAccessOrElseSafeScriptWrappedValue_ =
-      policy ? policy.createScript(script) : script;
-  return this;
-};
-
-
-/**
  * A SafeScript instance corresponding to the empty string.
- * @const {!goog.html.SafeScript}
+ * @const {!SafeScript}
  */
-goog.html.SafeScript.EMPTY = /** @type {!goog.html.SafeScript} */ ({
+SafeScript.EMPTY = /** @type {!SafeScript} */ ({
   // NOTE: this compiles to nothing, but hides the possible side effect of
   // SafeScript creation (due to calling trustedTypes.createPolicy) from the
   // compiler so that the entire call can be removed if the result is not used.
   valueOf: function() {
-    return goog.html.SafeScript
-        .createSafeScriptSecurityPrivateDoNotAccessOrElse('');
+    return SafeScript.createSafeScriptSecurityPrivateDoNotAccessOrElse('');
   },
 }.valueOf());
+
+
+exports = SafeScript;
+
+;return exports;});
 
 //third_party/javascript/closure/fs/url.js
 /**
@@ -7928,6 +7970,7 @@ goog.provide('goog.fs.url');
  * @return {string} The URL for the object.
  */
 goog.fs.url.createObjectUrl = function(obj) {
+  'use strict';
   return goog.fs.url.getUrlObject_().createObjectURL(obj);
 };
 
@@ -7939,6 +7982,7 @@ goog.fs.url.createObjectUrl = function(obj) {
  * @param {string} url The URL to revoke.
  */
 goog.fs.url.revokeObjectUrl = function(url) {
+  'use strict';
   goog.fs.url.getUrlObject_().revokeObjectURL(url);
 };
 
@@ -7969,6 +8013,7 @@ goog.fs.url.UrlObject_.prototype.revokeObjectURL = function(s) {};
  * @private
  */
 goog.fs.url.getUrlObject_ = function() {
+  'use strict';
   const urlObject = goog.fs.url.findUrlObject_();
   if (urlObject != null) {
     return urlObject;
@@ -7987,6 +8032,7 @@ goog.fs.url.getUrlObject_ = function() {
  * @private
  */
 goog.fs.url.findUrlObject_ = function() {
+  'use strict';
   // This is what the spec says to do
   // http://dev.w3.org/2006/webapi/FileAPI/#dfn-createObjectURL
   if (goog.global.URL !== undefined &&
@@ -8013,6 +8059,7 @@ goog.fs.url.findUrlObject_ = function() {
  * @return {boolean} True if this browser supports Object Urls.
  */
 goog.fs.url.browserSupportsObjectUrls = function() {
+  'use strict';
   return goog.fs.url.findUrlObject_() != null;
 };
 
@@ -8045,6 +8092,7 @@ goog.require('goog.array');
  * @return {!Blob} The blob.
  */
 goog.fs.blob.getBlob = function(var_args) {
+  'use strict';
   var BlobBuilder = goog.global.BlobBuilder || goog.global.WebKitBlobBuilder;
 
   if (BlobBuilder !== undefined) {
@@ -8072,6 +8120,7 @@ goog.fs.blob.getBlob = function(var_args) {
  * @return {!Blob} The blob.
  */
 goog.fs.blob.getBlobWithProperties = function(parts, opt_type, opt_endings) {
+  'use strict';
   var BlobBuilder = goog.global.BlobBuilder || goog.global.WebKitBlobBuilder;
 
   if (BlobBuilder !== undefined) {
@@ -8281,6 +8330,7 @@ goog.i18n.bidi.I18N_LEFT =
  *     given directionality. If given null, returns null (i.e. unknown).
  */
 goog.i18n.bidi.toDir = function(givenDir, opt_noNeutral) {
+  'use strict';
   if (typeof givenDir == 'number') {
     // This includes the non-null goog.i18n.bidi.Dir case.
     return givenDir > 0 ?
@@ -8353,6 +8403,7 @@ goog.i18n.bidi.htmlSkipReg_ = /<[^>]*>|&[^;]+;/g;
  * @private
  */
 goog.i18n.bidi.stripHtmlIfNeeded_ = function(str, opt_isStripNeeded) {
+  'use strict';
   return opt_isStripNeeded ? str.replace(goog.i18n.bidi.htmlSkipReg_, '') : str;
 };
 
@@ -8381,6 +8432,7 @@ goog.i18n.bidi.ltrCharReg_ = new RegExp('[' + goog.i18n.bidi.ltrChars_ + ']');
  * @return {boolean} Whether the string contains RTL characters.
  */
 goog.i18n.bidi.hasAnyRtl = function(str, opt_isHtml) {
+  'use strict';
   return goog.i18n.bidi.rtlCharReg_.test(
       goog.i18n.bidi.stripHtmlIfNeeded_(str, opt_isHtml));
 };
@@ -8403,6 +8455,7 @@ goog.i18n.bidi.hasRtlChar = goog.i18n.bidi.hasAnyRtl;
  * @return {boolean} Whether the string contains LTR characters.
  */
 goog.i18n.bidi.hasAnyLtr = function(str, opt_isHtml) {
+  'use strict';
   return goog.i18n.bidi.ltrCharReg_.test(
       goog.i18n.bidi.stripHtmlIfNeeded_(str, opt_isHtml));
 };
@@ -8432,6 +8485,7 @@ goog.i18n.bidi.rtlRe_ = new RegExp('^[' + goog.i18n.bidi.rtlChars_ + ']');
  * @return {boolean} Whether the first character in str is an RTL char.
  */
 goog.i18n.bidi.isRtlChar = function(str) {
+  'use strict';
   return goog.i18n.bidi.rtlRe_.test(str);
 };
 
@@ -8442,6 +8496,7 @@ goog.i18n.bidi.isRtlChar = function(str) {
  * @return {boolean} Whether the first character in str is an LTR char.
  */
 goog.i18n.bidi.isLtrChar = function(str) {
+  'use strict';
   return goog.i18n.bidi.ltrRe_.test(str);
 };
 
@@ -8452,6 +8507,7 @@ goog.i18n.bidi.isLtrChar = function(str) {
  * @return {boolean} Whether the first character in str is a neutral char.
  */
 goog.i18n.bidi.isNeutralChar = function(str) {
+  'use strict';
   return !goog.i18n.bidi.isLtrChar(str) && !goog.i18n.bidi.isRtlChar(str);
 };
 
@@ -8485,6 +8541,7 @@ goog.i18n.bidi.rtlDirCheckRe_ = new RegExp(
  *     strongly-directional character method.
  */
 goog.i18n.bidi.startsWithRtl = function(str, opt_isHtml) {
+  'use strict';
   return goog.i18n.bidi.rtlDirCheckRe_.test(
       goog.i18n.bidi.stripHtmlIfNeeded_(str, opt_isHtml));
 };
@@ -8511,6 +8568,7 @@ goog.i18n.bidi.isRtlText = goog.i18n.bidi.startsWithRtl;
  *     strongly-directional character method.
  */
 goog.i18n.bidi.startsWithLtr = function(str, opt_isHtml) {
+  'use strict';
   return goog.i18n.bidi.ltrDirCheckRe_.test(
       goog.i18n.bidi.stripHtmlIfNeeded_(str, opt_isHtml));
 };
@@ -8548,6 +8606,7 @@ goog.i18n.bidi.isRequiredLtrRe_ = /^http:\/\/.*/;
  * @return {boolean} Whether neutral directionality is detected.
  */
 goog.i18n.bidi.isNeutralText = function(str, opt_isHtml) {
+  'use strict';
   str = goog.i18n.bidi.stripHtmlIfNeeded_(str, opt_isHtml);
   return goog.i18n.bidi.isRequiredLtrRe_.test(str) ||
       !goog.i18n.bidi.hasAnyLtr(str) && !goog.i18n.bidi.hasAnyRtl(str);
@@ -8585,6 +8644,7 @@ goog.i18n.bidi.rtlExitDirCheckRe_ = new RegExp(
  * @return {boolean} Whether LTR exit directionality was detected.
  */
 goog.i18n.bidi.endsWithLtr = function(str, opt_isHtml) {
+  'use strict';
   return goog.i18n.bidi.ltrExitDirCheckRe_.test(
       goog.i18n.bidi.stripHtmlIfNeeded_(str, opt_isHtml));
 };
@@ -8611,6 +8671,7 @@ goog.i18n.bidi.isLtrExitText = goog.i18n.bidi.endsWithLtr;
  * @return {boolean} Whether RTL exit directionality was detected.
  */
 goog.i18n.bidi.endsWithRtl = function(str, opt_isHtml) {
+  'use strict';
   return goog.i18n.bidi.rtlExitDirCheckRe_.test(
       goog.i18n.bidi.stripHtmlIfNeeded_(str, opt_isHtml));
 };
@@ -8666,6 +8727,7 @@ goog.i18n.bidi.rtlLocalesRe_ = new RegExp(
  * @return {boolean} Whether the language code is an RTL language.
  */
 goog.i18n.bidi.isRtlLanguage = function(lang) {
+  'use strict';
   return goog.i18n.bidi.rtlLocalesRe_.test(lang);
 };
 
@@ -8691,6 +8753,7 @@ goog.i18n.bidi.bracketGuardTextRe_ =
  * @return {string} The processed string, with all bracket guarded.
  */
 goog.i18n.bidi.guardBracketInText = function(s, opt_isRtlContext) {
+  'use strict';
   const useRtl = opt_isRtlContext === undefined ? goog.i18n.bidi.hasAnyRtl(s) :
                                                   opt_isRtlContext;
   const mark = useRtl ? goog.i18n.bidi.Format.RLM : goog.i18n.bidi.Format.LRM;
@@ -8709,6 +8772,7 @@ goog.i18n.bidi.guardBracketInText = function(s, opt_isRtlContext) {
  * @return {string} The processed string, with directionality enforced to RTL.
  */
 goog.i18n.bidi.enforceRtlInHtml = function(html) {
+  'use strict';
   if (html.charAt(0) == '<') {
     return html.replace(/<\w+/, '$& dir=rtl');
   }
@@ -8724,6 +8788,7 @@ goog.i18n.bidi.enforceRtlInHtml = function(html) {
  * @return {string} The wrapped string after process.
  */
 goog.i18n.bidi.enforceRtlInText = function(text) {
+  'use strict';
   return goog.i18n.bidi.Format.RLE + text + goog.i18n.bidi.Format.PDF;
 };
 
@@ -8739,6 +8804,7 @@ goog.i18n.bidi.enforceRtlInText = function(text) {
  * @return {string} The processed string, with directionality enforced to RTL.
  */
 goog.i18n.bidi.enforceLtrInHtml = function(html) {
+  'use strict';
   if (html.charAt(0) == '<') {
     return html.replace(/<\w+/, '$& dir=ltr');
   }
@@ -8754,6 +8820,7 @@ goog.i18n.bidi.enforceLtrInHtml = function(html) {
  * @return {string} The wrapped string after process.
  */
 goog.i18n.bidi.enforceLtrInText = function(text) {
+  'use strict';
   return goog.i18n.bidi.Format.LRE + text + goog.i18n.bidi.Format.PDF;
 };
 
@@ -8800,6 +8867,7 @@ goog.i18n.bidi.tempRe_ = /%%%%/g;
  * @return {string} Processed CSS specification string.
  */
 goog.i18n.bidi.mirrorCSS = function(cssStr) {
+  'use strict';
   return cssStr
       .
       // reverse dimensions
@@ -8836,6 +8904,7 @@ goog.i18n.bidi.singleQuoteSubstituteRe_ = /([\u0591-\u05f2])'/g;
  * @return {string} Processed string with double/single quote replaced.
  */
 goog.i18n.bidi.normalizeHebrewQuote = function(str) {
+  'use strict';
   return str.replace(goog.i18n.bidi.doubleQuoteSubstituteRe_, '$1\u05f4')
       .replace(goog.i18n.bidi.singleQuoteSubstituteRe_, '$1\u05f3');
 };
@@ -8892,6 +8961,7 @@ goog.i18n.bidi.rtlDetectionThreshold_ = 0.40;
  * @return {goog.i18n.bidi.Dir} Estimated overall directionality of `str`.
  */
 goog.i18n.bidi.estimateDirection = function(str, opt_isHtml) {
+  'use strict';
   let rtlCount = 0;
   let totalCount = 0;
   let hasWeaklyLtr = false;
@@ -8928,6 +8998,7 @@ goog.i18n.bidi.estimateDirection = function(str, opt_isHtml) {
  * @return {boolean} Whether this piece of text should be laid out in RTL.
  */
 goog.i18n.bidi.detectRtlDirectionality = function(str, opt_isHtml) {
+  'use strict';
   return goog.i18n.bidi.estimateDirection(str, opt_isHtml) ==
       goog.i18n.bidi.Dir.RTL;
 };
@@ -8946,6 +9017,7 @@ goog.i18n.bidi.detectRtlDirectionality = function(str, opt_isHtml) {
  *     4. A null for unknown directionality.
  */
 goog.i18n.bidi.setElementDirAndAlign = function(element, dir) {
+  'use strict';
   if (element) {
     const htmlElement = /** @type {!HTMLElement} */ (element);
     dir = goog.i18n.bidi.toDir(dir);
@@ -8965,6 +9037,7 @@ goog.i18n.bidi.setElementDirAndAlign = function(element, dir) {
  * @param {string} text
  */
 goog.i18n.bidi.setElementDirByTextDirectionality = function(element, text) {
+  'use strict';
   const htmlElement = /** @type {!HTMLElement} */ (element);
   switch (goog.i18n.bidi.estimateDirection(text)) {
     case (goog.i18n.bidi.Dir.LTR):
@@ -9052,47 +9125,39 @@ goog.require('goog.string.TypedString');
  * this type.
  *
  * Instances of this type must be created via the factory method,
- * (`fromConstant`, `fromConstants`, `format` or
- * `formatWithParams`), and not by invoking its constructor. The constructor
- * is organized in a way that only methods from that file can call it and
- * initialize with non-empty values. Anyone else calling constructor will
- * get default instance with empty value.
+ * (`fromConstant`, `fromConstants`, `format` or `formatWithParams`), and not by
+ * invoking its constructor. The constructor intentionally takes an extra
+ * parameter that cannot be constructed outside of this file and the type is
+ * immutable; hence only a default instance corresponding to the empty string
+ * can be obtained via constructor invocation.
  *
  * Creating TrustedResourceUrl objects HAS SIDE-EFFECTS due to calling
  * Trusted Types Web API.
  *
  * @see goog.html.TrustedResourceUrl#fromConstant
- * @constructor
  * @final
  * @struct
  * @implements {goog.i18n.bidi.DirectionalString}
  * @implements {goog.string.TypedString}
- * @param {!Object=} opt_token package-internal implementation detail.
- * @param {!TrustedScriptURL|string=} opt_content package-internal
- *     implementation detail.
  */
-goog.html.TrustedResourceUrl = function(opt_token, opt_content) {
+goog.html.TrustedResourceUrl = class {
   /**
-   * The contained value of this TrustedResourceUrl.  The field has a purposely
-   * ugly name to make (non-compiled) code that attempts to directly access this
-   * field stand out.
-   * @const
-   * @private {!TrustedScriptURL|string}
+   * @param {!TrustedScriptURL|string} value
+   * @param {!Object} token package-internal implementation detail.
    */
-  this.privateDoNotAccessOrElseTrustedResourceUrlWrappedValue_ =
-      ((opt_token ===
-        goog.html.TrustedResourceUrl.CONSTRUCTOR_TOKEN_PRIVATE_) &&
-       opt_content) ||
-      '';
-
-  /**
-   * A type marker used to implement additional run-time type checking.
-   * @see goog.html.TrustedResourceUrl#unwrap
-   * @const {!Object}
-   * @private
-   */
-  this.TRUSTED_RESOURCE_URL_TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ =
-      goog.html.TrustedResourceUrl.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_;
+  constructor(value, token) {
+    /**
+     * The contained value of this TrustedResourceUrl.  The field has a
+     * purposely ugly name to make (non-compiled) code that attempts to directly
+     * access this field stand out.
+     * @const
+     * @private {!TrustedScriptURL|string}
+     */
+    this.privateDoNotAccessOrElseTrustedResourceUrlWrappedValue_ =
+        (token === goog.html.TrustedResourceUrl.CONSTRUCTOR_TOKEN_PRIVATE_) ?
+        value :
+        '';
+  }
 };
 
 
@@ -9227,15 +9292,8 @@ goog.html.TrustedResourceUrl.unwrapTrustedScriptURL = function(
   // Specifically, the following checks are performed:
   // 1. The object is an instance of the expected type.
   // 2. The object is not an instance of a subclass.
-  // 3. The object carries a type marker for the expected type. "Faking" an
-  // object requires a reference to the type marker, which has names intended
-  // to stand out in code reviews.
   if (trustedResourceUrl instanceof goog.html.TrustedResourceUrl &&
-      trustedResourceUrl.constructor === goog.html.TrustedResourceUrl &&
-      trustedResourceUrl
-              .TRUSTED_RESOURCE_URL_TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ ===
-          goog.html.TrustedResourceUrl
-              .TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_) {
+      trustedResourceUrl.constructor === goog.html.TrustedResourceUrl) {
     return trustedResourceUrl
         .privateDoNotAccessOrElseTrustedResourceUrlWrappedValue_;
   } else {
@@ -9459,12 +9517,12 @@ goog.html.TrustedResourceUrl.fromSafeScript = function(safeScript) {
 
 
 /**
- * Type marker for the TrustedResourceUrl type, used to implement additional
- * run-time type checking.
- * @const {!Object}
- * @private
+ * Token used to ensure that object is created only from this file. No code
+ * outside of this file can access this token.
+ * @private {!Object}
+ * @const
  */
-goog.html.TrustedResourceUrl.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ = {};
+goog.html.TrustedResourceUrl.CONSTRUCTOR_TOKEN_PRIVATE_ = {};
 
 
 /**
@@ -9481,7 +9539,7 @@ goog.html.TrustedResourceUrl
   const policy = goog.html.trustedtypes.getPolicyPrivateDoNotAccessOrElse();
   var value = policy ? policy.createScriptURL(url) : url;
   return new goog.html.TrustedResourceUrl(
-      goog.html.TrustedResourceUrl.CONSTRUCTOR_TOKEN_PRIVATE_, value);
+      value, goog.html.TrustedResourceUrl.CONSTRUCTOR_TOKEN_PRIVATE_);
 };
 
 
@@ -9541,14 +9599,6 @@ goog.html.TrustedResourceUrl.stringifyParams_ = function(
   return currentString;
 };
 
-/**
- * Token used to ensure that object is created only from this file. No code
- * outside of this file can access this token.
- * @private {!Object}
- * @const
- */
-goog.html.TrustedResourceUrl.CONSTRUCTOR_TOKEN_PRIVATE_ = {};
-
 //third_party/javascript/closure/string/internal.js
 /**
  * @license
@@ -9574,6 +9624,7 @@ goog.provide('goog.string.internal');
  * @see goog.string.startsWith
  */
 goog.string.internal.startsWith = function(str, prefix) {
+  'use strict';
   return str.lastIndexOf(prefix, 0) == 0;
 };
 
@@ -9586,6 +9637,7 @@ goog.string.internal.startsWith = function(str, prefix) {
  * @see goog.string.endsWith
  */
 goog.string.internal.endsWith = function(str, suffix) {
+  'use strict';
   const l = str.length - suffix.length;
   return l >= 0 && str.indexOf(suffix, l) == l;
 };
@@ -9600,6 +9652,7 @@ goog.string.internal.endsWith = function(str, suffix) {
  * @see goog.string.caseInsensitiveStartsWith
  */
 goog.string.internal.caseInsensitiveStartsWith = function(str, prefix) {
+  'use strict';
   return goog.string.internal.caseInsensitiveCompare(
              prefix, str.substr(0, prefix.length)) == 0;
 };
@@ -9614,6 +9667,7 @@ goog.string.internal.caseInsensitiveStartsWith = function(str, prefix) {
  * @see goog.string.caseInsensitiveEndsWith
  */
 goog.string.internal.caseInsensitiveEndsWith = function(str, suffix) {
+  'use strict';
   return (
       goog.string.internal.caseInsensitiveCompare(
           suffix, str.substr(str.length - suffix.length, suffix.length)) == 0);
@@ -9629,6 +9683,7 @@ goog.string.internal.caseInsensitiveEndsWith = function(str, suffix) {
  * @see goog.string.caseInsensitiveEquals
  */
 goog.string.internal.caseInsensitiveEquals = function(str1, str2) {
+  'use strict';
   return str1.toLowerCase() == str2.toLowerCase();
 };
 
@@ -9640,6 +9695,7 @@ goog.string.internal.caseInsensitiveEquals = function(str1, str2) {
  * @see goog.string.isEmptyOrWhitespace
  */
 goog.string.internal.isEmptyOrWhitespace = function(str) {
+  'use strict';
   // testing length == 0 first is actually slower in all browsers (about the
   // same in Opera).
   // Since IE doesn't include non-breaking-space (0xa0) in their \s character
@@ -9656,8 +9712,10 @@ goog.string.internal.isEmptyOrWhitespace = function(str) {
  */
 goog.string.internal.trim =
     (goog.TRUSTED_SITE && String.prototype.trim) ? function(str) {
+      'use strict';
       return str.trim();
     } : function(str) {
+      'use strict';
       // Since IE doesn't include non-breaking-space (0xa0) in their \s
       // character class (as required by section 7.2 of the ECMAScript spec),
       // we explicitly include it in the regexp to enforce consistent
@@ -9680,6 +9738,7 @@ goog.string.internal.trim =
  * @see goog.string.caseInsensitiveCompare
  */
 goog.string.internal.caseInsensitiveCompare = function(str1, str2) {
+  'use strict';
   const test1 = String(str1).toLowerCase();
   const test2 = String(str2).toLowerCase();
 
@@ -9701,6 +9760,7 @@ goog.string.internal.caseInsensitiveCompare = function(str1, str2) {
  * @see goog.string.newLineToBr
  */
 goog.string.internal.newLineToBr = function(str, opt_xml) {
+  'use strict';
   return str.replace(/(\r\n|\r|\n)/g, opt_xml ? '<br />' : '<br>');
 };
 
@@ -9716,6 +9776,7 @@ goog.string.internal.newLineToBr = function(str, opt_xml) {
  */
 goog.string.internal.htmlEscape = function(
     str, opt_isLikelyToContainHtmlChars) {
+  'use strict';
   if (opt_isLikelyToContainHtmlChars) {
     str = str.replace(goog.string.internal.AMP_RE_, '&amp;')
               .replace(goog.string.internal.LT_RE_, '&lt;')
@@ -9819,6 +9880,7 @@ goog.string.internal.ALL_RE_ = /[\x00&<>"']/;
  * @see goog.string.whitespaceEscape
  */
 goog.string.internal.whitespaceEscape = function(str, opt_xml) {
+  'use strict';
   // This doesn't use goog.string.preserveSpaces for backwards compatibility.
   return goog.string.internal.newLineToBr(
       str.replace(/  /g, ' &#160;'), opt_xml);
@@ -9833,6 +9895,7 @@ goog.string.internal.whitespaceEscape = function(str, opt_xml) {
  * @see goog.string.contains
  */
 goog.string.internal.contains = function(str, subString) {
+  'use strict';
   return str.indexOf(subString) != -1;
 };
 
@@ -9845,6 +9908,7 @@ goog.string.internal.contains = function(str, subString) {
  * @see goog.string.caseInsensitiveContains
  */
 goog.string.internal.caseInsensitiveContains = function(str, subString) {
+  'use strict';
   return goog.string.internal.contains(
       str.toLowerCase(), subString.toLowerCase());
 };
@@ -9862,6 +9926,7 @@ goog.string.internal.caseInsensitiveContains = function(str, subString) {
  * @see goog.string.compareVersions
  */
 goog.string.internal.compareVersions = function(version1, version2) {
+  'use strict';
   let order = 0;
   // Trim leading and trailing whitespace and split the versions into
   // subversions.
@@ -9921,6 +9986,7 @@ goog.string.internal.compareVersions = function(version1, version2) {
  * @private
  */
 goog.string.internal.compareElements_ = function(left, right) {
+  'use strict';
   if (left < right) {
     return -1;
   } else if (left > right) {
@@ -9980,42 +10046,34 @@ goog.require('goog.string.internal');
  *
  * Instances of this type must be created via the factory methods
  * (`goog.html.SafeUrl.fromConstant`, `goog.html.SafeUrl.sanitize`),
- * etc and not by invoking its constructor. The constructor is organized in a
- * way that only methods from that file can call it and initialize with
- * non-empty values. Anyone else calling constructor will get default instance
- * with empty value.
+ * etc and not by invoking its constructor. The constructor intentionally takes
+ * an extra parameter that cannot be constructed outside of this file and the
+ * type is immutable; hence only a default instance corresponding to the empty
+ * string can be obtained via constructor invocation.
  *
  * @see goog.html.SafeUrl#fromConstant
  * @see goog.html.SafeUrl#from
  * @see goog.html.SafeUrl#sanitize
- * @constructor
  * @final
  * @struct
  * @implements {goog.i18n.bidi.DirectionalString}
  * @implements {goog.string.TypedString}
- * @param {!Object=} opt_token package-internal implementation detail.
- * @param {string=} opt_content package-internal implementation detail.
  */
-goog.html.SafeUrl = function(opt_token, opt_content) {
+goog.html.SafeUrl = class {
   /**
-   * The contained value of this SafeUrl.  The field has a purposely ugly
-   * name to make (non-compiled) code that attempts to directly access this
-   * field stand out.
-   * @private {string}
+   * @param {string} value
+   * @param {!Object} token package-internal implementation detail.
    */
-  this.privateDoNotAccessOrElseSafeUrlWrappedValue_ =
-      ((opt_token === goog.html.SafeUrl.CONSTRUCTOR_TOKEN_PRIVATE_) &&
-       opt_content) ||
-      '';
-
-  /**
-   * A type marker used to implement additional run-time type checking.
-   * @see goog.html.SafeUrl#unwrap
-   * @const {!Object}
-   * @private
-   */
-  this.SAFE_URL_TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ =
-      goog.html.SafeUrl.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_;
+  constructor(value, token) {
+    /**
+     * The contained value of this SafeUrl.  The field has a purposely ugly
+     * name to make (non-compiled) code that attempts to directly access this
+     * field stand out.
+     * @private {string}
+     */
+    this.privateDoNotAccessOrElseSafeUrlWrappedValue_ =
+        (token === goog.html.SafeUrl.CONSTRUCTOR_TOKEN_PRIVATE_) ? value : '';
+  };
 };
 
 
@@ -10129,13 +10187,8 @@ goog.html.SafeUrl.unwrap = function(safeUrl) {
   // Specifically, the following checks are performed:
   // 1. The object is an instance of the expected type.
   // 2. The object is not an instance of a subclass.
-  // 3. The object carries a type marker for the expected type. "Faking" an
-  // object requires a reference to the type marker, which has names intended
-  // to stand out in code reviews.
   if (safeUrl instanceof goog.html.SafeUrl &&
-      safeUrl.constructor === goog.html.SafeUrl &&
-      safeUrl.SAFE_URL_TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ ===
-          goog.html.SafeUrl.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_) {
+      safeUrl.constructor === goog.html.SafeUrl) {
     return safeUrl.privateDoNotAccessOrElseSafeUrlWrappedValue_;
   } else {
     goog.asserts.fail('expected object of type SafeUrl, got \'' +
@@ -10183,9 +10236,6 @@ goog.html.SAFE_MIME_TYPE_PATTERN_ = new RegExp(
     '^(?:audio/(?:3gpp2|3gpp|aac|L16|midi|mp3|mp4|mpeg|oga|ogg|opus|x-m4a|x-matroska|x-wav|wav|webm)|' +
         'font/\\w+|' +
         'image/(?:bmp|gif|jpeg|jpg|png|tiff|webp|x-icon)|' +
-        // TODO(b/68188949): Due to content-sniffing concerns, text/csv should
-        // be removed from the whitelist.
-        'text/csv|' +
         'video/(?:mpeg|mp4|ogg|webm|quicktime|x-matroska))' +
         '(?:;\\w+=(?:\\w+|"[\\w;,= ]+"))*$',  // MIME type parameters
     'i');
@@ -10602,8 +10652,8 @@ goog.html.SafeUrl.SAFE_URL_PATTERN = goog.html.SAFE_URL_PATTERN_;
  * to match a pattern of commonly used safe URLs. If validation fails, `null` is
  * returned.
  *
- * `url` may be a URL with the `http:`, `https:`, `mailto:`, or `ftp:` scheme,
- * or a relative URL (i.e., a URL without a scheme; specifically, a
+ * `url` may be a URL with the `http:`, `https:`, `mailto:`, `ftp:` or `data`
+ * scheme, or a relative URL (i.e., a URL without a scheme; specifically, a
  * scheme-relative, absolute-path-relative, or path-relative URL).
  *
  * @see http://url.spec.whatwg.org/#concept-relative-url
@@ -10622,7 +10672,7 @@ goog.html.SafeUrl.trySanitize = function(url) {
     url = String(url);
   }
   if (!goog.html.SAFE_URL_PATTERN_.test(url)) {
-    return null;
+    return goog.html.SafeUrl.tryFromDataUrl(url);
   }
   return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(url);
 };
@@ -10633,8 +10683,8 @@ goog.html.SafeUrl.trySanitize = function(url) {
  * validated to match a pattern of commonly used safe URLs. If validation fails,
  * `goog.html.SafeUrl.INNOCUOUS_URL` is returned.
  *
- * `url` may be a URL with the `http:`, `https:`, `mailto:` or `ftp:` scheme,
- * or a relative URL (i.e., a URL without a scheme; specifically, a
+ * `url` may be a URL with the `http:`, `https:`, `mailto:`, `ftp:` or `data`
+ * scheme, or a relative URL (i.e., a URL without a scheme; specifically, a
  * scheme-relative, absolute-path-relative, or path-relative URL).
  *
  * @see http://url.spec.whatwg.org/#concept-relative-url
@@ -10685,16 +10735,13 @@ goog.html.SafeUrl.sanitizeAssertUnchanged = function(url, opt_allowDataUrl) {
   return goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(url);
 };
 
-
-
 /**
- * Type marker for the SafeUrl type, used to implement additional run-time
- * type checking.
- * @const {!Object}
- * @private
+ * Token used to ensure that object is created only from this file. No code
+ * outside of this file can access this token.
+ * @private {!Object}
+ * @const
  */
-goog.html.SafeUrl.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ = {};
-
+goog.html.SafeUrl.CONSTRUCTOR_TOKEN_PRIVATE_ = {};
 
 /**
  * Package-internal utility method to create SafeUrl instances.
@@ -10706,7 +10753,7 @@ goog.html.SafeUrl.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ = {};
 goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse = function(
     url) {
   return new goog.html.SafeUrl(
-      goog.html.SafeUrl.CONSTRUCTOR_TOKEN_PRIVATE_, url);
+      url, goog.html.SafeUrl.CONSTRUCTOR_TOKEN_PRIVATE_);
 };
 
 
@@ -10726,14 +10773,6 @@ goog.html.SafeUrl.INNOCUOUS_URL =
 goog.html.SafeUrl.ABOUT_BLANK =
     goog.html.SafeUrl.createSafeUrlSecurityPrivateDoNotAccessOrElse(
         'about:blank');
-
-/**
- * Token used to ensure that object is created only from this file. No code
- * outside of this file can access this token.
- * @private {!Object}
- * @const
- */
-goog.html.SafeUrl.CONSTRUCTOR_TOKEN_PRIVATE_ = {};
 
 //third_party/javascript/closure/html/safestyle.js
 /**
@@ -10761,15 +10800,15 @@ goog.require('goog.string.internal');
 
 /**
  * A string-like object which represents a sequence of CSS declarations
- * ({@code propertyName1: propertyvalue1; propertyName2: propertyValue2; ...})
+ * (`propertyName1: propertyvalue1; propertyName2: propertyValue2; ...`)
  * and that carries the security type contract that its value, as a string,
  * will not cause untrusted script execution (XSS) when evaluated as CSS in a
  * browser.
  *
  * Instances of this type must be created via the factory methods
- * (`goog.html.SafeStyle.create` or
- * `goog.html.SafeStyle.fromConstant`) and not by invoking its
- * constructor. The constructor intentionally takes no parameters and the type
+ * (`goog.html.SafeStyle.create` or `goog.html.SafeStyle.fromConstant`)
+ * and not by invoking its constructor. The constructor intentionally takes an
+ * extra parameter that cannot be constructed outside of this file and the type
  * is immutable; hence only a default instance corresponding to the empty string
  * can be obtained via constructor invocation.
  *
@@ -10792,7 +10831,7 @@ goog.require('goog.string.internal');
  * A SafeStyle may never contain literal angle brackets. Otherwise, it could
  * be unsafe to place a SafeStyle into a &lt;style&gt; tag (where it can't
  * be HTML escaped). For example, if the SafeStyle containing
- * "{@code font: 'foo &lt;style/&gt;&lt;script&gt;evil&lt;/script&gt;'}" were
+ * `font: 'foo &lt;style/&gt;&lt;script&gt;evil&lt;/script&gt;'` were
  * interpolated within a &lt;style&gt; tag, this would then break out of the
  * style context into HTML.
  *
@@ -10803,16 +10842,16 @@ goog.require('goog.string.internal');
  *
  * Values of this type must be composable, i.e. for any two values
  * `style1` and `style2` of this type,
- * {@code goog.html.SafeStyle.unwrap(style1) +
- * goog.html.SafeStyle.unwrap(style2)} must itself be a value that satisfies
+ * `goog.html.SafeStyle.unwrap(style1) +
+ * goog.html.SafeStyle.unwrap(style2)` must itself be a value that satisfies
  * the SafeStyle type constraint. This requirement implies that for any value
  * `style` of this type, `goog.html.SafeStyle.unwrap(style)` must
  * not end in a "property value" or "property name" context. For example,
- * a value of {@code background:url("} or {@code font-} would not satisfy the
+ * a value of `background:url("` or `font-` would not satisfy the
  * SafeStyle contract. This is because concatenating such strings with a
  * second value that itself does not contain unsafe CSS can result in an
- * overall string that does. For example, if {@code javascript:evil())"} is
- * appended to {@code background:url("}, the resulting string may result in
+ * overall string that does. For example, if `javascript:evil())"` is
+ * appended to `background:url("}, the resulting string may result in
  * the execution of a malicious script.
  *
  * TODO(mlourenco): Consider whether we should implement UTF-8 interchange
@@ -10840,28 +10879,25 @@ goog.require('goog.string.internal');
  * @see goog.html.SafeStyle#create
  * @see goog.html.SafeStyle#fromConstant
  * @see http://www.w3.org/TR/css3-syntax/
- * @constructor
  * @final
  * @struct
  * @implements {goog.string.TypedString}
  */
-goog.html.SafeStyle = function() {
+goog.html.SafeStyle = class {
   /**
-   * The contained value of this SafeStyle.  The field has a purposely
-   * ugly name to make (non-compiled) code that attempts to directly access this
-   * field stand out.
-   * @private {string}
+   * @param {string} value
+   * @param {!Object} token package-internal implementation detail.
    */
-  this.privateDoNotAccessOrElseSafeStyleWrappedValue_ = '';
-
-  /**
-   * A type marker used to implement additional run-time type checking.
-   * @see goog.html.SafeStyle#unwrap
-   * @const {!Object}
-   * @private
-   */
-  this.SAFE_STYLE_TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ =
-      goog.html.SafeStyle.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_;
+  constructor(value, token) {
+    /**
+     * The contained value of this SafeStyle.  The field has a purposely
+     * ugly name to make (non-compiled) code that attempts to directly access
+     * this field stand out.
+     * @private {string}
+     */
+    this.privateDoNotAccessOrElseSafeStyleWrappedValue_ =
+        (token === goog.html.SafeStyle.CONSTRUCTOR_TOKEN_PRIVATE_) ? value : '';
+  }
 };
 
 
@@ -10873,19 +10909,10 @@ goog.html.SafeStyle.prototype.implementsGoogStringTypedString = true;
 
 
 /**
- * Type marker for the SafeStyle type, used to implement additional
- * run-time type checking.
- * @const {!Object}
- * @private
- */
-goog.html.SafeStyle.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ = {};
-
-
-/**
  * Creates a SafeStyle object from a compile-time constant string.
  *
  * `style` should be in the format
- * {@code name: value; [name: value; ...]} and must not have any < or >
+ * `name: value; [name: value; ...]` and must not have any < or >
  * characters in it. This is so that SafeStyle's contract is preserved,
  * allowing the SafeStyle to correctly be interpreted as a sequence of CSS
  * declarations and without affecting the syntactic structure of any
@@ -10978,20 +11005,25 @@ goog.html.SafeStyle.unwrap = function(safeStyle) {
   // Specifically, the following checks are performed:
   // 1. The object is an instance of the expected type.
   // 2. The object is not an instance of a subclass.
-  // 3. The object carries a type marker for the expected type. "Faking" an
-  // object requires a reference to the type marker, which has names intended
-  // to stand out in code reviews.
   if (safeStyle instanceof goog.html.SafeStyle &&
-      safeStyle.constructor === goog.html.SafeStyle &&
-      safeStyle.SAFE_STYLE_TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ ===
-          goog.html.SafeStyle.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_) {
+      safeStyle.constructor === goog.html.SafeStyle) {
     return safeStyle.privateDoNotAccessOrElseSafeStyleWrappedValue_;
   } else {
-    goog.asserts.fail('expected object of type SafeStyle, got \'' +
-        safeStyle + '\' of type ' + goog.typeOf(safeStyle));
+    goog.asserts.fail(
+        'expected object of type SafeStyle, got \'' + safeStyle +
+        '\' of type ' + goog.typeOf(safeStyle));
     return 'type_error:SafeStyle';
   }
 };
+
+
+/**
+ * Token used to ensure that object is created only from this file. No code
+ * outside of this file can access this token.
+ * @private {!Object}
+ * @const
+ */
+goog.html.SafeStyle.CONSTRUCTOR_TOKEN_PRIVATE_ = {};
 
 
 /**
@@ -11003,22 +11035,8 @@ goog.html.SafeStyle.unwrap = function(safeStyle) {
  */
 goog.html.SafeStyle.createSafeStyleSecurityPrivateDoNotAccessOrElse = function(
     style) {
-  return new goog.html.SafeStyle().initSecurityPrivateDoNotAccessOrElse_(style);
-};
-
-
-/**
- * Called from createSafeStyleSecurityPrivateDoNotAccessOrElse(). This
- * method exists only so that the compiler can dead code eliminate static
- * fields (like EMPTY) when they're not accessed.
- * @param {string} style
- * @return {!goog.html.SafeStyle}
- * @private
- */
-goog.html.SafeStyle.prototype.initSecurityPrivateDoNotAccessOrElse_ = function(
-    style) {
-  this.privateDoNotAccessOrElseSafeStyleWrappedValue_ = style;
-  return this;
+  return new goog.html.SafeStyle(
+      style, goog.html.SafeStyle.CONSTRUCTOR_TOKEN_PRIVATE_);
 };
 
 
@@ -11059,7 +11077,7 @@ goog.html.SafeStyle.PropertyMap;
 
 /**
  * Creates a new SafeStyle object from the properties specified in the map.
- * @param {goog.html.SafeStyle.PropertyMap} map Mapping of property names to
+ * @param {!goog.html.SafeStyle.PropertyMap} map Mapping of property names to
  *     their values, for example {'margin': '1px'}. Names must consist of
  *     [-_a-zA-Z0-9]. Values might be strings consisting of
  *     [-,.'"%_!# a-zA-Z0-9[\]], where ", ', and [] must be properly balanced.
@@ -11069,8 +11087,8 @@ goog.html.SafeStyle.PropertyMap;
  *     also support array whose elements are joined with ' '. Null value causes
  *     skipping the property.
  * @return {!goog.html.SafeStyle}
- * @throws {Error} If invalid name is provided.
- * @throws {goog.asserts.AssertionError} If invalid value is provided. With
+ * @throws {!Error} If invalid name is provided.
+ * @throws {!goog.asserts.AssertionError} If invalid value is provided. With
  *     disabled assertions, invalid value is replaced by
  *     goog.html.SafeStyle.INNOCUOUS_STRING.
  */
@@ -11177,7 +11195,7 @@ goog.html.SafeStyle.hasBalancedQuotes_ = function(value) {
   var outsideDouble = true;
   for (var i = 0; i < value.length; i++) {
     var c = value.charAt(i);
-    if (c == "'" && outsideDouble) {
+    if (c == '\'' && outsideDouble) {
       outsideSingle = !outsideSingle;
     } else if (c == '"' && outsideSingle) {
       outsideDouble = !outsideDouble;
@@ -11356,7 +11374,7 @@ goog.html.SafeStyle.concat = function(var_args) {
 };
 
 //third_party/javascript/closure/html/safestylesheet.js
-/**
+goog.loadModule(function(exports) {'use strict';/**
  * @license
  * Copyright The Closure Library Authors.
  * SPDX-License-Identifier: Apache-2.0
@@ -11368,17 +11386,23 @@ goog.html.SafeStyle.concat = function(var_args) {
  * TODO(xtof): Link to document stating type contract.
  */
 
-goog.provide('goog.html.SafeStyleSheet');
+goog.module('goog.html.SafeStyleSheet');
+goog.module.declareLegacyNamespace();
 
-goog.require('goog.array');
-goog.require('goog.asserts');
-goog.require('goog.html.SafeStyle');
-goog.require('goog.object');
-goog.require('goog.string.Const');
-goog.require('goog.string.TypedString');
-goog.require('goog.string.internal');
+const Const = goog.require('goog.string.Const');
+const SafeStyle = goog.require('goog.html.SafeStyle');
+const TypedString = goog.require('goog.string.TypedString');
+const googArray = goog.require('goog.array');
+const googObject = goog.require('goog.object');
+const {assert, fail} = goog.require('goog.asserts');
+const {contains} = goog.require('goog.string.internal');
 
-
+/**
+ * Token used to ensure that object is created only from this file. No code
+ * outside of this file can access this token.
+ * @const {!Object}
+ */
+const CONSTRUCTOR_TOKEN_PRIVATE = {};
 
 /**
  * A string-like object which represents a CSS style sheet and that carries the
@@ -11386,10 +11410,10 @@ goog.require('goog.string.internal');
  * script execution (XSS) when evaluated as CSS in a browser.
  *
  * Instances of this type must be created via the factory method
- * `goog.html.SafeStyleSheet.fromConstant` and not by invoking its
- * constructor. The constructor intentionally takes no parameters and the type
- * is immutable; hence only a default instance corresponding to the empty string
- * can be obtained via constructor invocation.
+ * `SafeStyleSheet.fromConstant` and not by invoking its constructor. The
+ * constructor intentionally takes an extra parameter that cannot be constructed
+ * outside of this file and the type is immutable; hence only a default instance
+ * corresponding to the empty string can be obtained via constructor invocation.
  *
  * A SafeStyleSheet's string representation can safely be interpolated as the
  * content of a style element within HTML. The SafeStyleSheet string should
@@ -11397,224 +11421,244 @@ goog.require('goog.string.internal');
  *
  * Values of this type must be composable, i.e. for any two values
  * `styleSheet1` and `styleSheet2` of this type,
- * {@code goog.html.SafeStyleSheet.unwrap(styleSheet1) +
- * goog.html.SafeStyleSheet.unwrap(styleSheet2)} must itself be a value that
- * satisfies the SafeStyleSheet type constraint. This requirement implies that
- * for any value `styleSheet` of this type,
- * `goog.html.SafeStyleSheet.unwrap(styleSheet1)` must end in
+ * `SafeStyleSheet.unwrap(styleSheet1) + SafeStyleSheet.unwrap(styleSheet2)`
+ * must itself be a value that satisfies the SafeStyleSheet type constraint.
+ * This requirement implies that for any value `styleSheet` of this type,
+ * `SafeStyleSheet.unwrap(styleSheet1)` must end in
  * "beginning of rule" context.
-
+ *
  * A SafeStyleSheet can be constructed via security-reviewed unchecked
  * conversions. In this case producers of SafeStyleSheet must ensure themselves
  * that the SafeStyleSheet does not contain unsafe script. Note in particular
- * that {@code &lt;} is dangerous, even when inside CSS strings, and so should
+ * that `&lt;` is dangerous, even when inside CSS strings, and so should
  * always be forbidden or CSS-escaped in user controlled input. For example, if
- * {@code &lt;/style&gt;&lt;script&gt;evil&lt;/script&gt;"} were interpolated
+ * `&lt;/style&gt;&lt;script&gt;evil&lt;/script&gt;"` were interpolated
  * inside a CSS string, it would break out of the context of the original
  * style element and `evil` would execute. Also note that within an HTML
  * style (raw text) element, HTML character references, such as
- * {@code &amp;lt;}, are not allowed. See
- *
- http://www.w3.org/TR/html5/scripting-1.html#restrictions-for-contents-of-script-elements
+ * `&amp;lt;`, are not allowed. See
+ * http://www.w3.org/TR/html5/scripting-1.html#restrictions-for-contents-of-script-elements
  * (similar considerations apply to the style element).
  *
- * @see goog.html.SafeStyleSheet#fromConstant
- * @constructor
+ * @see SafeStyleSheet#fromConstant
  * @final
- * @struct
- * @implements {goog.string.TypedString}
+ * @implements {TypedString}
  */
-goog.html.SafeStyleSheet = function() {
+class SafeStyleSheet {
   /**
-   * The contained value of this SafeStyleSheet.  The field has a purposely
-   * ugly name to make (non-compiled) code that attempts to directly access this
-   * field stand out.
-   * @private {string}
+   * @param {string} value
+   * @param {!Object} token package-internal implementation detail.
    */
-  this.privateDoNotAccessOrElseSafeStyleSheetWrappedValue_ = '';
+  constructor(value, token) {
+    /**
+     * The contained value of this SafeStyleSheet.  The field has a purposely
+     * ugly name to make (non-compiled) code that attempts to directly access
+     * this field stand out.
+     * @private {string}
+     */
+    this.privateDoNotAccessOrElseSafeStyleSheetWrappedValue_ =
+        (token === CONSTRUCTOR_TOKEN_PRIVATE) ? value : '';
+
+    /**
+     * @override
+     * @const
+     */
+    this.implementsGoogStringTypedString = true;
+  }
 
   /**
-   * A type marker used to implement additional run-time type checking.
-   * @see goog.html.SafeStyleSheet#unwrap
-   * @const {!Object}
+   * Creates a style sheet consisting of one selector and one style definition.
+   * Use {@link SafeStyleSheet.concat} to create longer style sheets.
+   * This function doesn't support @import, @media and similar constructs.
+   * @param {string} selector CSS selector, e.g. '#id' or 'tag .class, #id'. We
+   *     support CSS3 selectors: https://w3.org/TR/css3-selectors/#selectors.
+   * @param {!SafeStyle.PropertyMap|!SafeStyle} style Style
+   *     definition associated with the selector.
+   * @return {!SafeStyleSheet}
+   * @throws {!Error} If invalid selector is provided.
+   */
+  static createRule(selector, style) {
+    if (contains(selector, '<')) {
+      throw new Error(`Selector does not allow '<', got: ${selector}`);
+    }
+
+    // Remove strings.
+    const selectorToCheck =
+        selector.replace(/('|")((?!\1)[^\r\n\f\\]|\\[\s\S])*\1/g, '');
+
+    // Check characters allowed in CSS3 selectors.
+    if (!/^[-_a-zA-Z0-9#.:* ,>+~[\]()=^$|]+$/.test(selectorToCheck)) {
+      throw new Error(
+          'Selector allows only [-_a-zA-Z0-9#.:* ,>+~[\\]()=^$|] and ' +
+          'strings, got: ' + selector);
+    }
+
+    // Check balanced () and [].
+    if (!SafeStyleSheet.hasBalancedBrackets_(selectorToCheck)) {
+      throw new Error(
+          '() and [] in selector must be balanced, got: ' + selector);
+    }
+
+    if (!(style instanceof SafeStyle)) {
+      style = SafeStyle.create(style);
+    }
+    const styleSheet =
+        `${selector}{` + SafeStyle.unwrap(style).replace(/</g, '\\3C ') + '}';
+    return SafeStyleSheet.createSafeStyleSheetSecurityPrivateDoNotAccessOrElse(
+        styleSheet);
+  }
+
+  /**
+   * Checks if a string has balanced () and [] brackets.
+   * @param {string} s String to check.
+   * @return {boolean}
    * @private
    */
-  this.SAFE_STYLE_SHEET_TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ =
-      goog.html.SafeStyleSheet.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_;
-};
-
-
-/**
- * @override
- * @const
- */
-goog.html.SafeStyleSheet.prototype.implementsGoogStringTypedString = true;
-
-
-/**
- * Type marker for the SafeStyleSheet type, used to implement additional
- * run-time type checking.
- * @const {!Object}
- * @private
- */
-goog.html.SafeStyleSheet.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ = {};
-
-
-/**
- * Creates a style sheet consisting of one selector and one style definition.
- * Use {@link goog.html.SafeStyleSheet.concat} to create longer style sheets.
- * This function doesn't support @import, @media and similar constructs.
- * @param {string} selector CSS selector, e.g. '#id' or 'tag .class, #id'. We
- *     support CSS3 selectors: https://w3.org/TR/css3-selectors/#selectors.
- * @param {!goog.html.SafeStyle.PropertyMap|!goog.html.SafeStyle} style Style
- *     definition associated with the selector.
- * @return {!goog.html.SafeStyleSheet}
- * @throws {Error} If invalid selector is provided.
- */
-goog.html.SafeStyleSheet.createRule = function(selector, style) {
-  if (goog.string.internal.contains(selector, '<')) {
-    throw new Error('Selector does not allow \'<\', got: ' + selector);
-  }
-
-  // Remove strings.
-  var selectorToCheck =
-      selector.replace(/('|")((?!\1)[^\r\n\f\\]|\\[\s\S])*\1/g, '');
-
-  // Check characters allowed in CSS3 selectors.
-  if (!/^[-_a-zA-Z0-9#.:* ,>+~[\]()=^$|]+$/.test(selectorToCheck)) {
-    throw new Error(
-        'Selector allows only [-_a-zA-Z0-9#.:* ,>+~[\\]()=^$|] and ' +
-        'strings, got: ' + selector);
-  }
-
-  // Check balanced () and [].
-  if (!goog.html.SafeStyleSheet.hasBalancedBrackets_(selectorToCheck)) {
-    throw new Error('() and [] in selector must be balanced, got: ' + selector);
-  }
-
-  if (!(style instanceof goog.html.SafeStyle)) {
-    style = goog.html.SafeStyle.create(style);
-  }
-  var styleSheet = selector + '{' +
-      goog.html.SafeStyle.unwrap(style).replace(/</g, '\\3C ') + '}';
-  return goog.html.SafeStyleSheet
-      .createSafeStyleSheetSecurityPrivateDoNotAccessOrElse(styleSheet);
-};
-
-
-/**
- * Checks if a string has balanced () and [] brackets.
- * @param {string} s String to check.
- * @return {boolean}
- * @private
- */
-goog.html.SafeStyleSheet.hasBalancedBrackets_ = function(s) {
-  var brackets = {'(': ')', '[': ']'};
-  var expectedBrackets = [];
-  for (var i = 0; i < s.length; i++) {
-    var ch = s[i];
-    if (brackets[ch]) {
-      expectedBrackets.push(brackets[ch]);
-    } else if (goog.object.contains(brackets, ch)) {
-      if (expectedBrackets.pop() != ch) {
-        return false;
+  static hasBalancedBrackets_(s) {
+    const brackets = {'(': ')', '[': ']'};
+    const expectedBrackets = [];
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (brackets[ch]) {
+        expectedBrackets.push(brackets[ch]);
+      } else if (googObject.contains(brackets, ch)) {
+        if (expectedBrackets.pop() != ch) {
+          return false;
+        }
       }
     }
+    return expectedBrackets.length == 0;
   }
-  return expectedBrackets.length == 0;
-};
-
-
-/**
- * Creates a new SafeStyleSheet object by concatenating values.
- * @param {...(!goog.html.SafeStyleSheet|!Array<!goog.html.SafeStyleSheet>)}
- *     var_args Values to concatenate.
- * @return {!goog.html.SafeStyleSheet}
- */
-goog.html.SafeStyleSheet.concat = function(var_args) {
-  var result = '';
 
   /**
-   * @param {!goog.html.SafeStyleSheet|!Array<!goog.html.SafeStyleSheet>}
-   *     argument
+   * Creates a new SafeStyleSheet object by concatenating values.
+   * @param {...(!SafeStyleSheet|!Array<!SafeStyleSheet>)}
+   *     var_args Values to concatenate.
+   * @return {!SafeStyleSheet}
    */
-  var addArgument = function(argument) {
-    if (Array.isArray(argument)) {
-      goog.array.forEach(argument, addArgument);
-    } else {
-      result += goog.html.SafeStyleSheet.unwrap(argument);
-    }
-  };
+  static concat(var_args) {
+    let result = '';
 
-  goog.array.forEach(arguments, addArgument);
-  return goog.html.SafeStyleSheet
-      .createSafeStyleSheetSecurityPrivateDoNotAccessOrElse(result);
-};
+    /**
+     * @param {!SafeStyleSheet|!Array<!SafeStyleSheet>}
+     *     argument
+     */
+    const addArgument = argument => {
+      if (Array.isArray(argument)) {
+        googArray.forEach(argument, addArgument);
+      } else {
+        result += SafeStyleSheet.unwrap(argument);
+      }
+    };
 
-
-/**
- * Creates a SafeStyleSheet object from a compile-time constant string.
- *
- * `styleSheet` must not have any &lt; characters in it, so that
- * the syntactic structure of the surrounding HTML is not affected.
- *
- * @param {!goog.string.Const} styleSheet A compile-time-constant string from
- *     which to create a SafeStyleSheet.
- * @return {!goog.html.SafeStyleSheet} A SafeStyleSheet object initialized to
- *     `styleSheet`.
- */
-goog.html.SafeStyleSheet.fromConstant = function(styleSheet) {
-  var styleSheetString = goog.string.Const.unwrap(styleSheet);
-  if (styleSheetString.length === 0) {
-    return goog.html.SafeStyleSheet.EMPTY;
+    googArray.forEach(arguments, addArgument);
+    return SafeStyleSheet.createSafeStyleSheetSecurityPrivateDoNotAccessOrElse(
+        result);
   }
-  // > is a valid character in CSS selectors and there's no strict need to
-  // block it if we already block <.
-  goog.asserts.assert(
-      !goog.string.internal.contains(styleSheetString, '<'),
-      'Forbidden \'<\' character in style sheet string: ' + styleSheetString);
-  return goog.html.SafeStyleSheet
-      .createSafeStyleSheetSecurityPrivateDoNotAccessOrElse(styleSheetString);
-};
 
+  /**
+   * Creates a SafeStyleSheet object from a compile-time constant string.
+   *
+   * `styleSheet` must not have any &lt; characters in it, so that
+   * the syntactic structure of the surrounding HTML is not affected.
+   *
+   * @param {!Const} styleSheet A compile-time-constant string from
+   *     which to create a SafeStyleSheet.
+   * @return {!SafeStyleSheet} A SafeStyleSheet object initialized to
+   *     `styleSheet`.
+   */
+  static fromConstant(styleSheet) {
+    const styleSheetString = Const.unwrap(styleSheet);
+    if (styleSheetString.length === 0) {
+      return SafeStyleSheet.EMPTY;
+    }
+    // > is a valid character in CSS selectors and there's no strict need to
+    // block it if we already block <.
+    assert(
+        !contains(styleSheetString, '<'),
+        `Forbidden '<' character in style sheet string: ${styleSheetString}`);
+    return SafeStyleSheet.createSafeStyleSheetSecurityPrivateDoNotAccessOrElse(
+        styleSheetString);
+  }
 
-/**
- * Returns this SafeStyleSheet's value as a string.
- *
- * IMPORTANT: In code where it is security relevant that an object's type is
- * indeed `SafeStyleSheet`, use `goog.html.SafeStyleSheet.unwrap`
- * instead of this method. If in doubt, assume that it's security relevant. In
- * particular, note that goog.html functions which return a goog.html type do
- * not guarantee the returned instance is of the right type. For example:
- *
- * <pre>
- * var fakeSafeHtml = new String('fake');
- * fakeSafeHtml.__proto__ = goog.html.SafeHtml.prototype;
- * var newSafeHtml = goog.html.SafeHtml.htmlEscape(fakeSafeHtml);
- * // newSafeHtml is just an alias for fakeSafeHtml, it's passed through by
- * // goog.html.SafeHtml.htmlEscape() as fakeSafeHtml
- * // instanceof goog.html.SafeHtml.
- * </pre>
- *
- * @see goog.html.SafeStyleSheet#unwrap
- * @override
- */
-goog.html.SafeStyleSheet.prototype.getTypedStringValue = function() {
-  return this.privateDoNotAccessOrElseSafeStyleSheetWrappedValue_;
-};
+  /**
+   * Returns this SafeStyleSheet's value as a string.
+   *
+   * IMPORTANT: In code where it is security relevant that an object's type is
+   * indeed `SafeStyleSheet`, use `SafeStyleSheet.unwrap`
+   * instead of this method. If in doubt, assume that it's security relevant. In
+   * particular, note that goog.html functions which return a goog.html type do
+   * not guarantee the returned instance is of the right type. For example:
+   *
+   * <pre>
+   * var fakeSafeHtml = new String('fake');
+   * fakeSafeHtml.__proto__ = goog.html.SafeHtml.prototype;
+   * var newSafeHtml = goog.html.SafeHtml.htmlEscape(fakeSafeHtml);
+   * // newSafeHtml is just an alias for fakeSafeHtml, it's passed through by
+   * // goog.html.SafeHtml.htmlEscape() as fakeSafeHtml
+   * // instanceof goog.html.SafeHtml.
+   * </pre>
+   *
+   * @see SafeStyleSheet#unwrap
+   * @override
+   */
+  getTypedStringValue() {
+    return this.privateDoNotAccessOrElseSafeStyleSheetWrappedValue_;
+  }
 
+  /**
+   * Performs a runtime check that the provided object is indeed a
+   * SafeStyleSheet object, and returns its value.
+   *
+   * @param {!SafeStyleSheet} safeStyleSheet The object to extract from.
+   * @return {string} The safeStyleSheet object's contained string, unless
+   *     the run-time type check fails. In that case, `unwrap` returns an
+   *     innocuous string, or, if assertions are enabled, throws
+   *     `asserts.AssertionError`.
+   */
+  static unwrap(safeStyleSheet) {
+    // Perform additional Run-time type-checking to ensure that
+    // safeStyleSheet is indeed an instance of the expected type.  This
+    // provides some additional protection against security bugs due to
+    // application code that disables type checks.
+    // Specifically, the following checks are performed:
+    // 1. The object is an instance of the expected type.
+    // 2. The object is not an instance of a subclass.
+    if (safeStyleSheet instanceof SafeStyleSheet &&
+        safeStyleSheet.constructor === SafeStyleSheet) {
+      return safeStyleSheet.privateDoNotAccessOrElseSafeStyleSheetWrappedValue_;
+    } else {
+      fail(
+          'expected object of type SafeStyleSheet, got \'' + safeStyleSheet +
+          '\' of type ' + goog.typeOf(safeStyleSheet));
+      return 'type_error:SafeStyleSheet';
+    }
+  }
+
+  /**
+   * Package-internal utility method to create SafeStyleSheet instances.
+   *
+   * @param {string} styleSheet The string to initialize the SafeStyleSheet
+   *     object with.
+   * @return {!SafeStyleSheet} The initialized SafeStyleSheet object.
+   * @package
+   */
+  static createSafeStyleSheetSecurityPrivateDoNotAccessOrElse(styleSheet) {
+    return new SafeStyleSheet(styleSheet, CONSTRUCTOR_TOKEN_PRIVATE);
+  }
+}
 
 if (goog.DEBUG) {
   /**
    * Returns a debug string-representation of this value.
    *
    * To obtain the actual string value wrapped in a SafeStyleSheet, use
-   * `goog.html.SafeStyleSheet.unwrap`.
+   * `SafeStyleSheet.unwrap`.
    *
-   * @see goog.html.SafeStyleSheet#unwrap
+   * @see SafeStyleSheet#unwrap
    * @override
    */
-  goog.html.SafeStyleSheet.prototype.toString = function() {
+  SafeStyleSheet.prototype.toString = function() {
     return 'SafeStyleSheet{' +
         this.privateDoNotAccessOrElseSafeStyleSheetWrappedValue_ + '}';
   };
@@ -11622,77 +11666,16 @@ if (goog.DEBUG) {
 
 
 /**
- * Performs a runtime check that the provided object is indeed a
- * SafeStyleSheet object, and returns its value.
- *
- * @param {!goog.html.SafeStyleSheet} safeStyleSheet The object to extract from.
- * @return {string} The safeStyleSheet object's contained string, unless
- *     the run-time type check fails. In that case, `unwrap` returns an
- *     innocuous string, or, if assertions are enabled, throws
- *     `goog.asserts.AssertionError`.
- */
-goog.html.SafeStyleSheet.unwrap = function(safeStyleSheet) {
-  // Perform additional Run-time type-checking to ensure that
-  // safeStyleSheet is indeed an instance of the expected type.  This
-  // provides some additional protection against security bugs due to
-  // application code that disables type checks.
-  // Specifically, the following checks are performed:
-  // 1. The object is an instance of the expected type.
-  // 2. The object is not an instance of a subclass.
-  // 3. The object carries a type marker for the expected type. "Faking" an
-  // object requires a reference to the type marker, which has names intended
-  // to stand out in code reviews.
-  if (safeStyleSheet instanceof goog.html.SafeStyleSheet &&
-      safeStyleSheet.constructor === goog.html.SafeStyleSheet &&
-      safeStyleSheet
-              .SAFE_STYLE_SHEET_TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ ===
-          goog.html.SafeStyleSheet.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_) {
-    return safeStyleSheet.privateDoNotAccessOrElseSafeStyleSheetWrappedValue_;
-  } else {
-    goog.asserts.fail('expected object of type SafeStyleSheet, got \'' +
-        safeStyleSheet + '\' of type ' + goog.typeOf(safeStyleSheet));
-    return 'type_error:SafeStyleSheet';
-  }
-};
-
-
-/**
- * Package-internal utility method to create SafeStyleSheet instances.
- *
- * @param {string} styleSheet The string to initialize the SafeStyleSheet
- *     object with.
- * @return {!goog.html.SafeStyleSheet} The initialized SafeStyleSheet object.
- * @package
- */
-goog.html.SafeStyleSheet.createSafeStyleSheetSecurityPrivateDoNotAccessOrElse =
-    function(styleSheet) {
-  return new goog.html.SafeStyleSheet().initSecurityPrivateDoNotAccessOrElse_(
-      styleSheet);
-};
-
-
-/**
- * Called from createSafeStyleSheetSecurityPrivateDoNotAccessOrElse(). This
- * method exists only so that the compiler can dead code eliminate static
- * fields (like EMPTY) when they're not accessed.
- * @param {string} styleSheet
- * @return {!goog.html.SafeStyleSheet}
- * @private
- */
-goog.html.SafeStyleSheet.prototype.initSecurityPrivateDoNotAccessOrElse_ =
-    function(styleSheet) {
-  this.privateDoNotAccessOrElseSafeStyleSheetWrappedValue_ = styleSheet;
-  return this;
-};
-
-
-/**
  * A SafeStyleSheet instance corresponding to the empty string.
- * @const {!goog.html.SafeStyleSheet}
+ * @const {!SafeStyleSheet}
  */
-goog.html.SafeStyleSheet.EMPTY =
-    goog.html.SafeStyleSheet
-        .createSafeStyleSheetSecurityPrivateDoNotAccessOrElse('');
+SafeStyleSheet.EMPTY =
+    SafeStyleSheet.createSafeStyleSheetSecurityPrivateDoNotAccessOrElse('');
+
+
+exports = SafeStyleSheet;
+
+;return exports;});
 
 //third_party/javascript/closure/labs/useragent/util.js
 /**
@@ -11720,6 +11703,7 @@ goog.require('goog.string.internal');
  * @private
  */
 goog.labs.userAgent.util.getNativeUserAgentString_ = function() {
+  'use strict';
   var navigator = goog.labs.userAgent.util.getNavigator_();
   if (navigator) {
     var userAgent = navigator.userAgent;
@@ -11738,6 +11722,7 @@ goog.labs.userAgent.util.getNativeUserAgentString_ = function() {
  * @private
  */
 goog.labs.userAgent.util.getNavigator_ = function() {
+  'use strict';
   return goog.global.navigator;
 };
 
@@ -11758,6 +11743,7 @@ goog.labs.userAgent.util.userAgent_ =
  * @param {?string=} opt_userAgent The User-Agent override.
  */
 goog.labs.userAgent.util.setUserAgent = function(opt_userAgent) {
+  'use strict';
   goog.labs.userAgent.util.userAgent_ =
       opt_userAgent || goog.labs.userAgent.util.getNativeUserAgentString_();
 };
@@ -11767,6 +11753,7 @@ goog.labs.userAgent.util.setUserAgent = function(opt_userAgent) {
  * @return {string} The user agent string.
  */
 goog.labs.userAgent.util.getUserAgent = function() {
+  'use strict';
   return goog.labs.userAgent.util.userAgent_;
 };
 
@@ -11776,6 +11763,7 @@ goog.labs.userAgent.util.getUserAgent = function() {
  * @return {boolean} Whether the user agent contains the given string.
  */
 goog.labs.userAgent.util.matchUserAgent = function(str) {
+  'use strict';
   var userAgent = goog.labs.userAgent.util.getUserAgent();
   return goog.string.internal.contains(userAgent, str);
 };
@@ -11787,6 +11775,7 @@ goog.labs.userAgent.util.matchUserAgent = function(str) {
  *     case.
  */
 goog.labs.userAgent.util.matchUserAgentIgnoreCase = function(str) {
+  'use strict';
   var userAgent = goog.labs.userAgent.util.getUserAgent();
   return goog.string.internal.caseInsensitiveContains(userAgent, str);
 };
@@ -11799,6 +11788,7 @@ goog.labs.userAgent.util.matchUserAgentIgnoreCase = function(str) {
  *     of the parenthetical.
  */
 goog.labs.userAgent.util.extractVersionTuples = function(userAgent) {
+  'use strict';
   // Matches each section of a user agent string.
   // Example UA:
   // Mozilla/5.0 (iPad; U; CPU OS 3_2_1 like Mac OS X; en-us)
@@ -11867,6 +11857,7 @@ goog.require('goog.string.internal');
  * @private
  */
 goog.labs.userAgent.browser.matchOpera_ = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('Opera');
 };
 
@@ -11876,6 +11867,7 @@ goog.labs.userAgent.browser.matchOpera_ = function() {
  * @private
  */
 goog.labs.userAgent.browser.matchIE_ = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('Trident') ||
       goog.labs.userAgent.util.matchUserAgent('MSIE');
 };
@@ -11887,6 +11879,7 @@ goog.labs.userAgent.browser.matchIE_ = function() {
  * @private
  */
 goog.labs.userAgent.browser.matchEdgeHtml_ = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('Edge');
 };
 
@@ -11896,6 +11889,7 @@ goog.labs.userAgent.browser.matchEdgeHtml_ = function() {
  * @private
  */
 goog.labs.userAgent.browser.matchEdgeChromium_ = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('Edg/');
 };
 
@@ -11905,6 +11899,7 @@ goog.labs.userAgent.browser.matchEdgeChromium_ = function() {
  * @private
  */
 goog.labs.userAgent.browser.matchOperaChromium_ = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('OPR');
 };
 
@@ -11914,6 +11909,7 @@ goog.labs.userAgent.browser.matchOperaChromium_ = function() {
  * @private
  */
 goog.labs.userAgent.browser.matchFirefox_ = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('Firefox') ||
       goog.labs.userAgent.util.matchUserAgent('FxiOS');
 };
@@ -11924,6 +11920,7 @@ goog.labs.userAgent.browser.matchFirefox_ = function() {
  * @private
  */
 goog.labs.userAgent.browser.matchSafari_ = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('Safari') &&
       !(goog.labs.userAgent.browser.matchChrome_() ||
         goog.labs.userAgent.browser.matchCoast_() ||
@@ -11943,6 +11940,7 @@ goog.labs.userAgent.browser.matchSafari_ = function() {
  * @private
  */
 goog.labs.userAgent.browser.matchCoast_ = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('Coast');
 };
 
@@ -11952,6 +11950,7 @@ goog.labs.userAgent.browser.matchCoast_ = function() {
  * @private
  */
 goog.labs.userAgent.browser.matchIosWebview_ = function() {
+  'use strict';
   // iOS Webview does not show up as Chrome or Safari. Also check for Opera's
   // WebKit-based iOS browser, Coast.
   return (goog.labs.userAgent.util.matchUserAgent('iPad') ||
@@ -11970,6 +11969,7 @@ goog.labs.userAgent.browser.matchIosWebview_ = function() {
  * @private
  */
 goog.labs.userAgent.browser.matchChrome_ = function() {
+  'use strict';
   return (goog.labs.userAgent.util.matchUserAgent('Chrome') ||
           goog.labs.userAgent.util.matchUserAgent('CriOS')) &&
       !goog.labs.userAgent.browser.matchEdgeHtml_();
@@ -11981,6 +11981,7 @@ goog.labs.userAgent.browser.matchChrome_ = function() {
  * @private
  */
 goog.labs.userAgent.browser.matchAndroidBrowser_ = function() {
+  'use strict';
   // Android can appear in the user agent string for Chrome on Android.
   // This is not the Android standalone browser if it does.
   return goog.labs.userAgent.util.matchUserAgent('Android') &&
@@ -12068,6 +12069,7 @@ goog.labs.userAgent.browser.isAndroidBrowser =
  * @return {boolean} Whether the user's browser is Silk.
  */
 goog.labs.userAgent.browser.isSilk = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('Silk');
 };
 
@@ -12082,6 +12084,7 @@ goog.labs.userAgent.browser.isSilk = function() {
  *     details.)
  */
 goog.labs.userAgent.browser.getVersion = function() {
+  'use strict';
   var userAgentString = goog.labs.userAgent.util.getUserAgent();
   // Special case IE since IE's version is inside the parenthesis and
   // without the '/'.
@@ -12095,6 +12098,7 @@ goog.labs.userAgent.browser.getVersion = function() {
   // Construct a map for easy lookup.
   var versionMap = {};
   goog.array.forEach(versionTuples, function(tuple) {
+    'use strict';
     // Note that the tuple is of length three, but we only care about the
     // first two.
     var key = tuple[0];
@@ -12146,6 +12150,7 @@ goog.labs.userAgent.browser.getVersion = function() {
  *     given version.
  */
 goog.labs.userAgent.browser.isVersionOrHigher = function(version) {
+  'use strict';
   return goog.string.internal.compareVersions(
              goog.labs.userAgent.browser.getVersion(), version) >= 0;
 };
@@ -12163,6 +12168,7 @@ goog.labs.userAgent.browser.isVersionOrHigher = function(version) {
  * @private
  */
 goog.labs.userAgent.browser.getIEVersion_ = function(userAgent) {
+  'use strict';
   // IE11 may identify itself as MSIE 9.0 or MSIE 10.0 due to an IE 11 upgrade
   // bug. Example UA:
   // Mozilla/5.0 (MSIE 9.0; Windows NT 6.1; WOW64; Trident/7.0; rv:11.0)
@@ -12256,9 +12262,10 @@ goog.require('goog.string.internal');
  *
  * Instances of this type must be created via the factory methods
  * (`goog.html.SafeHtml.create`, `goog.html.SafeHtml.htmlEscape`),
- * etc and not by invoking its constructor.  The constructor intentionally
- * takes no parameters and the type is immutable; hence only a default instance
- * corresponding to the empty string can be obtained via constructor invocation.
+ * etc and not by invoking its constructor. The constructor intentionally takes
+ * an extra parameter that cannot be constructed outside of this file and the
+ * type is immutable; hence only a default instance corresponding to the empty
+ * string can be obtained via constructor invocation.
  *
  * Creating SafeHtml objects HAS SIDE-EFFECTS due to calling Trusted Types Web
  * API.
@@ -12278,35 +12285,33 @@ goog.require('goog.string.internal');
  *
  * @see goog.html.SafeHtml.create
  * @see goog.html.SafeHtml.htmlEscape
- * @constructor
  * @final
  * @struct
  * @implements {goog.i18n.bidi.DirectionalString}
  * @implements {goog.string.TypedString}
  */
-goog.html.SafeHtml = function() {
+goog.html.SafeHtml = class {
   /**
-   * The contained value of this SafeHtml.  The field has a purposely ugly
-   * name to make (non-compiled) code that attempts to directly access this
-   * field stand out.
-   * @private {!TrustedHTML|string}
+   * @param {!TrustedHTML|string} value
+   * @param {?goog.i18n.bidi.Dir} dir
+   * @param {!Object} token package-internal implementation detail.
    */
-  this.privateDoNotAccessOrElseSafeHtmlWrappedValue_ = '';
+  constructor(value, dir, token) {
+    /**
+     * The contained value of this SafeHtml.  The field has a purposely ugly
+     * name to make (non-compiled) code that attempts to directly access this
+     * field stand out.
+     * @private {!TrustedHTML|string}
+     */
+    this.privateDoNotAccessOrElseSafeHtmlWrappedValue_ =
+        (token === goog.html.SafeHtml.CONSTRUCTOR_TOKEN_PRIVATE_) ? value : '';
 
-  /**
-   * A type marker used to implement additional run-time type checking.
-   * @see goog.html.SafeHtml.unwrap
-   * @const {!Object}
-   * @private
-   */
-  this.SAFE_HTML_TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ =
-      goog.html.SafeHtml.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_;
-
-  /**
-   * This SafeHtml's directionality, or null if unknown.
-   * @private {?goog.i18n.bidi.Dir}
-   */
-  this.dir_ = null;
+    /**
+     * This SafeHtml's directionality, or null if unknown.
+     * @private {?goog.i18n.bidi.Dir}
+     */
+    this.dir_ = dir;
+  }
 };
 
 
@@ -12417,17 +12422,13 @@ goog.html.SafeHtml.unwrapTrustedHTML = function(safeHtml) {
   // Specifically, the following checks are performed:
   // 1. The object is an instance of the expected type.
   // 2. The object is not an instance of a subclass.
-  // 3. The object carries a type marker for the expected type. "Faking" an
-  // object requires a reference to the type marker, which has names intended
-  // to stand out in code reviews.
   if (safeHtml instanceof goog.html.SafeHtml &&
-      safeHtml.constructor === goog.html.SafeHtml &&
-      safeHtml.SAFE_HTML_TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ ===
-          goog.html.SafeHtml.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_) {
+      safeHtml.constructor === goog.html.SafeHtml) {
     return safeHtml.privateDoNotAccessOrElseSafeHtmlWrappedValue_;
   } else {
-    goog.asserts.fail('expected object of type SafeHtml, got \'' +
-        safeHtml + '\' of type ' + goog.typeOf(safeHtml));
+    goog.asserts.fail(
+        'expected object of type SafeHtml, got \'' + safeHtml + '\' of type ' +
+        goog.typeOf(safeHtml));
     return 'type_error:SafeHtml';
   }
 };
@@ -12584,8 +12585,8 @@ goog.html.SafeHtml.NOT_ALLOWED_TAG_NAMES_ = goog.object.createSet(
 
 
 /**
- * @typedef {string|number|goog.string.TypedString|
- *     goog.html.SafeStyle.PropertyMap|undefined}
+ * @typedef {string|number|!goog.string.TypedString|
+ *     !goog.html.SafeStyle.PropertyMap|undefined|null}
  */
 goog.html.SafeHtml.AttributeValue;
 
@@ -12638,9 +12639,9 @@ goog.html.SafeHtml.AttributeValue;
  *     HTML-escape and put inside the tag. This must be empty for void tags
  *     like <br>. Array elements are concatenated.
  * @return {!goog.html.SafeHtml} The SafeHtml content with the tag.
- * @throws {Error} If invalid tag name, attribute name, or attribute value is
+ * @throws {!Error} If invalid tag name, attribute name, or attribute value is
  *     provided.
- * @throws {goog.asserts.AssertionError} If content for void tag is provided.
+ * @throws {!goog.asserts.AssertionError} If content for void tag is provided.
  */
 goog.html.SafeHtml.create = function(tagName, opt_attributes, opt_content) {
   goog.html.SafeHtml.verifyTagName(String(tagName));
@@ -12654,7 +12655,7 @@ goog.html.SafeHtml.create = function(tagName, opt_attributes, opt_content) {
  * E.g. STRONG is fine but SCRIPT throws because it changes context. See
  * goog.html.SafeHtml.create for an explanation of allowed tags.
  * @param {string} tagName
- * @throws {Error} If invalid tag name is provided.
+ * @throws {!Error} If invalid tag name is provided.
  * @package
  */
 goog.html.SafeHtml.verifyTagName = function(tagName) {
@@ -12698,7 +12699,7 @@ goog.html.SafeHtml.verifyTagName = function(tagName) {
  *     !Array<!goog.html.SafeHtml.TextOrHtml_>=} opt_content Content to
  *     HTML-escape and put inside the tag. Array elements are concatenated.
  * @return {!goog.html.SafeHtml} The SafeHtml content with the tag.
- * @throws {Error} If invalid tag name, attribute name, or attribute value is
+ * @throws {!Error} If invalid tag name, attribute name, or attribute value is
  *     provided. If opt_attributes contains the src or srcdoc attributes.
  */
 goog.html.SafeHtml.createIframe = function(
@@ -12748,7 +12749,7 @@ goog.html.SafeHtml.createIframe = function(
  *     !Array<!goog.html.SafeHtml.TextOrHtml_>=} opt_content Content to
  *     HTML-escape and put inside the tag. Array elements are concatenated.
  * @return {!goog.html.SafeHtml} The SafeHtml content with the tag.
- * @throws {Error} If invalid tag name, attribute name, or attribute value is
+ * @throws {!Error} If invalid tag name, attribute name, or attribute value is
  *     provided. If opt_attributes contains the src, srcdoc or sandbox
  *     attributes. If browser does not support the sandbox attribute on iframe.
  */
@@ -12798,7 +12799,7 @@ goog.html.SafeHtml.canUseSandboxIframe = function() {
  *     consisting of [a-zA-Z0-9-] are allowed. Value of null or undefined
  *     causes the attribute to be omitted.
  * @return {!goog.html.SafeHtml} The SafeHtml content with the tag.
- * @throws {Error} If invalid attribute name or value is provided. If
+ * @throws {!Error} If invalid attribute name or value is provided. If
  *     opt_attributes contains the src attribute.
  */
 goog.html.SafeHtml.createScriptSrc = function(src, opt_attributes) {
@@ -12831,7 +12832,7 @@ goog.html.SafeHtml.createScriptSrc = function(src, opt_attributes) {
  *     consisting of [a-zA-Z0-9-] are allowed. Value of null or undefined causes
  *     the attribute to be omitted.
  * @return {!goog.html.SafeHtml} The SafeHtml content with the tag.
- * @throws {Error} If invalid attribute name or attribute value is provided. If
+ * @throws {!Error} If invalid attribute name or attribute value is provided. If
  *     opt_attributes contains the language, src, text or type attribute.
  */
 goog.html.SafeHtml.createScript = function(script, opt_attributes) {
@@ -12875,7 +12876,7 @@ goog.html.SafeHtml.createScript = function(script, opt_attributes) {
  *     consisting of [a-zA-Z0-9-] are allowed. Value of null or undefined causes
  *     the attribute to be omitted.
  * @return {!goog.html.SafeHtml} The SafeHtml content with the tag.
- * @throws {Error} If invalid attribute name or attribute value is provided. If
+ * @throws {!Error} If invalid attribute name or attribute value is provided. If
  *     opt_attributes contains the type attribute.
  */
 goog.html.SafeHtml.createStyle = function(styleSheet, opt_attributes) {
@@ -12908,7 +12909,6 @@ goog.html.SafeHtml.createStyle = function(styleSheet, opt_attributes) {
  * @return {!goog.html.SafeHtml} The SafeHtml content with the tag.
  */
 goog.html.SafeHtml.createMetaRefresh = function(url, opt_secs) {
-
   // Note that sanitize is a no-op on SafeUrl.
   var unwrappedUrl = goog.html.SafeUrl.unwrap(goog.html.SafeUrl.sanitize(url));
 
@@ -12930,7 +12930,7 @@ goog.html.SafeHtml.createMetaRefresh = function(url, opt_secs) {
     // URIs, so this could do the wrong thing, but at least it will do the wrong
     // thing in only rare cases.
     if (goog.string.internal.contains(unwrappedUrl, ';')) {
-      unwrappedUrl = "'" + unwrappedUrl.replace(/'/g, '%27') + "'";
+      unwrappedUrl = '\'' + unwrappedUrl.replace(/'/g, '%27') + '\'';
     }
   }
   var attributes = {
@@ -12949,7 +12949,8 @@ goog.html.SafeHtml.createMetaRefresh = function(url, opt_secs) {
  * @param {string} name The attribute name.
  * @param {!goog.html.SafeHtml.AttributeValue} value The attribute value.
  * @return {string} A "name=value" string.
- * @throws {Error} If attribute value is unsafe for the given tag and attribute.
+ * @throws {!Error} If attribute value is unsafe for the given tag and
+ *     attribute.
  * @private
  */
 goog.html.SafeHtml.getAttrNameAndValue_ = function(tagName, name, value) {
@@ -13011,7 +13012,7 @@ goog.html.SafeHtml.getAttrNameAndValue_ = function(tagName, name, value) {
  * @param {!goog.html.SafeHtml.AttributeValue} value It could be SafeStyle or a
  *     map which will be passed to goog.html.SafeStyle.create.
  * @return {string} Unwrapped value.
- * @throws {Error} If string value is given.
+ * @throws {!Error} If string value is given.
  * @private
  */
 goog.html.SafeHtml.getStyleValue_ = function(value) {
@@ -13116,12 +13117,12 @@ goog.html.SafeHtml.concatWithDir = function(dir, var_args) {
 
 
 /**
- * Type marker for the SafeHtml type, used to implement additional run-time
- * type checking.
- * @const {!Object}
- * @private
+ * Token used to ensure that object is created only from this file. No code
+ * outside of this file can access this token.
+ * @private {!Object}
+ * @const
  */
-goog.html.SafeHtml.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ = {};
+goog.html.SafeHtml.CONSTRUCTOR_TOKEN_PRIVATE_ = {};
 
 
 /**
@@ -13135,61 +13136,10 @@ goog.html.SafeHtml.TYPE_MARKER_GOOG_HTML_SECURITY_PRIVATE_ = {};
  */
 goog.html.SafeHtml.createSafeHtmlSecurityPrivateDoNotAccessOrElse = function(
     html, dir) {
-  return new goog.html.SafeHtml().initSecurityPrivateDoNotAccessOrElse_(
-      html, dir);
-};
-
-/**
- * Package-internal utility method to create SafeHtml instances, skipping
- * Trusted Type policy. This method exists only so that the compiler can
- * dead code eliminate static fields (like EMPTY) when they're not accessed.
- * @param {!TrustedHTML|string} trustedHtml
- * @return {!goog.html.SafeHtml} The initialized SafeHtml object.
- * @package
- */
-goog.html.SafeHtml
-    .createSafeHtmlFromTrustedHtmlSecurityPrivateDoNotAccessOrElse = function(
-    trustedHtml) {
-  return new goog.html.SafeHtml()
-      .initSecurityFromTrustedHtmlPrivateDoNotAccessOrElse_(
-          trustedHtml, goog.i18n.bidi.Dir.NEUTRAL);
-};
-
-
-/**
- * Called from createSafeHtmlSecurityPrivateDoNotAccessOrElse(). This
- * method exists only so that the compiler can dead code eliminate static
- * fields (like EMPTY) when they're not accessed.
- * @param {string} html
- * @param {?goog.i18n.bidi.Dir} dir
- * @return {!goog.html.SafeHtml}
- * @private
- */
-goog.html.SafeHtml.prototype.initSecurityPrivateDoNotAccessOrElse_ = function(
-    html, dir) {
   const policy = goog.html.trustedtypes.getPolicyPrivateDoNotAccessOrElse();
-  this.privateDoNotAccessOrElseSafeHtmlWrappedValue_ =
-      policy ? policy.createHTML(html) : html;
-  this.dir_ = dir;
-  return this;
-};
-
-
-/**
- * Called from createSafeHtmlFromTrustedHtmlSecurityPrivateDoNotAccessOrElse().
- * This method exists only so that the compiler can dead code eliminate static
- * fields (like EMPTY) when they're not accessed.
- * @param {!TrustedHTML|string} trustedHtml
- * @param {?goog.i18n.bidi.Dir} dir
- * @return {!goog.html.SafeHtml}
- * @private
- */
-goog.html.SafeHtml.prototype
-    .initSecurityFromTrustedHtmlPrivateDoNotAccessOrElse_ = function(
-    trustedHtml, dir) {
-  this.privateDoNotAccessOrElseSafeHtmlWrappedValue_ = trustedHtml;
-  this.dir_ = dir;
-  return this;
+  const trustedHtml = policy ? policy.createHTML(html) : html;
+  return new goog.html.SafeHtml(
+      trustedHtml, dir, goog.html.SafeHtml.CONSTRUCTOR_TOKEN_PRIVATE_);
 };
 
 
@@ -13201,8 +13151,8 @@ goog.html.SafeHtml.prototype
  * @param {(!goog.html.SafeHtml.TextOrHtml_|
  *     !Array<!goog.html.SafeHtml.TextOrHtml_>)=} opt_content
  * @return {!goog.html.SafeHtml}
- * @throws {Error} If invalid or unsafe attribute name or value is provided.
- * @throws {goog.asserts.AssertionError} If content for void tag is provided.
+ * @throws {!Error} If invalid or unsafe attribute name or value is provided.
+ * @throws {!goog.asserts.AssertionError} If content for void tag is provided.
  * @package
  */
 goog.html.SafeHtml.createSafeHtmlTagSecurityPrivateDoNotAccessOrElse = function(
@@ -13250,7 +13200,8 @@ goog.html.SafeHtml.createSafeHtmlTagSecurityPrivateDoNotAccessOrElse = function(
  * @param {?Object<string, ?goog.html.SafeHtml.AttributeValue>=} opt_attributes
  * @return {string} Returns an empty string if there are no attributes, returns
  *     a string starting with a space otherwise.
- * @throws {Error} If attribute value is unsafe for the given tag and attribute.
+ * @throws {!Error} If attribute value is unsafe for the given tag and
+ *     attribute.
  * @package
  */
 goog.html.SafeHtml.stringifyAttributes = function(tagName, opt_attributes) {
@@ -13284,7 +13235,7 @@ goog.html.SafeHtml.stringifyAttributes = function(tagName, opt_attributes) {
  * @param {?Object<string, ?goog.html.SafeHtml.AttributeValue>=} opt_attributes
  *     Optional attributes passed to create*().
  * @return {!Object<string, ?goog.html.SafeHtml.AttributeValue>}
- * @throws {Error} If opt_attributes contains an attribute with the same name
+ * @throws {!Error} If opt_attributes contains an attribute with the same name
  *     as an attribute in fixedAttributes.
  * @package
  */
@@ -13338,9 +13289,6 @@ goog.html.SafeHtml.DOCTYPE_HTML = /** @type {!goog.html.SafeHtml} */ ({
   // NOTE: this compiles to nothing, but hides the possible side effect of
   // SafeHtml creation (due to calling trustedTypes.createPolicy) from the
   // compiler so that the entire call can be removed if the result is not used.
-  // MOE:begin_strip
-  // TODO(b/155299094): Refactor after adding compiler support.
-  // MOE:end_strip
   valueOf: function() {
     return goog.html.SafeHtml.createSafeHtmlSecurityPrivateDoNotAccessOrElse(
         '<!DOCTYPE html>', goog.i18n.bidi.Dir.NEUTRAL);
@@ -13351,24 +13299,9 @@ goog.html.SafeHtml.DOCTYPE_HTML = /** @type {!goog.html.SafeHtml} */ ({
  * A SafeHtml instance corresponding to the empty string.
  * @const {!goog.html.SafeHtml}
  */
-goog.html.SafeHtml.EMPTY =
-    goog.html.SafeHtml
-        .createSafeHtmlFromTrustedHtmlSecurityPrivateDoNotAccessOrElse(
-            // NOTE: This constant uses a different builder function, that
-            // accepts TrustedHTML to avoid creating a Trusted Types policy.
-            // Using trustedTypes.emptyHTML if available, and an empty string if
-            // not. This typecast is safe - if trustedTypes are not available,
-            // policy creation would not happen anyway, and DOM sinks accept
-            // string values.
-            // MOE:begin_strip
-            // TODO(b/155299094): Refactor after adding compiler support.
-            // Check emptyHTML existence to workaround
-            // https://crbug.com/1081632.
-            // MOE:end_strip
-            goog.global.trustedTypes && goog.global.trustedTypes.emptyHTML ?
-                goog.global.trustedTypes.emptyHTML :
-                '');
-
+goog.html.SafeHtml.EMPTY = new goog.html.SafeHtml(
+    (goog.global.trustedTypes && goog.global.trustedTypes.emptyHTML) || '',
+    goog.i18n.bidi.Dir.NEUTRAL, goog.html.SafeHtml.CONSTRUCTOR_TOKEN_PRIVATE_);
 
 /**
  * A SafeHtml instance corresponding to the <br> tag.
@@ -13378,9 +13311,6 @@ goog.html.SafeHtml.BR = /** @type {!goog.html.SafeHtml} */ ({
   // NOTE: this compiles to nothing, but hides the possible side effect of
   // SafeHtml creation (due to calling trustedTypes.createPolicy) from the
   // compiler so that the entire call can be removed if the result is not used.
-  // MOE:begin_strip
-  // TODO(b/155299094): Refactor after adding compiler support.
-  // MOE:end_strip
   valueOf: function() {
     return goog.html.SafeHtml.createSafeHtmlSecurityPrivateDoNotAccessOrElse(
         '<br>', goog.i18n.bidi.Dir.NEUTRAL);
@@ -13405,15 +13335,7 @@ goog.html.SafeHtml.BR = /** @type {!goog.html.SafeHtml} */ ({
  * prefer to create instances of goog.html types using inherently safe builders
  * or template systems.
  *
- * MOE:begin_intracomment_strip
- * See http://go/safehtml-unchecked for guidelines on using these functions.
- * MOE:end_intracomment_strip
  *
- * MOE:begin_intracomment_strip
- * MAINTAINERS: Use of these functions is detected with a Tricorder analyzer.
- * If adding functions here also add them to analyzer's list at
- * j/c/g/devtools/staticanalysis/pipeline/analyzers/shared/SafeHtmlAnalyzers.java.
- * MOE:end_intracomment_strip
  */
 
 
@@ -13428,6 +13350,7 @@ goog.require('goog.html.SafeUrl');
 goog.require('goog.html.TrustedResourceUrl');
 goog.require('goog.string.Const');
 goog.require('goog.string.internal');
+goog.requireType('goog.i18n.bidi.Dir');
 
 
 /**
@@ -13438,9 +13361,6 @@ goog.require('goog.string.internal');
  * that the value of `html` satisfies the SafeHtml type contract in all
  * possible program states.
  *
- * MOE:begin_intracomment_strip
- * See http://go/safehtml-unchecked for guidelines on using these functions.
- * MOE:end_intracomment_strip
  *
  * @param {!goog.string.Const} justification A constant string explaining why
  *     this use of this method is safe. May include a security review ticket
@@ -13476,9 +13396,6 @@ goog.html.uncheckedconversions.safeHtmlFromStringKnownToSatisfyTypeContract =
  * that the value of `script` satisfies the SafeScript type contract in
  * all possible program states.
  *
- * MOE:begin_intracomment_strip
- * See http://go/safehtml-unchecked for guidelines on using these functions.
- * MOE:end_intracomment_strip
  *
  * @param {!goog.string.Const} justification A constant string explaining why
  *     this use of this method is safe. May include a security review ticket
@@ -13510,9 +13427,6 @@ goog.html.uncheckedconversions.safeScriptFromStringKnownToSatisfyTypeContract =
  * that the value of `style` satisfies the SafeStyle type contract in all
  * possible program states.
  *
- * MOE:begin_intracomment_strip
- * See http://go/safehtml-unchecked for guidelines on using these functions.
- * MOE:end_intracomment_strip
  *
  * @param {!goog.string.Const} justification A constant string explaining why
  *     this use of this method is safe. May include a security review ticket
@@ -13544,9 +13458,6 @@ goog.html.uncheckedconversions.safeStyleFromStringKnownToSatisfyTypeContract =
  * that the value of `styleSheet` satisfies the SafeStyleSheet type
  * contract in all possible program states.
  *
- * MOE:begin_intracomment_strip
- * See http://go/safehtml-unchecked for guidelines on using these functions.
- * MOE:end_intracomment_strip
  *
  * @param {!goog.string.Const} justification A constant string explaining why
  *     this use of this method is safe. May include a security review ticket
@@ -13579,9 +13490,6 @@ goog.html.uncheckedconversions
  * that the value of `url` satisfies the SafeUrl type contract in all
  * possible program states.
  *
- * MOE:begin_intracomment_strip
- * See http://go/safehtml-unchecked for guidelines on using these functions.
- * MOE:end_intracomment_strip
  *
  * @param {!goog.string.Const} justification A constant string explaining why
  *     this use of this method is safe. May include a security review ticket
@@ -13612,9 +13520,6 @@ goog.html.uncheckedconversions.safeUrlFromStringKnownToSatisfyTypeContract =
  * that the value of `url` satisfies the TrustedResourceUrl type contract
  * in all possible program states.
  *
- * MOE:begin_intracomment_strip
- * See http://go/safehtml-unchecked for guidelines on using these functions.
- * MOE:end_intracomment_strip
  *
  * @param {!goog.string.Const} justification A constant string explaining why
  *     this use of this method is safe. May include a security review ticket
@@ -14522,6 +14427,15 @@ goog.functions.rateLimit = function(f, interval, opt_scope) {
   });
 };
 
+/**
+ * Returns true if the specified value is a function.
+ * @param {*} val Variable to test.
+ * @return {boolean} Whether variable is a function.
+ */
+goog.functions.isFunction = (val) => {
+  return typeof val === 'function';
+};
+
 //third_party/javascript/closure/dom/safe.js
 /**
  * @license
@@ -14649,7 +14563,8 @@ goog.dom.safe.isInnerHtmlCleanupRecursive_ =
 /**
  * Assigns HTML to an element's innerHTML property. Helper to use only here and
  * in soy.js.
- * @param {?Element} elem The element whose innerHTML is to be assigned to.
+ * @param {?Element|?ShadowRoot} elem The element whose innerHTML is to be
+ *     assigned to.
  * @param {!goog.html.SafeHtml} html
  */
 goog.dom.safe.unsafeSetInnerHtmlDoNotUseOrElse = function(elem, html) {
@@ -14665,13 +14580,14 @@ goog.dom.safe.unsafeSetInnerHtmlDoNotUseOrElse = function(elem, html) {
 
 /**
  * Assigns known-safe HTML to an element's innerHTML property.
- * @param {!Element} elem The element whose innerHTML is to be assigned to.
+ * @param {!Element|!ShadowRoot} elem The element whose innerHTML is to be
+ *     assigned to.
  * @param {!goog.html.SafeHtml} html The known-safe HTML to assign.
  * @throws {Error} If called with one of these tags: math, script, style, svg,
  *     template.
  */
 goog.dom.safe.setInnerHtml = function(elem, html) {
-  if (goog.asserts.ENABLE_ASSERTS) {
+  if (goog.asserts.ENABLE_ASSERTS && elem.tagName) {
     var tagName = elem.tagName.toUpperCase();
     if (goog.dom.safe.SET_INNER_HTML_DISALLOWED_TAGS_[tagName]) {
       throw new Error(
@@ -15442,6 +15358,7 @@ goog.string.caseInsensitiveEquals = goog.string.internal.caseInsensitiveEquals;
  *     {@code %s} has been replaced an argument from `var_args`.
  */
 goog.string.subs = function(str, var_args) {
+  'use strict';
   var splitParts = str.split('%s');
   var returnString = '';
 
@@ -15464,6 +15381,7 @@ goog.string.subs = function(str, var_args) {
  * @return {string} A copy of `str` with collapsed whitespace.
  */
 goog.string.collapseWhitespace = function(str) {
+  'use strict';
   // Since IE doesn't include non-breaking-space (0xa0) in their \s character
   // class (as required by section 7.2 of the ECMAScript spec), we explicitly
   // include it in the regexp to enforce consistent cross-browser behavior.
@@ -15485,6 +15403,7 @@ goog.string.isEmptyOrWhitespace = goog.string.internal.isEmptyOrWhitespace;
  * @return {boolean} Whether `str` is empty.
  */
 goog.string.isEmptyString = function(str) {
+  'use strict';
   return str.length == 0;
 };
 
@@ -15508,6 +15427,7 @@ goog.string.isEmpty = goog.string.isEmptyOrWhitespace;
  *     instead.
  */
 goog.string.isEmptyOrWhitespaceSafe = function(str) {
+  'use strict';
   return goog.string.isEmptyOrWhitespace(goog.string.makeSafe(str));
 };
 
@@ -15529,6 +15449,7 @@ goog.string.isEmptySafe = goog.string.isEmptyOrWhitespaceSafe;
  * @return {boolean} Whether the string is all breaking whitespace.
  */
 goog.string.isBreakingWhitespace = function(str) {
+  'use strict';
   return !/[^\t\n\r ]/.test(str);
 };
 
@@ -15539,6 +15460,7 @@ goog.string.isBreakingWhitespace = function(str) {
  * @return {boolean} True if `str` consists entirely of letters.
  */
 goog.string.isAlpha = function(str) {
+  'use strict';
   return !/[^a-zA-Z]/.test(str);
 };
 
@@ -15550,6 +15472,7 @@ goog.string.isAlpha = function(str) {
  * @return {boolean} True if `str` is numeric.
  */
 goog.string.isNumeric = function(str) {
+  'use strict';
   return !/[^0-9]/.test(str);
 };
 
@@ -15560,6 +15483,7 @@ goog.string.isNumeric = function(str) {
  * @return {boolean} True if `str` is alphanumeric.
  */
 goog.string.isAlphaNumeric = function(str) {
+  'use strict';
   return !/[^a-zA-Z0-9]/.test(str);
 };
 
@@ -15570,6 +15494,7 @@ goog.string.isAlphaNumeric = function(str) {
  * @return {boolean} True if `ch` is a space.
  */
 goog.string.isSpace = function(ch) {
+  'use strict';
   return ch == ' ';
 };
 
@@ -15580,6 +15505,7 @@ goog.string.isSpace = function(ch) {
  * @return {boolean} True if `ch` is a valid unicode character.
  */
 goog.string.isUnicodeChar = function(ch) {
+  'use strict';
   return ch.length == 1 && ch >= ' ' && ch <= '~' ||
       ch >= '\u0080' && ch <= '\uFFFD';
 };
@@ -15592,6 +15518,7 @@ goog.string.isUnicodeChar = function(ch) {
  * @return {string} A copy of `str` stripped of newlines.
  */
 goog.string.stripNewlines = function(str) {
+  'use strict';
   return str.replace(/(\r\n|\r|\n)+/g, ' ');
 };
 
@@ -15602,6 +15529,7 @@ goog.string.stripNewlines = function(str) {
  * @return {string} `str` A copy of {@code} with canonicalized newlines.
  */
 goog.string.canonicalizeNewlines = function(str) {
+  'use strict';
   return str.replace(/(\r\n|\r|\n)/g, '\n');
 };
 
@@ -15613,6 +15541,7 @@ goog.string.canonicalizeNewlines = function(str) {
  * @return {string} A copy of `str` with all whitespace normalized.
  */
 goog.string.normalizeWhitespace = function(str) {
+  'use strict';
   return str.replace(/\xa0|\s/g, ' ');
 };
 
@@ -15625,6 +15554,7 @@ goog.string.normalizeWhitespace = function(str) {
  *    replaced with a single space.
  */
 goog.string.normalizeSpaces = function(str) {
+  'use strict';
   return str.replace(/\xa0|[ \t]+/g, ' ');
 };
 
@@ -15637,6 +15567,7 @@ goog.string.normalizeSpaces = function(str) {
  * @return {string} Copy of the string with normalized breaking spaces.
  */
 goog.string.collapseBreakingSpaces = function(str) {
+  'use strict';
   return str.replace(/[\t\r\n ]+/g, ' ')
       .replace(/^[\t\r\n ]+|[\t\r\n ]+$/g, '');
 };
@@ -15656,6 +15587,7 @@ goog.string.trim = goog.string.internal.trim;
  * @return {string} A trimmed copy of `str`.
  */
 goog.string.trimLeft = function(str) {
+  'use strict';
   // Since IE doesn't include non-breaking-space (0xa0) in their \s character
   // class (as required by section 7.2 of the ECMAScript spec), we explicitly
   // include it in the regexp to enforce consistent cross-browser behavior.
@@ -15669,6 +15601,7 @@ goog.string.trimLeft = function(str) {
  * @return {string} A trimmed copy of `str`.
  */
 goog.string.trimRight = function(str) {
+  'use strict';
   // Since IE doesn't include non-breaking-space (0xa0) in their \s character
   // class (as required by section 7.2 of the ECMAScript spec), we explicitly
   // include it in the regexp to enforce consistent cross-browser behavior.
@@ -15703,6 +15636,7 @@ goog.string.caseInsensitiveCompare =
  * @private
  */
 goog.string.numberAwareCompare_ = function(str1, str2, tokenizerRegExp) {
+  'use strict';
   if (str1 == str2) {
     return 0;
   }
@@ -15769,6 +15703,7 @@ goog.string.numberAwareCompare_ = function(str1, str2, tokenizerRegExp) {
  *     0 if str1 > str2.
  */
 goog.string.intAwareCompare = function(str1, str2) {
+  'use strict';
   return goog.string.numberAwareCompare_(str1, str2, /\d+|\D+/g);
 };
 
@@ -15786,6 +15721,7 @@ goog.string.intAwareCompare = function(str1, str2) {
  *     0 if str1 > str2.
  */
 goog.string.floatAwareCompare = function(str1, str2) {
+  'use strict';
   return goog.string.numberAwareCompare_(str1, str2, /\d+|\.\d+|\D+/g);
 };
 
@@ -15808,6 +15744,7 @@ goog.string.numerateCompare = goog.string.floatAwareCompare;
  *     of URLs *will* be encoded.
  */
 goog.string.urlEncode = function(str) {
+  'use strict';
   return encodeURIComponent(String(str));
 };
 
@@ -15819,6 +15756,7 @@ goog.string.urlEncode = function(str) {
  * @return {string} The decoded `str`.
  */
 goog.string.urlDecode = function(str) {
+  'use strict';
   return decodeURIComponent(str.replace(/\+/g, ' '));
 };
 
@@ -15877,6 +15815,7 @@ goog.string.newLineToBr = goog.string.internal.newLineToBr;
  * @return {string} An escaped copy of `str`.
  */
 goog.string.htmlEscape = function(str, opt_isLikelyToContainHtmlChars) {
+  'use strict';
   str = goog.string.internal.htmlEscape(str, opt_isLikelyToContainHtmlChars);
   if (goog.string.DETECT_DOUBLE_ESCAPING) {
     str = str.replace(goog.string.E_RE_, '&#101;');
@@ -15900,6 +15839,7 @@ goog.string.E_RE_ = /e/g;
  * @return {string} An unescaped copy of `str`.
  */
 goog.string.unescapeEntities = function(str) {
+  'use strict';
   if (goog.string.contains(str, '&')) {
     // We are careful not to use a DOM if we do not have one or we explicitly
     // requested non-DOM html unescaping.
@@ -15923,6 +15863,7 @@ goog.string.unescapeEntities = function(str) {
  * @return {string} An unescaped copy of `str`.
  */
 goog.string.unescapeEntitiesWithDocument = function(str, document) {
+  'use strict';
   if (goog.string.contains(str, '&')) {
     return goog.string.unescapeEntitiesUsingDom_(str, document);
   }
@@ -15941,6 +15882,7 @@ goog.string.unescapeEntitiesWithDocument = function(str, document) {
  * @return {string} The unescaped `str` string.
  */
 goog.string.unescapeEntitiesUsingDom_ = function(str, opt_document) {
+  'use strict';
   /** @type {!Object<string, string>} */
   var seen = {'&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"'};
   /** @type {!Element} */
@@ -15956,6 +15898,7 @@ goog.string.unescapeEntitiesUsingDom_ = function(str, opt_document) {
   // open angle bracket, there is no chance of XSS from the innerHTML use.
   // Since no whitespace is passed to innerHTML, whitespace is preserved.
   return str.replace(goog.string.HTML_ENTITY_PATTERN_, function(s, entity) {
+    'use strict';
     // Check for cached entity.
     var value = seen[s];
     if (value) {
@@ -15994,7 +15937,9 @@ goog.string.unescapeEntitiesUsingDom_ = function(str, opt_document) {
  * @return {string} An unescaped copy of `str`.
  */
 goog.string.unescapePureXmlEntities_ = function(str) {
+  'use strict';
   return str.replace(/&([^;]+);/g, function(s, entity) {
+    'use strict';
     switch (entity) {
       case 'amp':
         return '&';
@@ -16036,6 +15981,7 @@ goog.string.HTML_ENTITY_PATTERN_ = /&([^;\s<&]+);?/g;
  * @return {string} An escaped copy of `str`.
  */
 goog.string.whitespaceEscape = function(str, opt_xml) {
+  'use strict';
   // This doesn't use goog.string.preserveSpaces for backwards compatibility.
   return goog.string.newLineToBr(str.replace(/  /g, ' &#160;'), opt_xml);
 };
@@ -16048,6 +15994,7 @@ goog.string.whitespaceEscape = function(str, opt_xml) {
  * @return {string} A copy of `str` with preserved whitespace.
  */
 goog.string.preserveSpaces = function(str) {
+  'use strict';
   return str.replace(/(^|[\n ]) /g, '$1' + goog.string.Unicode.NBSP);
 };
 
@@ -16068,6 +16015,7 @@ goog.string.preserveSpaces = function(str) {
  * @return {string} A copy of `str` without the quotes.
  */
 goog.string.stripQuotes = function(str, quoteChars) {
+  'use strict';
   var length = quoteChars.length;
   for (var i = 0; i < length; i++) {
     var quoteChar = length == 1 ? quoteChars : quoteChars.charAt(i);
@@ -16090,6 +16038,7 @@ goog.string.stripQuotes = function(str, quoteChars) {
  * @return {string} The truncated `str` string.
  */
 goog.string.truncate = function(str, chars, opt_protectEscapedCharacters) {
+  'use strict';
   if (opt_protectEscapedCharacters) {
     str = goog.string.unescapeEntities(str);
   }
@@ -16120,6 +16069,7 @@ goog.string.truncate = function(str, chars, opt_protectEscapedCharacters) {
  */
 goog.string.truncateMiddle = function(
     str, chars, opt_protectEscapedCharacters, opt_trailingChars) {
+  'use strict';
   if (opt_protectEscapedCharacters) {
     str = goog.string.unescapeEntities(str);
   }
@@ -16187,6 +16137,7 @@ goog.string.jsEscapeCache_ = {
  * @return {string} A copy of `s` surrounded by double quotes.
  */
 goog.string.quote = function(s) {
+  'use strict';
   s = String(s);
   var sb = ['"'];
   for (var i = 0; i < s.length; i++) {
@@ -16206,6 +16157,7 @@ goog.string.quote = function(s) {
  * @return {string} An escaped string representing `str`.
  */
 goog.string.escapeString = function(str) {
+  'use strict';
   var sb = [];
   for (var i = 0; i < str.length; i++) {
     sb[i] = goog.string.escapeChar(str.charAt(i));
@@ -16221,6 +16173,7 @@ goog.string.escapeString = function(str) {
  * @return {string} An escaped string representing `c`.
  */
 goog.string.escapeChar = function(c) {
+  'use strict';
   if (c in goog.string.jsEscapeCache_) {
     return goog.string.jsEscapeCache_[c];
   }
@@ -16280,6 +16233,7 @@ goog.string.caseInsensitiveContains =
  * @return {number} Number of occurrences of ss in s.
  */
 goog.string.countOf = function(s, ss) {
+  'use strict';
   return s && ss ? s.split(ss).length - 1 : 0;
 };
 
@@ -16294,6 +16248,7 @@ goog.string.countOf = function(s, ss) {
  *     string if nothing is removed or the input is invalid.
  */
 goog.string.removeAt = function(s, index, stringLength) {
+  'use strict';
   var resultStr = s;
   // If the index is greater or equal to 0 then remove substring
   if (index >= 0 && index < s.length && stringLength > 0) {
@@ -16312,6 +16267,7 @@ goog.string.removeAt = function(s, index, stringLength) {
  *     full string if nothing is removed.
  */
 goog.string.remove = function(str, substr) {
+  'use strict';
   return str.replace(substr, '');
 };
 
@@ -16324,6 +16280,7 @@ goog.string.remove = function(str, substr) {
  *      string if nothing is removed.
  */
 goog.string.removeAll = function(s, ss) {
+  'use strict';
   var re = new RegExp(goog.string.regExpEscape(ss), 'g');
   return s.replace(re, '');
 };
@@ -16338,6 +16295,7 @@ goog.string.removeAll = function(s, ss) {
  *      `replacement` or the original string if nothing is replaced.
  */
 goog.string.replaceAll = function(s, ss, replacement) {
+  'use strict';
   var re = new RegExp(goog.string.regExpEscape(ss), 'g');
   return s.replace(re, replacement.replace(/\$/g, '$$$$'));
 };
@@ -16350,6 +16308,7 @@ goog.string.replaceAll = function(s, ss, replacement) {
  * @return {string} A RegExp safe, escaped copy of `s`.
  */
 goog.string.regExpEscape = function(s) {
+  'use strict';
   return String(s)
       .replace(/([-()\[\]{}+?*.$\^|,:#<!\\])/g, '\\$1')
       .replace(/\x08/g, '\\x08');
@@ -16364,9 +16323,11 @@ goog.string.regExpEscape = function(s) {
  *     `string`.
  */
 goog.string.repeat = (String.prototype.repeat) ? function(string, length) {
+  'use strict';
   // The native method is over 100 times faster than the alternative.
   return string.repeat(length);
 } : function(string, length) {
+  'use strict';
   return new Array(length + 1).join(string);
 };
 
@@ -16385,6 +16346,7 @@ goog.string.repeat = (String.prototype.repeat) ? function(string, length) {
  * @return {string} `num` as a string with the given options.
  */
 goog.string.padNumber = function(num, length, opt_precision) {
+  'use strict';
   var s =
       (opt_precision !== undefined) ? num.toFixed(opt_precision) : String(num);
   var index = s.indexOf('.');
@@ -16403,6 +16365,7 @@ goog.string.padNumber = function(num, length, opt_precision) {
  * @return {string} A string representation of the `obj`.
  */
 goog.string.makeSafe = function(obj) {
+  'use strict';
   return obj == null ? '' : String(obj);
 };
 
@@ -16422,6 +16385,7 @@ goog.string.makeSafe = function(obj) {
  * @return {string} The concatenation of `var_args`.
  */
 goog.string.buildString = function(var_args) {
+  'use strict';
   return Array.prototype.join.call(arguments, '');
 };
 
@@ -16436,6 +16400,7 @@ goog.string.buildString = function(var_args) {
  * @return {string} A random string, e.g. sn1s7vb4gcic.
  */
 goog.string.getRandomString = function() {
+  'use strict';
   var x = 2147483648;
   return Math.floor(Math.random() * x).toString(36) +
       Math.abs(Math.floor(Math.random() * x) ^ goog.now()).toString(36);
@@ -16467,6 +16432,7 @@ goog.string.compareVersions = goog.string.internal.compareVersions;
  *  (exclusive). The empty string returns 0.
  */
 goog.string.hashCode = function(str) {
+  'use strict';
   var result = 0;
   for (var i = 0; i < str.length; ++i) {
     // Normalize to 4 byte range, 0 ... 2^32.
@@ -16490,6 +16456,7 @@ goog.string.uniqueStringCounter_ = Math.random() * 0x80000000 | 0;
  * @return {string} A unique id.
  */
 goog.string.createUniqueString = function() {
+  'use strict';
   return 'goog_' + goog.string.uniqueStringCounter_++;
 };
 
@@ -16506,6 +16473,7 @@ goog.string.createUniqueString = function() {
  * @return {number} The number the supplied string represents, or NaN.
  */
 goog.string.toNumber = function(str) {
+  'use strict';
   var num = Number(str);
   if (num == 0 && goog.string.isEmptyOrWhitespace(str)) {
     return NaN;
@@ -16524,6 +16492,7 @@ goog.string.toNumber = function(str) {
  * @return {boolean} Whether the string is lower camel case.
  */
 goog.string.isLowerCamelCase = function(str) {
+  'use strict';
   return /^[a-z]+([A-Z][a-z]*)*$/.test(str);
 };
 
@@ -16538,6 +16507,7 @@ goog.string.isLowerCamelCase = function(str) {
  * @return {boolean} Whether the string is upper camel case.
  */
 goog.string.isUpperCamelCase = function(str) {
+  'use strict';
   return /^([A-Z][a-z]*)+$/.test(str);
 };
 
@@ -16550,7 +16520,9 @@ goog.string.isUpperCamelCase = function(str) {
  * @return {string} The string in camelCase form.
  */
 goog.string.toCamelCase = function(str) {
+  'use strict';
   return String(str).replace(/\-([a-z])/g, function(all, match) {
+    'use strict';
     return match.toUpperCase();
   });
 };
@@ -16564,6 +16536,7 @@ goog.string.toCamelCase = function(str) {
  * @return {string} The string in selector-case form.
  */
 goog.string.toSelectorCase = function(str) {
+  'use strict';
   return String(str).replace(/([A-Z])/g, '-$1').toLowerCase();
 };
 
@@ -16600,6 +16573,7 @@ goog.string.toSelectorCase = function(str) {
  * @return {string} String value in TitleCase form.
  */
 goog.string.toTitleCase = function(str, opt_delimiters) {
+  'use strict';
   var delimiters = (typeof opt_delimiters === 'string') ?
       goog.string.regExpEscape(opt_delimiters) :
       '\\s';
@@ -16610,6 +16584,7 @@ goog.string.toTitleCase = function(str, opt_delimiters) {
 
   var regexp = new RegExp('(^' + delimiters + ')([a-z])', 'g');
   return str.replace(regexp, function(all, p1, p2) {
+    'use strict';
     return p1 + p2.toUpperCase();
   });
 };
@@ -16629,6 +16604,7 @@ goog.string.toTitleCase = function(str, opt_delimiters) {
  * @return {string} String value with first letter in uppercase.
  */
 goog.string.capitalize = function(str) {
+  'use strict';
   return String(str.charAt(0)).toUpperCase() +
       String(str.substr(1)).toLowerCase();
 };
@@ -16652,6 +16628,7 @@ goog.string.capitalize = function(str) {
  *     will be NaN.
  */
 goog.string.parseInt = function(value) {
+  'use strict';
   // Force finite numbers to strings.
   if (isFinite(value)) {
     value = String(value);
@@ -16685,6 +16662,7 @@ goog.string.parseInt = function(value) {
  * @return {!Array<string>} The string, split.
  */
 goog.string.splitLimit = function(str, separator, limit) {
+  'use strict';
   var parts = str.split(separator);
   var returnVal = [];
 
@@ -16718,6 +16696,7 @@ goog.string.splitLimit = function(str, separator, limit) {
  * @return {string} The last part of the string with respect to the separators
  */
 goog.string.lastComponent = function(str, separators) {
+  'use strict';
   if (!separators) {
     return str;
   } else if (typeof separators == 'string') {
@@ -16748,6 +16727,7 @@ goog.string.lastComponent = function(str, separators) {
  * @return {number} The edit distance between the two strings.
  */
 goog.string.editDistance = function(a, b) {
+  'use strict';
   var v0 = [];
   var v1 = [];
 
@@ -20370,7 +20350,7 @@ goog.uri.utils.appendPath = function(baseUri, path) {
   if (goog.string.startsWith(path, '/')) {
     path = path.substr(1);
   }
-  return goog.string.buildString(baseUri, '/', path);
+  return '' + baseUri + '/' + path;
 };
 
 
@@ -22144,8 +22124,7 @@ goog.soy.data.SanitizedHtml.prototype.contentKind =
  */
 goog.soy.data.SanitizedHtml.isCompatibleWith = function(value) {
   return typeof value === 'string' ||
-      value instanceof goog.soy.data.SanitizedHtml ||
-      value instanceof goog.html.SafeHtml;
+      goog.soy.data.SanitizedHtml.isCompatibleWithStrict(value);
 };
 
 
@@ -22192,8 +22171,7 @@ goog.soy.data.SanitizedJs.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
  */
 goog.soy.data.SanitizedJs.isCompatibleWith = function(value) {
   return typeof value === 'string' ||
-      value instanceof goog.soy.data.SanitizedJs ||
-      value instanceof goog.html.SafeScript;
+      goog.soy.data.SanitizedJs.isCompatibleWithStrict(value);
 };
 
 /**
@@ -22204,7 +22182,7 @@ goog.soy.data.SanitizedJs.isCompatibleWith = function(value) {
  */
 goog.soy.data.SanitizedJs.isCompatibleWithStrict = function(value) {
   return value instanceof goog.soy.data.SanitizedJs ||
-      value instanceof goog.html.SafeHtml;
+      value instanceof goog.html.SafeScript;
 };
 
 
@@ -22238,10 +22216,7 @@ goog.soy.data.SanitizedUri.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
  */
 goog.soy.data.SanitizedUri.isCompatibleWith = function(value) {
   return typeof value === 'string' ||
-      value instanceof goog.soy.data.SanitizedUri ||
-      value instanceof goog.html.SafeUrl ||
-      value instanceof goog.html.TrustedResourceUrl ||
-      value instanceof goog.Uri;
+      goog.soy.data.SanitizedUri.isCompatibleWithStrict(value);
 };
 
 
@@ -22309,8 +22284,7 @@ goog.soy.data.SanitizedTrustedResourceUri.prototype.toTrustedResourceUrl =
  */
 goog.soy.data.SanitizedTrustedResourceUri.isCompatibleWith = function(value) {
   return typeof value === 'string' ||
-      value instanceof goog.soy.data.SanitizedTrustedResourceUri ||
-      value instanceof goog.html.TrustedResourceUrl;
+      goog.soy.data.SanitizedTrustedResourceUri.isCompatibleWithStrict(value);
 };
 
 
@@ -22361,7 +22335,7 @@ goog.soy.data.SanitizedHtmlAttribute.prototype.contentDir =
  */
 goog.soy.data.SanitizedHtmlAttribute.isCompatibleWith = function(value) {
   return typeof value === 'string' ||
-      value instanceof goog.soy.data.SanitizedHtmlAttribute;
+      goog.soy.data.SanitizedHtmlAttribute.isCompatibleWithStrict(value);
 };
 
 
@@ -22408,9 +22382,7 @@ goog.soy.data.SanitizedCss.prototype.contentDir = goog.i18n.bidi.Dir.LTR;
  */
 goog.soy.data.SanitizedCss.isCompatibleWith = function(value) {
   return typeof value === 'string' ||
-      value instanceof goog.soy.data.SanitizedCss ||
-      value instanceof goog.html.SafeStyle ||
-      value instanceof goog.html.SafeStyleSheet;
+      goog.soy.data.SanitizedCss.isCompatibleWithStrict(value);
 };
 
 
@@ -30783,6 +30755,7 @@ goog.i18n.currency.tier2Enabled_ = false;
  * @return {boolean} If the currency is available.
  */
 goog.i18n.currency.isAvailable = function(currencyCode) {
+  'use strict';
   return currencyCode in goog.i18n.currency.CurrencyInfo;
 };
 
@@ -30793,6 +30766,7 @@ goog.i18n.currency.isAvailable = function(currencyCode) {
  * before any other functions in this namespace.
  */
 goog.i18n.currency.addTier2Support = function() {
+  'use strict';
   // Protection from executing this these again and again.
   if (!goog.i18n.currency.tier2Enabled_) {
     for (const key in goog.i18n.currency.CurrencyInfoTier2) {
@@ -30819,6 +30793,7 @@ goog.i18n.currency.addTier2Support = function() {
  *   {@link goog.i18n.NumberFormat.CurrencyStyle.GLOBAL}
  */
 goog.i18n.currency.getGlobalCurrencyPattern = function(currencyCode) {
+  'use strict';
   const info = goog.i18n.currency.CurrencyInfo[currencyCode];
   const patternNum = info[0];
   if (currencyCode == info[1]) {
@@ -30837,6 +30812,7 @@ goog.i18n.currency.getGlobalCurrencyPattern = function(currencyCode) {
  * @return {string} Global currency sign for given currency.
  */
 goog.i18n.currency.getGlobalCurrencySign = function(currencyCode) {
+  'use strict';
   const info = goog.i18n.currency.CurrencyInfo[currencyCode];
   return (currencyCode == info[1]) ? currencyCode :
                                      currencyCode + ' ' + info[1];
@@ -30854,6 +30830,7 @@ goog.i18n.currency.getGlobalCurrencySign = function(currencyCode) {
  * @return {string} Global currency sign for given currency.
  */
 goog.i18n.currency.getGlobalCurrencySignWithFallback = function(currencyCode) {
+  'use strict';
   var info = goog.i18n.currency.CurrencyInfo[currencyCode];
   if (!info) {
     return currencyCode;
@@ -30876,6 +30853,7 @@ goog.i18n.currency.getGlobalCurrencySignWithFallback = function(currencyCode) {
  *   {@link goog.i18n.NumberFormat.CurrencyStyle.LOCAL}
  */
 goog.i18n.currency.getLocalCurrencyPattern = function(currencyCode) {
+  'use strict';
   const info = goog.i18n.currency.CurrencyInfo[currencyCode];
   return goog.i18n.currency.getCurrencyPattern_(info[0], info[1]);
 };
@@ -30889,6 +30867,7 @@ goog.i18n.currency.getLocalCurrencyPattern = function(currencyCode) {
  * @return {string} Local currency sign for given currency.
  */
 goog.i18n.currency.getLocalCurrencySign = function(currencyCode) {
+  'use strict';
   return goog.i18n.currency.CurrencyInfo[currencyCode][1];
 };
 
@@ -30904,6 +30883,7 @@ goog.i18n.currency.getLocalCurrencySign = function(currencyCode) {
  * @return {string} Local currency sign for given currency.
  */
 goog.i18n.currency.getLocalCurrencySignWithFallback = function(currencyCode) {
+  'use strict';
   if (currencyCode in goog.i18n.currency.CurrencyInfo) {
     return goog.i18n.currency.CurrencyInfo[currencyCode][1];
   } else {
@@ -30928,6 +30908,7 @@ goog.i18n.currency.getLocalCurrencySignWithFallback = function(currencyCode) {
  *   {@link goog.i18n.NumberFormat.CurrencyStyle.PORTABLE}
  */
 goog.i18n.currency.getPortableCurrencyPattern = function(currencyCode) {
+  'use strict';
   const info = goog.i18n.currency.CurrencyInfo[currencyCode];
   return goog.i18n.currency.getCurrencyPattern_(info[0], info[2]);
 };
@@ -30941,6 +30922,7 @@ goog.i18n.currency.getPortableCurrencyPattern = function(currencyCode) {
  * @return {string} Portable currency sign for given currency.
  */
 goog.i18n.currency.getPortableCurrencySign = function(currencyCode) {
+  'use strict';
   return goog.i18n.currency.CurrencyInfo[currencyCode][2];
 };
 
@@ -30952,6 +30934,7 @@ goog.i18n.currency.getPortableCurrencySign = function(currencyCode) {
  * @return {boolean} Whether currencyCode is a 3-letter currency code.
  */
 goog.i18n.currency.isValid = function(currencyCode) {
+  'use strict';
   if (!currencyCode || currencyCode.length !== 3) {
     return false;
   }
@@ -30977,6 +30960,7 @@ goog.i18n.currency.isValid = function(currencyCode) {
  */
 goog.i18n.currency.getPortableCurrencySignWithFallback = function(
     currencyCode) {
+  'use strict';
   if (currencyCode in goog.i18n.currency.CurrencyInfo) {
     return goog.i18n.currency.CurrencyInfo[currencyCode][2];
   } else {
@@ -31002,6 +30986,7 @@ goog.i18n.currency.getPortableCurrencySignWithFallback = function(
  * @return {boolean} true if currency should be positioned before amount field.
  */
 goog.i18n.currency.isPrefixSignPosition = function(currencyCode) {
+  'use strict';
   return (goog.i18n.currency.CurrencyInfo[currencyCode][0] &
           goog.i18n.currency.POSITION_FLAG_) == 0;
 };
@@ -31018,6 +31003,7 @@ goog.i18n.currency.isPrefixSignPosition = function(currencyCode) {
  * @private
  */
 goog.i18n.currency.getCurrencyPattern_ = function(patternNum, sign) {
+  'use strict';
   const strParts = ['#,##0'];
   const precision = patternNum & goog.i18n.currency.PRECISION_MASK_;
   if (precision > 0) {
@@ -31052,6 +31038,7 @@ goog.i18n.currency.getCurrencyPattern_ = function(patternNum, sign) {
  * @return {string} modified currency pattern string.
  */
 goog.i18n.currency.adjustPrecision = function(pattern, currencyCode) {
+  'use strict';
   const strParts = ['0'];
   const info = goog.i18n.currency.CurrencyInfo[currencyCode];
   if (!info) {
@@ -34540,6 +34527,7 @@ goog.require('goog.string');
  */
 goog.i18n.NumberFormat = function(
     pattern, opt_currency, opt_currencyStyle, opt_symbols) {
+  'use strict';
   if (opt_currency && !goog.i18n.currency.isValid(opt_currency)) {
     throw new TypeError('Currency must be valid ISO code');
   }
@@ -34682,6 +34670,7 @@ goog.i18n.NumberFormat.enforceAsciiDigits_ = false;
  *     enforced.
  */
 goog.i18n.NumberFormat.setEnforceAsciiDigits = function(doEnforce) {
+  'use strict';
   goog.i18n.NumberFormat.enforceAsciiDigits_ = doEnforce;
 };
 
@@ -34691,6 +34680,7 @@ goog.i18n.NumberFormat.setEnforceAsciiDigits = function(doEnforce) {
  * @return {boolean} If Ascii digits is enforced.
  */
 goog.i18n.NumberFormat.isEnforceAsciiDigits = function() {
+  'use strict';
   return goog.i18n.NumberFormat.enforceAsciiDigits_;
 };
 
@@ -34701,6 +34691,7 @@ goog.i18n.NumberFormat.isEnforceAsciiDigits = function() {
  * @private
  */
 goog.i18n.NumberFormat.prototype.getNumberFormatSymbols_ = function() {
+  'use strict';
   return this.overrideNumberFormatSymbols_ ||
       (goog.i18n.NumberFormat.enforceAsciiDigits_ ?
            goog.i18n.NumberFormatSymbols_u_nu_latn :
@@ -34714,6 +34705,7 @@ goog.i18n.NumberFormat.prototype.getNumberFormatSymbols_ = function() {
  * @private
  */
 goog.i18n.NumberFormat.prototype.getCurrencyCode_ = function() {
+  'use strict';
   return this.intlCurrencyCode_ ||
       this.getNumberFormatSymbols_().DEF_CURRENCY_CODE;
 };
@@ -34725,6 +34717,7 @@ goog.i18n.NumberFormat.prototype.getCurrencyCode_ = function() {
  * @return {!goog.i18n.NumberFormat} Reference to this NumberFormat object.
  */
 goog.i18n.NumberFormat.prototype.setMinimumFractionDigits = function(min) {
+  'use strict';
   if (this.significantDigits_ > 0 && min > 0) {
     throw new Error(
         'Can\'t combine significant digits and minimum fraction digits');
@@ -34739,6 +34732,7 @@ goog.i18n.NumberFormat.prototype.setMinimumFractionDigits = function(min) {
  * @return {number} The number of minimum fraction digits.
  */
 goog.i18n.NumberFormat.prototype.getMinimumFractionDigits = function() {
+  'use strict';
   return this.minimumFractionDigits_;
 };
 
@@ -34749,6 +34743,7 @@ goog.i18n.NumberFormat.prototype.getMinimumFractionDigits = function() {
  * @return {!goog.i18n.NumberFormat} Reference to this NumberFormat object.
  */
 goog.i18n.NumberFormat.prototype.setMaximumFractionDigits = function(max) {
+  'use strict';
   if (max > 308) {
     // Math.pow(10, 309) becomes Infinity which breaks the logic in this class.
     throw new Error('Unsupported maximum fraction digits: ' + max);
@@ -34763,6 +34758,7 @@ goog.i18n.NumberFormat.prototype.setMaximumFractionDigits = function(max) {
  * @return {number} The number of maximum fraction digits.
  */
 goog.i18n.NumberFormat.prototype.getMaximumFractionDigits = function() {
+  'use strict';
   return this.maximumFractionDigits_;
 };
 
@@ -34775,6 +34771,7 @@ goog.i18n.NumberFormat.prototype.getMaximumFractionDigits = function() {
  * @return {!goog.i18n.NumberFormat} Reference to this NumberFormat object.
  */
 goog.i18n.NumberFormat.prototype.setSignificantDigits = function(number) {
+  'use strict';
   if (this.minimumFractionDigits_ > 0 && number >= 0) {
     throw new Error(
         'Can\'t combine significant digits and minimum fraction digits');
@@ -34789,6 +34786,7 @@ goog.i18n.NumberFormat.prototype.setSignificantDigits = function(number) {
  * @return {number} The number of significant digits to include.
  */
 goog.i18n.NumberFormat.prototype.getSignificantDigits = function() {
+  'use strict';
   return this.significantDigits_;
 };
 
@@ -34802,6 +34800,7 @@ goog.i18n.NumberFormat.prototype.getSignificantDigits = function() {
  */
 goog.i18n.NumberFormat.prototype.setShowTrailingZeros = function(
     showTrailingZeros) {
+  'use strict';
   this.showTrailingZeros_ = showTrailingZeros;
   return this;
 };
@@ -34826,6 +34825,7 @@ goog.i18n.NumberFormat.prototype.setShowTrailingZeros = function(
  */
 goog.i18n.NumberFormat.prototype.setBaseFormatting = function(
     baseFormattingNumber) {
+  'use strict';
   goog.asserts.assert(
       baseFormattingNumber === null || isFinite(baseFormattingNumber));
   this.baseFormattingNumber_ = baseFormattingNumber;
@@ -34839,6 +34839,7 @@ goog.i18n.NumberFormat.prototype.setBaseFormatting = function(
  * @return {?number}
  */
 goog.i18n.NumberFormat.prototype.getBaseFormatting = function() {
+  'use strict';
   return this.baseFormattingNumber_;
 };
 
@@ -34850,6 +34851,7 @@ goog.i18n.NumberFormat.prototype.getBaseFormatting = function() {
  * @private
  */
 goog.i18n.NumberFormat.prototype.applyPattern_ = function(pattern) {
+  'use strict';
   this.pattern_ = pattern.replace(/ /g, '\u00a0');
   var pos = [0];
 
@@ -34882,6 +34884,7 @@ goog.i18n.NumberFormat.prototype.applyPattern_ = function(pattern) {
  * @private
  */
 goog.i18n.NumberFormat.prototype.applyStandardPattern_ = function(patternType) {
+  'use strict';
   switch (patternType) {
     case goog.i18n.NumberFormat.Format.DECIMAL:
       this.applyPattern_(this.getNumberFormatSymbols_().DECIMAL_PATTERN);
@@ -34916,6 +34919,7 @@ goog.i18n.NumberFormat.prototype.applyStandardPattern_ = function(patternType) {
  * @private
  */
 goog.i18n.NumberFormat.prototype.applyCompactStyle_ = function(style) {
+  'use strict';
   this.compactStyle_ = style;
   this.applyPattern_(this.getNumberFormatSymbols_().DECIMAL_PATTERN);
   this.setMinimumFractionDigits(0);
@@ -34938,6 +34942,7 @@ goog.i18n.NumberFormat.prototype.applyCompactStyle_ = function(style) {
  *     parsed.
  */
 goog.i18n.NumberFormat.prototype.parse = function(text, opt_pos) {
+  'use strict';
   var pos = opt_pos || [0];
 
   if (this.compactStyle_ != goog.i18n.NumberFormat.CompactStyle.NONE) {
@@ -35004,6 +35009,7 @@ goog.i18n.NumberFormat.prototype.parse = function(text, opt_pos) {
  * @private
  */
 goog.i18n.NumberFormat.prototype.parseNumber_ = function(text, pos) {
+  'use strict';
   var sawDecimal = false;
   var sawExponent = false;
   var sawDigit = false;
@@ -35107,6 +35113,7 @@ goog.i18n.NumberFormat.prototype.parseNumber_ = function(text, pos) {
  * @return {string} The formatted number string.
  */
 goog.i18n.NumberFormat.prototype.format = function(number) {
+  'use strict';
   if (isNaN(number)) {
     return this.getNumberFormatSymbols_().NAN;
   }
@@ -35175,6 +35182,7 @@ goog.i18n.NumberFormat.prototype.format = function(number) {
  * @private
  */
 goog.i18n.NumberFormat.prototype.roundNumber_ = function(number) {
+  'use strict';
   var shift = goog.i18n.NumberFormat.decimalShift_;
 
   var shiftedNumber = shift(number, this.maximumFractionDigits_);
@@ -35233,6 +35241,7 @@ goog.i18n.NumberFormat.prototype.roundNumber_ = function(number) {
  */
 goog.i18n.NumberFormat.prototype.formatNumberGroupingRepeatingDigitsParts_ =
     function(parts, zeroCode, intPart, groupingArray, repeatedDigitLen) {
+  'use strict';
   // Keep track of how much has been completed on the non repeated groups
   var nonRepeatedGroupCompleteCount = 0;
   var currentGroupSizeIndex = 0;
@@ -35313,6 +35322,7 @@ goog.i18n.NumberFormat.prototype.formatNumberGroupingRepeatingDigitsParts_ =
  */
 goog.i18n.NumberFormat.prototype.formatNumberGroupingNonRepeatingDigitsParts_ =
     function(parts, zeroCode, intPart, groupingArray) {
+  'use strict';
   // Keep track of how much has been completed on the non repeated groups
   var grouping = this.getNumberFormatSymbols_().GROUP_SEP;
   var currentGroupSizeIndex;
@@ -35358,6 +35368,7 @@ goog.i18n.NumberFormat.prototype.formatNumberGroupingNonRepeatingDigitsParts_ =
  */
 goog.i18n.NumberFormat.prototype.subformatFixed_ = function(
     number, minIntDigits, parts) {
+  'use strict';
   if (this.minimumFractionDigits_ > this.maximumFractionDigits_) {
     throw new Error('Min value must be less than max value');
   }
@@ -35475,6 +35486,7 @@ goog.i18n.NumberFormat.prototype.subformatFixed_ = function(
  * @private
  */
 goog.i18n.NumberFormat.prototype.addExponentPart_ = function(exponent, parts) {
+  'use strict';
   parts.push(this.getNumberFormatSymbols_().EXP_SYMBOL);
 
   if (exponent < 0) {
@@ -35501,6 +35513,7 @@ goog.i18n.NumberFormat.prototype.addExponentPart_ = function(exponent, parts) {
  * @private
  */
 goog.i18n.NumberFormat.prototype.getMantissa_ = function(value, exponent) {
+  'use strict';
   return goog.i18n.NumberFormat.decimalShift_(value, -exponent);
 };
 
@@ -35514,6 +35527,7 @@ goog.i18n.NumberFormat.prototype.getMantissa_ = function(value, exponent) {
  */
 goog.i18n.NumberFormat.prototype.subformatExponential_ = function(
     number, parts) {
+  'use strict';
   if (number == 0.0) {
     this.subformatFixed_(number, this.minimumIntegerDigits_, parts);
     this.addExponentPart_(0, parts);
@@ -35565,6 +35579,7 @@ goog.i18n.NumberFormat.prototype.subformatExponential_ = function(
  * @private
  */
 goog.i18n.NumberFormat.prototype.getDigit_ = function(ch) {
+  'use strict';
   var code = ch.charCodeAt(0);
   // between '0' to '9'
   if (48 <= code && code < 58) {
@@ -35679,6 +35694,7 @@ goog.i18n.NumberFormat.QUOTE_ = '\'';
  * @private
  */
 goog.i18n.NumberFormat.prototype.parseAffix_ = function(pattern, pos) {
+  'use strict';
   var affix = '';
   var inQuote = false;
   var len = pattern.length;
@@ -35772,6 +35788,7 @@ goog.i18n.NumberFormat.prototype.parseAffix_ = function(pattern, pos) {
  * @private
  */
 goog.i18n.NumberFormat.prototype.parseTrunk_ = function(pattern, pos) {
+  'use strict';
   var decimalPos = -1;
   var digitLeftCount = 0;
   var zeroDigitCount = 0;
@@ -35935,6 +35952,7 @@ goog.i18n.NumberFormat.NULL_UNIT_ = {
  * @private
  */
 goog.i18n.NumberFormat.prototype.getUnitFor_ = function(base, plurality) {
+  'use strict';
   var table = this.compactStyle_ == goog.i18n.NumberFormat.CompactStyle.SHORT ?
       goog.i18n.CompactNumberFormatSymbols.COMPACT_DECIMAL_SHORT_PATTERN :
       goog.i18n.CompactNumberFormatSymbols.COMPACT_DECIMAL_LONG_PATTERN;
@@ -36009,6 +36027,7 @@ goog.i18n.NumberFormat.prototype.getUnitFor_ = function(base, plurality) {
  */
 goog.i18n.NumberFormat.prototype.getUnitAfterRounding_ = function(
     formattingNumber, pluralityNumber) {
+  'use strict';
   if (this.compactStyle_ == goog.i18n.NumberFormat.CompactStyle.NONE) {
     return goog.i18n.NumberFormat.NULL_UNIT_;
   }
@@ -36047,6 +36066,7 @@ goog.i18n.NumberFormat.prototype.getUnitAfterRounding_ = function(
  * @private
  */
 goog.i18n.NumberFormat.prototype.intLog10_ = function(number) {
+  'use strict';
   // Handle infinity.
   if (!isFinite(number)) {
     return number > 0 ? number : 0;
@@ -36077,6 +36097,7 @@ goog.i18n.NumberFormat.prototype.intLog10_ = function(number) {
  * @private
  */
 goog.i18n.NumberFormat.decimalShift_ = function(number, digitCount) {
+  'use strict';
   goog.asserts.assert(
       digitCount % 1 == 0, 'Cannot shift by fractional digits "%s".',
       digitCount);
@@ -36112,6 +36133,7 @@ goog.i18n.NumberFormat.decimalShift_ = function(number, digitCount) {
  * @private
  */
 goog.i18n.NumberFormat.decimalRound_ = function(number, decimalCount) {
+  'use strict';
   goog.asserts.assert(
       decimalCount % 1 == 0, 'Cannot round to fractional digits "%s".',
       decimalCount);
@@ -36137,6 +36159,7 @@ goog.i18n.NumberFormat.decimalRound_ = function(number, decimalCount) {
  */
 goog.i18n.NumberFormat.prototype.roundToSignificantDigits_ = function(
     number, significantDigits, scale) {
+  'use strict';
   if (!number) return number;
 
   var digits = this.intLog10_(number);
@@ -36158,6 +36181,7 @@ goog.i18n.NumberFormat.prototype.roundToSignificantDigits_ = function(
  * @private
  */
 goog.i18n.NumberFormat.prototype.pluralForm_ = function(quantity) {
+  'use strict';
   /* TODO: Implement */
   return 'other';
 };
@@ -36172,6 +36196,7 @@ goog.i18n.NumberFormat.prototype.pluralForm_ = function(quantity) {
  * @return {boolean} true if currency is before value.
  */
 goog.i18n.NumberFormat.prototype.isCurrencyCodeBeforeValue = function() {
+  'use strict';
   var posCurrSymbol = this.pattern_.indexOf('\u00A4');  // '¤' Currency sign
   var posPound = this.pattern_.indexOf('#');
   var posZero = this.pattern_.indexOf('0');
@@ -36528,6 +36553,7 @@ goog.require('goog.string');
  * @return {boolean} Whether the rendering engine is Presto.
  */
 goog.labs.userAgent.engine.isPresto = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('Presto');
 };
 
@@ -36536,6 +36562,7 @@ goog.labs.userAgent.engine.isPresto = function() {
  * @return {boolean} Whether the rendering engine is Trident.
  */
 goog.labs.userAgent.engine.isTrident = function() {
+  'use strict';
   // IE only started including the Trident token in IE8.
   return goog.labs.userAgent.util.matchUserAgent('Trident') ||
       goog.labs.userAgent.util.matchUserAgent('MSIE');
@@ -36546,6 +36573,7 @@ goog.labs.userAgent.engine.isTrident = function() {
  * @return {boolean} Whether the rendering engine is EdgeHTML.
  */
 goog.labs.userAgent.engine.isEdge = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('Edge');
 };
 
@@ -36555,6 +36583,7 @@ goog.labs.userAgent.engine.isEdge = function() {
  * true for Chrome, Blink-based Opera (15+), Edge Chromium and Safari.
  */
 goog.labs.userAgent.engine.isWebKit = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgentIgnoreCase('WebKit') &&
       !goog.labs.userAgent.engine.isEdge();
 };
@@ -36564,6 +36593,7 @@ goog.labs.userAgent.engine.isWebKit = function() {
  * @return {boolean} Whether the rendering engine is Gecko.
  */
 goog.labs.userAgent.engine.isGecko = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('Gecko') &&
       !goog.labs.userAgent.engine.isWebKit() &&
       !goog.labs.userAgent.engine.isTrident() &&
@@ -36576,6 +36606,7 @@ goog.labs.userAgent.engine.isGecko = function() {
  *     can't be determined.
  */
 goog.labs.userAgent.engine.getVersion = function() {
+  'use strict';
   var userAgentString = goog.labs.userAgent.util.getUserAgent();
   if (userAgentString) {
     var tuples = goog.labs.userAgent.util.extractVersionTuples(userAgentString);
@@ -36615,6 +36646,7 @@ goog.labs.userAgent.engine.getVersion = function() {
  * @private
  */
 goog.labs.userAgent.engine.getEngineTuple_ = function(tuples) {
+  'use strict';
   if (!goog.labs.userAgent.engine.isEdge()) {
     return tuples[1];
   }
@@ -36633,6 +36665,7 @@ goog.labs.userAgent.engine.getEngineTuple_ = function(tuples) {
  *     as the given version.
  */
 goog.labs.userAgent.engine.isVersionOrHigher = function(version) {
+  'use strict';
   return goog.string.compareVersions(
              goog.labs.userAgent.engine.getVersion(), version) >= 0;
 };
@@ -36646,9 +36679,13 @@ goog.labs.userAgent.engine.isVersionOrHigher = function(version) {
  * @private
  */
 goog.labs.userAgent.engine.getVersionForKey_ = function(tuples, key) {
+  'use strict';
   // TODO(nnaze): Move to util if useful elsewhere.
 
-  var pair = goog.array.find(tuples, function(pair) { return key == pair[0]; });
+  var pair = goog.array.find(tuples, function(pair) {
+    'use strict';
+    return key == pair[0];
+  });
 
   return pair && pair[1] || '';
 };
@@ -36678,6 +36715,7 @@ goog.require('goog.string');
  * @return {boolean} Whether the platform is Android.
  */
 goog.labs.userAgent.platform.isAndroid = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('Android');
 };
 
@@ -36686,6 +36724,7 @@ goog.labs.userAgent.platform.isAndroid = function() {
  * @return {boolean} Whether the platform is iPod.
  */
 goog.labs.userAgent.platform.isIpod = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('iPod');
 };
 
@@ -36694,6 +36733,7 @@ goog.labs.userAgent.platform.isIpod = function() {
  * @return {boolean} Whether the platform is iPhone.
  */
 goog.labs.userAgent.platform.isIphone = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('iPhone') &&
       !goog.labs.userAgent.util.matchUserAgent('iPod') &&
       !goog.labs.userAgent.util.matchUserAgent('iPad');
@@ -36704,6 +36744,7 @@ goog.labs.userAgent.platform.isIphone = function() {
  * @return {boolean} Whether the platform is iPad.
  */
 goog.labs.userAgent.platform.isIpad = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('iPad');
 };
 
@@ -36712,6 +36753,7 @@ goog.labs.userAgent.platform.isIpad = function() {
  * @return {boolean} Whether the platform is iOS.
  */
 goog.labs.userAgent.platform.isIos = function() {
+  'use strict';
   return goog.labs.userAgent.platform.isIphone() ||
       goog.labs.userAgent.platform.isIpad() ||
       goog.labs.userAgent.platform.isIpod();
@@ -36722,6 +36764,7 @@ goog.labs.userAgent.platform.isIos = function() {
  * @return {boolean} Whether the platform is Mac.
  */
 goog.labs.userAgent.platform.isMacintosh = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('Macintosh');
 };
 
@@ -36732,6 +36775,7 @@ goog.labs.userAgent.platform.isMacintosh = function() {
  * @return {boolean} Whether the platform is Linux.
  */
 goog.labs.userAgent.platform.isLinux = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('Linux');
 };
 
@@ -36740,6 +36784,7 @@ goog.labs.userAgent.platform.isLinux = function() {
  * @return {boolean} Whether the platform is Windows.
  */
 goog.labs.userAgent.platform.isWindows = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('Windows');
 };
 
@@ -36748,6 +36793,7 @@ goog.labs.userAgent.platform.isWindows = function() {
  * @return {boolean} Whether the platform is ChromeOS.
  */
 goog.labs.userAgent.platform.isChromeOS = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('CrOS');
 };
 
@@ -36755,6 +36801,7 @@ goog.labs.userAgent.platform.isChromeOS = function() {
  * @return {boolean} Whether the platform is Chromecast.
  */
 goog.labs.userAgent.platform.isChromecast = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgent('CrKey');
 };
 
@@ -36762,6 +36809,7 @@ goog.labs.userAgent.platform.isChromecast = function() {
  * @return {boolean} Whether the platform is KaiOS.
  */
 goog.labs.userAgent.platform.isKaiOS = function() {
+  'use strict';
   return goog.labs.userAgent.util.matchUserAgentIgnoreCase('KaiOS');
 };
 
@@ -36775,6 +36823,7 @@ goog.labs.userAgent.platform.isKaiOS = function() {
  *     determined.
  */
 goog.labs.userAgent.platform.getVersion = function() {
+  'use strict';
   var userAgentString = goog.labs.userAgent.util.getUserAgent();
   var version = '', re;
   if (goog.labs.userAgent.platform.isWindows()) {
@@ -36819,6 +36868,7 @@ goog.labs.userAgent.platform.getVersion = function() {
  *     given version.
  */
 goog.labs.userAgent.platform.isVersionOrHigher = function(version) {
+  'use strict';
   return goog.string.compareVersions(
              goog.labs.userAgent.platform.getVersion(), version) >= 0;
 };
@@ -37848,6 +37898,8 @@ goog.debug.normalizeErrorObject = function(err) {
     threwError = true;
   }
 
+  var stack = goog.debug.serializeErrorStack_(err);
+
   // The IE Error object contains only the name and the message.
   // The Safari Error object uses the line and sourceURL fields.
   if (threwError || !err.lineNumber || !err.fileName || !err.stack ||
@@ -37870,19 +37922,77 @@ goog.debug.normalizeErrorObject = function(err) {
       } else {
         message = 'Unknown Error of unknown type';
       }
+
+      // Avoid TypeError since toString could be missing from the instance
+      // (e.g. if created Object.create(null)).
+      if (typeof err.toString === 'function' &&
+          Object.prototype.toString !== err.toString) {
+        message += ': ' + err.toString();
+      }
     }
     return {
       'message': message,
       'name': err.name || 'UnknownError',
       'lineNumber': lineNumber,
       'fileName': fileName,
-      'stack': err.stack || 'Not available'
+      'stack': stack || 'Not available'
     };
   }
-
   // Standards error object
   // Typed !Object. Should be a subtype of the return type, but it's not.
+  err.stack = stack;
   return /** @type {?} */ (err);
+};
+
+
+/**
+ * Serialize stack by including the cause chain of the exception if it exists.
+ *
+ *
+ * @param {*} e an exception that may have a cause
+ * @param {!Object=} seen set of cause that have already been serialized
+ * @return {string}
+ * @private
+ * @suppress {missingProperties} properties not defined on cause and e
+ */
+goog.debug.serializeErrorStack_ = function(e, seen) {
+  if (!seen) {
+    seen = {};
+  }
+  seen[goog.debug.serializeErrorAsKey_(e)] = true;
+
+  var stack = e['stack'] || '';
+
+  // Add cause if exists.
+  var cause = e.cause;
+  if (cause && !seen[goog.debug.serializeErrorAsKey_(cause)]) {
+    stack += '\nCaused by: ';
+    // Some browsers like Chrome add the error message as the first frame of the
+    // stack, In this case we don't need to add it. Note: we don't use
+    // String.startsWith method because it might have to be polyfilled.
+    if (!cause.stack || cause.stack.indexOf(cause.toString()) != 0) {
+      stack += (typeof cause === 'string') ? cause : cause.message + '\n';
+    }
+    stack += goog.debug.serializeErrorStack_(cause, seen);
+  }
+
+  return stack;
+};
+
+/**
+ * Serialize an error to a string key.
+ * @param {*} e an exception
+ * @return {string}
+ * @private
+ */
+goog.debug.serializeErrorAsKey_ = function(e) {
+  var keyPrefix = '';
+
+  if (typeof e.toString === 'function') {
+    keyPrefix = '' + e;
+  }
+
+  return keyPrefix + e['stack'];
 };
 
 
@@ -38315,6 +38425,7 @@ goog.i18n.uChar.TRAIL_SURROGATE_BIT_COUNT_ = 10;
  * @return {string} The U+ notation of the given character.
  */
 goog.i18n.uChar.toHexString = function(ch) {
+  'use strict';
   const chCode = goog.i18n.uChar.toCharCode(ch);
   const chCodeStr = 'U+' +
       goog.i18n.uChar.padString_(chCode.toString(16).toUpperCase(), 4, '0');
@@ -38332,6 +38443,7 @@ goog.i18n.uChar.toHexString = function(ch) {
  * @private
  */
 goog.i18n.uChar.padString_ = function(str, length, ch) {
+  'use strict';
   while (str.length < length) {
     str = ch + str;
   }
@@ -38347,6 +38459,7 @@ goog.i18n.uChar.padString_ = function(str, length, ch) {
  * @return {number} The Unicode value of the character.
  */
 goog.i18n.uChar.toCharCode = function(ch) {
+  'use strict';
   return goog.i18n.uChar.getCodePointAround(ch, 0);
 };
 
@@ -38358,6 +38471,7 @@ goog.i18n.uChar.toCharCode = function(ch) {
  * @return {?string} The character corresponding to the given Unicode value.
  */
 goog.i18n.uChar.fromCharCode = function(code) {
+  'use strict';
   if (code == null ||
       !(code >= 0 && code <= goog.i18n.uChar.CODE_POINT_MAX_VALUE_)) {
     return null;
@@ -38427,6 +38541,7 @@ goog.i18n.uChar.fromCharCode = function(code) {
  * the pair.
  */
 goog.i18n.uChar.getCodePointAround = function(string, index) {
+  'use strict';
   const charCode = string.charCodeAt(index);
   if (goog.i18n.uChar.isLeadSurrogateCodePoint(charCode) &&
       index + 1 < string.length) {
@@ -38456,6 +38571,7 @@ goog.i18n.uChar.getCodePointAround = function(string, index) {
  * @return {number} 2 if codePoint is a supplementary character, 1 otherwise.
  */
 goog.i18n.uChar.charCount = function(codePoint) {
+  'use strict';
   return goog.i18n.uChar.isSupplementaryCodePoint(codePoint) ? 2 : 1;
 };
 
@@ -38467,6 +38583,7 @@ goog.i18n.uChar.charCount = function(codePoint) {
  * @return {boolean} Whether then given code point is a supplementary character.
  */
 goog.i18n.uChar.isSupplementaryCodePoint = function(codePoint) {
+  'use strict';
   return codePoint >= goog.i18n.uChar.SUPPLEMENTARY_CODE_POINT_MIN_VALUE_ &&
       codePoint <= goog.i18n.uChar.CODE_POINT_MAX_VALUE_;
 };
@@ -38479,6 +38596,7 @@ goog.i18n.uChar.isSupplementaryCodePoint = function(codePoint) {
  * character.
  */
 goog.i18n.uChar.isLeadSurrogateCodePoint = function(codePoint) {
+  'use strict';
   return codePoint >= goog.i18n.uChar.LEAD_SURROGATE_MIN_VALUE_ &&
       codePoint <= goog.i18n.uChar.LEAD_SURROGATE_MAX_VALUE_;
 };
@@ -38491,6 +38609,7 @@ goog.i18n.uChar.isLeadSurrogateCodePoint = function(codePoint) {
  * character.
  */
 goog.i18n.uChar.isTrailSurrogateCodePoint = function(codePoint) {
+  'use strict';
   return codePoint >= goog.i18n.uChar.TRAIL_SURROGATE_MIN_VALUE_ &&
       codePoint <= goog.i18n.uChar.TRAIL_SURROGATE_MAX_VALUE_;
 };
@@ -38506,6 +38625,7 @@ goog.i18n.uChar.isTrailSurrogateCodePoint = function(codePoint) {
  * the given UTF-16 surrogate pair.
  */
 goog.i18n.uChar.buildSupplementaryCodePoint = function(lead, trail) {
+  'use strict';
   if (goog.i18n.uChar.isLeadSurrogateCodePoint(lead) &&
       goog.i18n.uChar.isTrailSurrogateCodePoint(trail)) {
     const shiftedLeadOffset =
@@ -38745,6 +38865,7 @@ goog.i18n.GraphemeBreak.inversions_ = null;
  * @private
  */
 goog.i18n.GraphemeBreak.applyBreakRules_ = function(a, b, extended) {
+  'use strict';
   var prop = goog.i18n.GraphemeBreak.property;
 
   var aCode = (typeof a === 'string') ?
@@ -38888,6 +39009,7 @@ goog.i18n.GraphemeBreak.applyBreakRules_ = function(a, b, extended) {
  * @private
  */
 goog.i18n.GraphemeBreak.getBreakProp_ = function(codePoint) {
+  'use strict';
   if (0xAC00 <= codePoint && codePoint <= 0xD7A3) {
     var prop = goog.i18n.GraphemeBreak.property;
     if (codePoint % 0x1C === 0x10) {
@@ -39057,6 +39179,7 @@ goog.i18n.GraphemeBreak.getBreakProp_ = function(codePoint) {
  * @private
  */
 goog.i18n.GraphemeBreak.getCodePoint_ = function(str, index) {
+  'use strict';
   var codePoint = goog.i18n.uChar.getCodePointAround(str, index);
   return (codePoint < 0) ? -codePoint : codePoint;
 };
@@ -39081,6 +39204,7 @@ goog.i18n.GraphemeBreak.getCodePoint_ = function(str, index) {
  *     a and b; False otherwise.
  */
 goog.i18n.GraphemeBreak.hasGraphemeBreak = function(a, b, opt_extended) {
+  'use strict';
   return goog.i18n.GraphemeBreak.applyBreakRules_(a, b, opt_extended !== false);
 };
 
@@ -39099,6 +39223,7 @@ goog.i18n.GraphemeBreak.hasGraphemeBreak = function(a, b, opt_extended) {
  *     a and b; False otherwise.
  */
 goog.i18n.GraphemeBreak.hasGraphemeBreakStrings = function(a, b, opt_extended) {
+  'use strict';
   goog.asserts.assert(a !== undefined, 'First string should be defined.');
   goog.asserts.assert(b !== undefined, 'Second string should be defined.');
 
@@ -39136,6 +39261,7 @@ goog.require('goog.userAgent');
  * @return {string} The human readable form of the byte size.
  */
 goog.format.fileSize = function(bytes, opt_decimals) {
+  'use strict';
   return goog.format.numBytesToString(bytes, opt_decimals, false);
 };
 
@@ -39156,6 +39282,7 @@ goog.format.fileSize = function(bytes, opt_decimals) {
  * @return {boolean} True if string could be converted to a numeric value.
  */
 goog.format.isConvertableScaledNumber = function(val) {
+  'use strict';
   return goog.format.SCALED_NUMERIC_RE_.test(val);
 };
 
@@ -39167,6 +39294,7 @@ goog.format.isConvertableScaledNumber = function(val) {
  * @return {number} Numeric value for string.
  */
 goog.format.stringToNumericValue = function(stringValue) {
+  'use strict';
   if (goog.string.endsWith(stringValue, 'B')) {
     return goog.format.stringToNumericValue_(
         stringValue, goog.format.NUMERIC_SCALES_BINARY_);
@@ -39183,6 +39311,7 @@ goog.format.stringToNumericValue = function(stringValue) {
  * @return {number} Numeric value for string.
  */
 goog.format.stringToNumBytes = function(stringValue) {
+  'use strict';
   return goog.format.stringToNumericValue_(
       stringValue, goog.format.NUMERIC_SCALES_BINARY_);
 };
@@ -39195,6 +39324,7 @@ goog.format.stringToNumBytes = function(stringValue) {
  * @return {string} String representation of number.
  */
 goog.format.numericValueToString = function(val, opt_decimals) {
+  'use strict';
   return goog.format.numericValueToString_(
       val, goog.format.NUMERIC_SCALES_SI_, opt_decimals);
 };
@@ -39215,6 +39345,7 @@ goog.format.numericValueToString = function(val, opt_decimals) {
  */
 goog.format.numBytesToString = function(
     val, opt_decimals, opt_suffix, opt_useSeparator) {
+  'use strict';
   var suffix = '';
   if (opt_suffix === undefined || opt_suffix) {
     suffix = 'B';
@@ -39234,6 +39365,7 @@ goog.format.numBytesToString = function(
  * @private
  */
 goog.format.stringToNumericValue_ = function(stringValue, conversion) {
+  'use strict';
   var match = stringValue.match(goog.format.SCALED_NUMERIC_RE_);
   if (!match) {
     return NaN;
@@ -39257,6 +39389,7 @@ goog.format.stringToNumericValue_ = function(stringValue, conversion) {
  */
 goog.format.numericValueToString_ = function(
     val, conversion, opt_decimals, opt_suffix, opt_useSeparator) {
+  'use strict';
   var prefixes = goog.format.NUMERIC_SCALE_PREFIXES_;
   var orig_val = val;
   var symbol = '';
@@ -39378,6 +39511,7 @@ goog.format.FIRST_GRAPHEME_EXTEND_ = 0x300;
  * @private
  */
 goog.format.isTreatedAsBreakingSpace_ = function(charCode) {
+  'use strict';
   return (charCode <= goog.format.WbrToken_.SPACE) ||
       (charCode >= 0x1000 &&
        ((charCode >= 0x2000 && charCode <= 0x2006) ||
@@ -39395,6 +39529,7 @@ goog.format.isTreatedAsBreakingSpace_ = function(charCode) {
  * @private
  */
 goog.format.isInvisibleFormattingCharacter_ = function(charCode) {
+  'use strict';
   // See: http://unicode.org/charts/PDF/U2000.pdf
   return (charCode >= 0x200C && charCode <= 0x200F) ||
       (charCode >= 0x202A && charCode <= 0x202E);
@@ -39423,6 +39558,7 @@ goog.format.isInvisibleFormattingCharacter_ = function(charCode) {
  */
 goog.format.insertWordBreaksGeneric_ = function(
     str, hasGraphemeBreak, opt_maxlen) {
+  'use strict';
   var maxlen = opt_maxlen || 10;
   if (maxlen > str.length) return str;
 
@@ -39514,6 +39650,7 @@ goog.format.insertWordBreaksGeneric_ = function(
  * @deprecated Prefer wrapping with CSS word-wrap: break-word.
  */
 goog.format.insertWordBreaks = function(str, opt_maxlen) {
+  'use strict';
   return goog.format.insertWordBreaksGeneric_(
       str, goog.i18n.GraphemeBreak.hasGraphemeBreak, opt_maxlen);
 };
@@ -39537,6 +39674,7 @@ goog.format.insertWordBreaks = function(str, opt_maxlen) {
  */
 goog.format.conservativelyHasGraphemeBreak_ = function(
     lastCharCode, charCode, opt_extended) {
+  'use strict';
   // Return false for everything except the most common Cyrillic characters.
   // Don't worry about Latin characters, because insertWordBreaksGeneric_
   // itself already handles those.
@@ -39565,6 +39703,7 @@ goog.format.conservativelyHasGraphemeBreak_ = function(
  * @deprecated Prefer wrapping with CSS word-wrap: break-word.
  */
 goog.format.insertWordBreaksBasic = function(str, opt_maxlen) {
+  'use strict';
   return goog.format.insertWordBreaksGeneric_(
       str, goog.format.conservativelyHasGraphemeBreak_, opt_maxlen);
 };
@@ -39683,6 +39822,7 @@ goog.require('goog.i18n.bidi.Format');
  * @final
  */
 goog.i18n.BidiFormatter = function(contextDir, opt_alwaysSpan) {
+  'use strict';
   /**
    * The overall directionality of the context in which the formatter is being
    * used.
@@ -39706,6 +39846,7 @@ goog.i18n.BidiFormatter = function(contextDir, opt_alwaysSpan) {
  * @return {?goog.i18n.bidi.Dir} The context directionality.
  */
 goog.i18n.BidiFormatter.prototype.getContextDir = function() {
+  'use strict';
   return this.contextDir_;
 };
 
@@ -39714,6 +39855,7 @@ goog.i18n.BidiFormatter.prototype.getContextDir = function() {
  * @return {boolean} Whether alwaysSpan is set.
  */
 goog.i18n.BidiFormatter.prototype.getAlwaysSpan = function() {
+  'use strict';
   return this.alwaysSpan_;
 };
 
@@ -39728,6 +39870,7 @@ goog.i18n.BidiFormatter.prototype.getAlwaysSpan = function() {
  *     4. A null for unknown directionality.
  */
 goog.i18n.BidiFormatter.prototype.setContextDir = function(contextDir) {
+  'use strict';
   this.contextDir_ = goog.i18n.bidi.toDir(contextDir, true /* opt_noNeutral */);
 };
 
@@ -39739,6 +39882,7 @@ goog.i18n.BidiFormatter.prototype.setContextDir = function(contextDir) {
  *     combination of directionalities.
  */
 goog.i18n.BidiFormatter.prototype.setAlwaysSpan = function(alwaysSpan) {
+  'use strict';
   this.alwaysSpan_ = alwaysSpan;
 };
 
@@ -39767,6 +39911,7 @@ goog.i18n.BidiFormatter.prototype.estimateDirection =
  */
 goog.i18n.BidiFormatter.prototype.areDirectionalitiesOpposite_ = function(
     dir1, dir2) {
+  'use strict';
   return Number(dir1) * Number(dir2) < 0;
 };
 
@@ -39787,6 +39932,7 @@ goog.i18n.BidiFormatter.prototype.areDirectionalitiesOpposite_ = function(
  */
 goog.i18n.BidiFormatter.prototype.dirResetIfNeeded_ = function(
     str, dir, opt_isHtml, opt_dirReset) {
+  'use strict';
   // endsWithRtl and endsWithLtr are called only if needed (short-circuit).
   if (opt_dirReset &&
       (this.areDirectionalitiesOpposite_(dir, this.contextDir_) ||
@@ -39819,6 +39965,7 @@ goog.i18n.BidiFormatter.prototype.dirResetIfNeeded_ = function(
  * @return {string} "rtl" or "ltr", according to the logic described above.
  */
 goog.i18n.BidiFormatter.prototype.dirAttrValue = function(str, opt_isHtml) {
+  'use strict';
   return this.knownDirAttrValue(this.estimateDirection(str, opt_isHtml));
 };
 
@@ -39832,6 +39979,7 @@ goog.i18n.BidiFormatter.prototype.dirAttrValue = function(str, opt_isHtml) {
  * @return {string} "rtl" or "ltr", according to the logic described above.
  */
 goog.i18n.BidiFormatter.prototype.knownDirAttrValue = function(dir) {
+  'use strict';
   var resolvedDir = dir == goog.i18n.bidi.Dir.NEUTRAL ? this.contextDir_ : dir;
   return resolvedDir == goog.i18n.bidi.Dir.RTL ? 'rtl' : 'ltr';
 };
@@ -39849,6 +39997,7 @@ goog.i18n.BidiFormatter.prototype.knownDirAttrValue = function(dir) {
  *     LTR text in non-LTR context; else, the empty string.
  */
 goog.i18n.BidiFormatter.prototype.dirAttr = function(str, opt_isHtml) {
+  'use strict';
   return this.knownDirAttr(this.estimateDirection(str, opt_isHtml));
 };
 
@@ -39863,6 +40012,7 @@ goog.i18n.BidiFormatter.prototype.dirAttr = function(str, opt_isHtml) {
  *     LTR text in non-LTR context; else, the empty string.
  */
 goog.i18n.BidiFormatter.prototype.knownDirAttr = function(dir) {
+  'use strict';
   if (dir != this.contextDir_) {
     return dir == goog.i18n.bidi.Dir.RTL ?
         'dir="rtl"' :
@@ -39895,6 +40045,7 @@ goog.i18n.BidiFormatter.prototype.knownDirAttr = function(dir) {
  */
 goog.i18n.BidiFormatter.prototype.spanWrapSafeHtml = function(
     html, opt_dirReset) {
+  'use strict';
   return this.spanWrapSafeHtmlWithKnownDir(null, html, opt_dirReset);
 };
 
@@ -39922,6 +40073,7 @@ goog.i18n.BidiFormatter.prototype.spanWrapSafeHtml = function(
  */
 goog.i18n.BidiFormatter.prototype.spanWrapSafeHtmlWithKnownDir = function(
     dir, html, opt_dirReset) {
+  'use strict';
   if (dir == null) {
     dir = this.estimateDirection(goog.html.SafeHtml.unwrap(html), true);
   }
@@ -39943,6 +40095,7 @@ goog.i18n.BidiFormatter.prototype.spanWrapSafeHtmlWithKnownDir = function(
  */
 goog.i18n.BidiFormatter.prototype.spanWrapWithKnownDir_ = function(
     dir, html, opt_dirReset) {
+  'use strict';
   opt_dirReset = opt_dirReset || (opt_dirReset == undefined);
 
   var result;
@@ -39996,6 +40149,7 @@ goog.i18n.BidiFormatter.prototype.spanWrapWithKnownDir_ = function(
  */
 goog.i18n.BidiFormatter.prototype.unicodeWrap = function(
     str, opt_isHtml, opt_dirReset) {
+  'use strict';
   return this.unicodeWrapWithKnownDir(null, str, opt_isHtml, opt_dirReset);
 };
 
@@ -40031,6 +40185,7 @@ goog.i18n.BidiFormatter.prototype.unicodeWrap = function(
  */
 goog.i18n.BidiFormatter.prototype.unicodeWrapWithKnownDir = function(
     dir, str, opt_isHtml, opt_dirReset) {
+  'use strict';
   if (dir == null) {
     dir = this.estimateDirection(str, opt_isHtml);
   }
@@ -40054,6 +40209,7 @@ goog.i18n.BidiFormatter.prototype.unicodeWrapWithKnownDir = function(
  */
 goog.i18n.BidiFormatter.prototype.unicodeWrapWithKnownDir_ = function(
     dir, str, opt_isHtml, opt_dirReset) {
+  'use strict';
   opt_dirReset = opt_dirReset || (opt_dirReset == undefined);
   var result = [];
   if (dir != goog.i18n.bidi.Dir.NEUTRAL && dir != this.contextDir_) {
@@ -40083,6 +40239,7 @@ goog.i18n.BidiFormatter.prototype.unicodeWrapWithKnownDir_ = function(
  *     the empty string.
  */
 goog.i18n.BidiFormatter.prototype.markAfter = function(str, opt_isHtml) {
+  'use strict';
   return this.markAfterKnownDir(null, str, opt_isHtml);
 };
 
@@ -40102,6 +40259,7 @@ goog.i18n.BidiFormatter.prototype.markAfter = function(str, opt_isHtml) {
  */
 goog.i18n.BidiFormatter.prototype.markAfterKnownDir = function(
     dir, str, opt_isHtml) {
+  'use strict';
   if (dir == null) {
     dir = this.estimateDirection(str, opt_isHtml);
   }
@@ -40118,6 +40276,7 @@ goog.i18n.BidiFormatter.prototype.markAfterKnownDir = function(
  *     directionality.
  */
 goog.i18n.BidiFormatter.prototype.mark = function() {
+  'use strict';
   switch (this.contextDir_) {
     case (goog.i18n.bidi.Dir.LTR):
       return goog.i18n.bidi.Format.LRM;
@@ -40137,6 +40296,7 @@ goog.i18n.BidiFormatter.prototype.mark = function() {
  *     context directionality.
  */
 goog.i18n.BidiFormatter.prototype.startEdge = function() {
+  'use strict';
   return this.contextDir_ == goog.i18n.bidi.Dir.RTL ? goog.i18n.bidi.RIGHT :
                                                       goog.i18n.bidi.LEFT;
 };
@@ -40150,6 +40310,7 @@ goog.i18n.BidiFormatter.prototype.startEdge = function() {
  *     context directionality.
  */
 goog.i18n.BidiFormatter.prototype.endEdge = function() {
+  'use strict';
   return this.contextDir_ == goog.i18n.bidi.Dir.RTL ? goog.i18n.bidi.LEFT :
                                                       goog.i18n.bidi.RIGHT;
 };
@@ -41804,6 +41965,17 @@ soy.$$filterCssValue = function(value) {
   return soy.esc.$$filterCssValueHelper(value);
 };
 
+/**
+ * Encodes a value as a CSP nonce value.
+ *
+ * @param {?} value The value to escape. Does not have to be a string, but the
+ *     value will be coerced to a string.
+ * @return {string} A safe CSP nonce value.
+ */
+soy.$$filterCspNonceValue = function(value) {
+  return soy.esc.$$filterCspNonceValueHelper(value);
+};
+
 
 // -----------------------------------------------------------------------------
 // Basic directives/functions.
@@ -41955,6 +42127,15 @@ soy.$$listIndexOf = function(list, val) {
 soy.$$listSlice = function(list, from, to) {
   return to == null ? goog.array.slice(list, from) :
                       goog.array.slice(list, from, to);
+};
+
+/**
+ * @param {...T} args
+ * @return {!Array<T>}
+ * @template T
+ */
+soy.$$makeArray = function(...args) {
+  return args;
 };
 
 /**
@@ -42670,6 +42851,12 @@ soy.esc.$$FILTER_FOR_FILTER_HTML_ATTRIBUTES_ = /^(?!on|src|(?:action|archive|bac
 soy.esc.$$FILTER_FOR_FILTER_HTML_ELEMENT_NAME_ = /^(?!base|iframe|link|no|script|style|textarea|title|xmp)[a-z0-9_$:-]*$/i;
 
 /**
+ * A pattern that vets values produced by the named directives.
+ * @private {!RegExp}
+ */
+soy.esc.$$FILTER_FOR_FILTER_CSP_NONCE_VALUE_ = /^[a-zA-Z0-9+\/]+=*$/;
+
+/**
  * A helper for the Soy directive |normalizeHtml
  * @param {?} value Can be of any type but will be coerced to a string.
  * @return {string} The escaped text.
@@ -42878,6 +43065,20 @@ soy.esc.$$filterHtmlElementNameHelper = function(value) {
   var str = String(value);
   if (!soy.esc.$$FILTER_FOR_FILTER_HTML_ELEMENT_NAME_.test(str)) {
     goog.asserts.fail('Bad value `%s` for |filterHtmlElementName', [str]);
+    return 'zSoyz';
+  }
+  return str;
+};
+
+/**
+ * A helper for the Soy directive |filterCspNonceValue
+ * @param {?} value Can be of any type but will be coerced to a string.
+ * @return {string} The escaped text.
+ */
+soy.esc.$$filterCspNonceValueHelper = function(value) {
+  var str = String(value);
+  if (!soy.esc.$$FILTER_FOR_FILTER_CSP_NONCE_VALUE_.test(str)) {
+    goog.asserts.fail('Bad value `%s` for |filterCspNonceValue', [str]);
     return 'zSoyz';
   }
   return str;
@@ -46884,6 +47085,7 @@ goog.require('goog.dom.TagName');
 goog.require('goog.dom.safe');
 goog.require('goog.html.SafeHtml');
 goog.require('goog.soy.data.SanitizedContent');
+goog.requireType('goog.soy.data.SanitizedHtml');
 
 /**
  * A structural interface for injected data.

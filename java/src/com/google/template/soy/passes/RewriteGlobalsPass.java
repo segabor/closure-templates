@@ -31,6 +31,7 @@ import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.types.SoyProtoEnumType;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyTypeRegistry;
+import com.google.template.soy.types.TypeRegistries;
 
 /**
  * A {@link CompilerFilePass} that searches for globals and substitutes values.
@@ -41,9 +42,15 @@ import com.google.template.soy.types.SoyTypeRegistry;
 @RunAfter({
   VeRewritePass.class, // rewrites some VE references that are parsed as globals in a different way
 })
+@RunBefore({CheckGlobalsPass.class})
 final class RewriteGlobalsPass implements CompilerFilePass {
   private static final SoyErrorKind ENUM_MEMBERSHIP_ERROR =
       SoyErrorKind.of("''{0}'' is not a member of enum ''{1}''.");
+
+  private static final SoyErrorKind PROTO_GLOBAL_OVERLAP_ERROR =
+      SoyErrorKind.of(
+          "''{0}'' corresponds to a proto enum and is registered as a global with the value"
+              + " ''{1}''.  Remove the global definition.");
 
   private final ImmutableMap<String, PrimitiveData> compileTimeGlobals;
   private final ErrorReporter errorReporter;
@@ -71,7 +78,9 @@ final class RewriteGlobalsPass implements CompilerFilePass {
     int lastDot = name.lastIndexOf('.');
     if (lastDot > 0) {
       String enumTypeName = name.substring(0, lastDot);
-      SoyType type = typeRegistry.getType(enumTypeName);
+      SoyType type =
+          TypeRegistries.getTypeOrProtoFqn(
+              typeRegistry, errorReporter, global.getIdentifier(), enumTypeName);
       if (type != null && type.getKind() == SoyType.Kind.PROTO_ENUM) {
         SoyProtoEnumType enumType = (SoyProtoEnumType) type;
         String enumMemberName = name.substring(lastDot + 1);
@@ -79,13 +88,18 @@ final class RewriteGlobalsPass implements CompilerFilePass {
         if (enumValue != null) {
           // TODO(lukes): consider introducing a new PrimitiveNode for enums
           global.resolve(enumType, new IntegerNode(enumValue, global.getSourceLocation()));
+          String fullyQualifiedName = enumType.getName() + "." + enumMemberName;
+          PrimitiveData value = compileTimeGlobals.get(fullyQualifiedName);
+          if (value != null) {
+            errorReporter.report(
+                global.getSourceLocation(), PROTO_GLOBAL_OVERLAP_ERROR, fullyQualifiedName, value);
+          }
         } else {
           // If we found the type definition but not the value, then that's an error
           // regardless of whether we're allowing unbound globals or not.
           errorReporter.report(
               global.getSourceLocation(), ENUM_MEMBERSHIP_ERROR, enumMemberName, enumTypeName);
         }
-        // TODO(lukes): issue a warning if a registered global also matches
         return;
       }
     }
@@ -94,13 +108,22 @@ final class RewriteGlobalsPass implements CompilerFilePass {
     if (alias != null) {
       global.setName(alias.identifier());
     }
-
+    name = global.getName();
     // if that doesn't work, see if it was registered in the globals file.
-    PrimitiveData value = compileTimeGlobals.get(global.getName());
+    PrimitiveData value = compileTimeGlobals.get(name);
+
     if (value != null) {
       PrimitiveNode expr =
           InternalValueUtils.convertPrimitiveDataToExpr(value, global.getSourceLocation());
       global.resolve(expr.getType(), expr);
+      // check if the fully qualified name matches a known proto, even if it isn't imported.
+      lastDot = name.lastIndexOf('.');
+      if (lastDot > 0) {
+        SoyType type = typeRegistry.getProtoRegistry().getProtoType(name.substring(0, lastDot));
+        if (type != null) {
+          errorReporter.report(global.getSourceLocation(), PROTO_GLOBAL_OVERLAP_ERROR, name, value);
+        }
+      }
     }
   }
 }

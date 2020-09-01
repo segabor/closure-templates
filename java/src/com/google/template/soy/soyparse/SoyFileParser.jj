@@ -69,6 +69,7 @@ import com.google.template.soy.exprtree.AbstractParentExprNode;
 import com.google.template.soy.exprtree.BooleanNode;
 import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.ExprNode.PrimitiveNode;
+import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.FieldAccessNode;
 import com.google.template.soy.exprtree.FloatNode;
 import com.google.template.soy.exprtree.FunctionNode;
@@ -82,7 +83,6 @@ import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.NullNode;
 import com.google.template.soy.exprtree.GroupNode;
 import com.google.template.soy.exprtree.Operator;
-import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.TemplateLiteralNode;
@@ -439,8 +439,6 @@ public class SoyFileParser {
       SoyErrorKind.of("Plural case ''{0}'' must be a nonnegative integer.");
   private static final SoyErrorKind PLURAL_CASE_MALFORMED =
       SoyErrorKind.of("Invalid number in ''plural case'' command text.");
-  private static final SoyErrorKind PLURAL_OFFSET_OUT_OF_BOUNDS =
-      SoyErrorKind.of("The ''offset'' for plural must be a positive integer.");
   private static final SoyErrorKind UNEXPECTED_CONTENT_AFTER =
       SoyErrorKind.of("Unexpected content after ''{0}'', expected only comments or whitespace.");
   private static final SoyErrorKind UNEXPECTED_CONTENT_BEFORE =
@@ -489,6 +487,20 @@ public class SoyFileParser {
   /** Names of attributes whose values should be parsed as expressions. */
   private static final ImmutableSet<String> EXPR_ATTR_NAMES =
       ImmutableSet.of("data", "genders", "key", "logonly", "variant");
+
+  // TODO(b/162252599): Move this to `Attributes` or `Attribute` call below.
+  private static void validateAttributes(
+      ExprNode expr, List<CommandTagAttribute> attributes, ErrorReporter errorReporter) {
+    for (CommandTagAttribute attribute : attributes) {
+      if (expr.getSourceLocation().isJustBefore(attribute.getName().location())) {
+        errorReporter.report(
+            attribute.getName().location(),
+            PARSER_ERROR,
+            attribute.getName().identifier(),
+            "whitespace");
+      }
+    }
+  }
 
   /** Attempts to parse the given input as a Soy expression. */
   public static ExprNode parseExprOrDie(String exprText) {
@@ -540,6 +552,10 @@ public class SoyFileParser {
 
   /** The header info for the file we are parsing. */
   private SoyFileHeaderInfo headerInfo;
+
+  // The names of all import symbols that can be referenced, (e.g. "foo" and "myBar" in:
+  // "import {foo, bar as myBar} from ...").
+  public List<String> importSymbols = new ArrayList<String>();
 
   /**
    * Constructor that takes a reader object providing the input.
@@ -984,6 +1000,7 @@ TOKEN_MGR_DECLS: {
 | < LCURLY: "{"      >
 | < RCURLY: "}"      >
 | < FROM: "from" >
+| < STAR: "*" >
 }
 
 
@@ -1384,7 +1401,7 @@ private SoyFileNode SoyFile() :
 
   {
     headerInfo = new SoyFileHeaderInfo(errorReporter, delpackageDecl, namespace,
-        aliases.build());
+        aliases.build(), importSymbols);
     List<TemplateNode> templates = new ArrayList<TemplateNode>();
   }
 
@@ -1450,36 +1467,65 @@ private AliasDeclaration Alias() :
   }
 }
 
-private ImportNode Import() :
+/** Matches a module import var ("* as Foo"), and throws an error if the alias is missing . */
+private ImportedVar ModuleImportVar() :
 {
-  Token open, close;
-  StringNode path = null;
+  Token star = null;
+  Token identifier = null;
+  Token alias = null;
+}
+{
+  star = <STAR>
+
+  // The "as Foo" is NOT optional. This is just so we can catch all "import *" in this block and
+  // throw a better error.
+  [
+     Keyword("as")
+     alias = <IDENT>
+  ]
+  {
+    if (alias == null) {
+      errorReporter.report(createSrcLoc(star), PARSER_ERROR, star.image, "'import * as Foo'");
+      return new ImportedVar("*", "ERROR", createSrcLoc(star));
+    } else {
+      importSymbols.add(alias.image);
+      return new ImportedVar("*", alias.image, createSrcLoc(star, alias));
+    }
+  }
+}
+
+/**
+ * Matches a list of imported symbols (e.g. "foo, bar as myBar, baz"). Also matches a single
+ * imported symbol.
+ */
+private ImmutableList<ImportedVar> SymbolImportVarList() :
+{
+  Token star = null;
   Token identifier = null;
   Token alias = null;
   SourceLocation loc;
-  ImmutableList.Builder<ImportedVar> identifiers = new ImmutableList.Builder<ImportedVar>();
+  ImmutableList.Builder<ImportedVar> importedVars = new ImmutableList.Builder<ImportedVar>();
 }
 {
-  (
-    open = <IMPORT_OPEN>
-    [
-    <LCURLY>
-    identifier = <IDENT>
-    [
-      Keyword("as")
-      alias = <IDENT>
-    ]
-    {
-      String a1 = null;
-      loc = createSrcLoc(identifier);
-      if (alias != null) {
-        a1 = alias.image;
-        loc = loc.extend(createSrcLoc(alias));
-      }
-      identifiers.add(new ImportedVar(identifier.image, a1, loc));
-      alias = null;
+  identifier = <IDENT>
+  [
+    Keyword("as")
+    alias = <IDENT>
+  ]
+  {
+    String a1 = null;
+    loc = createSrcLoc(identifier);
+    if (alias != null) {
+      a1 = alias.image;
+      loc = loc.extend(createSrcLoc(alias));
+      importSymbols.add(alias.image);
+    } else {
+      importSymbols.add(identifier.image);
     }
-    (
+    importedVars.add(new ImportedVar(identifier.image, a1, loc));
+    alias = null;
+  }
+  (
     <DEFAULT_COMMA>
     identifier = <IDENT>
     [
@@ -1492,19 +1538,49 @@ private ImportNode Import() :
       if (alias != null) {
         a2 = alias.image;
         loc = loc.extend(createSrcLoc(alias));
+        importSymbols.add(alias.image);
+      } else {
+        importSymbols.add(identifier.image);
       }
-      identifiers.add(new ImportedVar(identifier.image, a2, loc));
+      importedVars.add(new ImportedVar(identifier.image, a2, loc));
       alias = null;
     }
-    )*
-    <RCURLY>
+  )*
+  { return importedVars.build(); }
+}
+
+private ImportNode Import() :
+{
+  Token open, close;
+  StringNode path = null;
+  ImportedVar moduleImportVar;
+  ImmutableList<ImportedVar> identifiers = ImmutableList.of();
+}
+{
+  (
+    open = <IMPORT_OPEN>
+    [
+    (
+      // Module import ("import * as Foo from 'path/file.soy'").
+      (
+        moduleImportVar = ModuleImportVar()
+        {identifiers = ImmutableList.of(moduleImportVar);}
+      )
+      |
+      (
+        <LCURLY>
+        // Individual symbol imports ("import {foo, bar as myBar} from 'path.file.soy'").
+        identifiers = SymbolImportVarList()
+        <RCURLY>
+      )
+    )
     <FROM>
     ]
     path = StringLiteral()
     close = <SEMICOLON>
     {
       return new ImportNode(nodeIdGen.genId(), createSrcLoc(open, close), path,
-          identifiers.build());
+          identifiers);
     }
   )
 }
@@ -2454,50 +2530,24 @@ private MsgPluralNode MsgPlural() :
   Token tagBegin, tagEnd, caseBeginTag, caseBeginEnd, tagClose;
   ExprNode pluralExpr;
   ExprNode caseExpr;
-  CommandTagAttribute offsetAttr = null;
+  List<CommandTagAttribute> attributes;
   List<StandaloneNode> templateBlock;
 }
 {
   tagBegin = <CMD_BEGIN_PLURAL>
   try {
     pluralExpr = Expr()
-    [ offsetAttr = Attribute() ]
+    attributes = Attributes()
     tagEnd = <CMD_END>
   } catch (ParseException e) {
     pluralExpr = errorExpr(tagBegin);
+    attributes = ImmutableList.of();
     tagEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
   }
 
   {
-    int offset = 0;
+    validateAttributes(pluralExpr, attributes, errorReporter);
 
-    if (offsetAttr != null) {
-      if (pluralExpr.getSourceLocation().isJustBefore(offsetAttr.getName().location())) {
-        errorReporter.report(
-            offsetAttr.getName().location(),
-            PARSER_ERROR,
-            offsetAttr.getName().identifier(),
-            "whitespace");
-      }
-
-      if (!offsetAttr.getName().identifier().equals("offset")) {
-        errorReporter.report(
-            offsetAttr.getName().location(),
-            CommandTagAttribute.UNSUPPORTED_ATTRIBUTE_KEY_SINGLE,
-            offsetAttr.getName().identifier(),
-            "plural",
-            "offset");
-        offsetAttr = null;
-      }
-    }
-
-    if (offsetAttr != null) {
-      offset = offsetAttr.valueAsInteger(errorReporter, 0);
-      if (offset <= 0) {
-        errorReporter.report(offsetAttr.getValueLocation(), PLURAL_OFFSET_OUT_OF_BOUNDS);
-        offset = 0;
-      }
-    }
     List<CaseOrDefaultNode> caseNodes = new ArrayList<CaseOrDefaultNode>();
   }
 
@@ -2568,13 +2618,13 @@ private MsgPluralNode MsgPlural() :
 
   {
     MsgPluralNode pluralNode =
-        new MsgPluralNode(
+        MsgPluralNode.fromPluralExpr(
             nodeIdGen.genId(),
             createSrcLoc(tagBegin, tagClose),
             createSrcLoc(tagBegin, tagEnd),
             pluralExpr,
-            offsetAttr == null ? ImmutableList.of() : ImmutableList.of(offsetAttr),
-            offset);
+            attributes,
+            errorReporter);
     pluralNode.addChildren(caseNodes);
     return pluralNode;
   }
@@ -2592,19 +2642,24 @@ private MsgSelectNode MsgSelect() :
   Token tagBeginEnd = null;
   ExprNode selectExpr;
   ExprNode caseExpr;
+  List<CommandTagAttribute> attributes;
   List<StandaloneNode> templateBlock;
 }
 {
   tagBegin = <CMD_BEGIN_SELECT>
   try {
     selectExpr = Expr()
+    attributes = Attributes()
     tagBeginEnd = <CMD_END>
   } catch (ParseException e) {
     selectExpr = errorExpr(tagBegin);
+    attributes = ImmutableList.of();
     tagBeginEnd = reportTemplateBodyErrorAndSkipTo(e, CMD_END);
   }
 
   {
+    validateAttributes(selectExpr, attributes, errorReporter);
+
     List<CaseOrDefaultNode> caseNodes = new ArrayList<CaseOrDefaultNode>();
   }
 
@@ -2646,10 +2701,13 @@ private MsgSelectNode MsgSelect() :
   }
 
   {
-    MsgSelectNode selectNode =
-        new MsgSelectNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose),
-            tagBeginEnd == null ? createSrcLoc(tagBegin) : createSrcLoc(tagBegin, tagBeginEnd),
-            selectExpr);
+    MsgSelectNode selectNode = MsgSelectNode.fromSelectExpr(
+        nodeIdGen.genId(),
+        createSrcLoc(tagBegin, tagClose),
+        tagBeginEnd == null ? createSrcLoc(tagBegin) : createSrcLoc(tagBegin, tagBeginEnd),
+        new ExprRootNode(selectExpr),
+        attributes,
+        errorReporter);
     selectNode.addChildren(caseNodes);
     return selectNode;
   }
@@ -2959,7 +3017,7 @@ private IfNode IfStmt() :
   tagClose = <CMD_CLOSE_IF>
 
   {
-    IfNode ifNode = new IfNode(nodeIdGen.genId(), createSrcLoc(tagBegin, tagClose));
+    IfNode ifNode = new IfNode(nodeIdGen.genId(), createSrcLoc(tagClose), createSrcLoc(tagBegin, tagClose));
     ifNode.addChildren(condNodes);
     return ifNode;
   }
@@ -4070,7 +4128,7 @@ private ExprNode GlobalOrFunctionCallLike() :
               }
             } else {
               // TODO(user): Also add type, then remove code from RETV
-              node = new ProtoInitNode(
+              node = FunctionNode.newNamed(
                   headerInfo.resolveAlias(ident), paramIds, loc);
             }
             node.addChildren(params);
@@ -4093,7 +4151,7 @@ private ExprNode GlobalOrFunctionCallLike() :
 
           {
             SourceLocation loc = ident.location().extend(createSrcLoc(closeParen));
-            FunctionNode fnNode = new FunctionNode(ident, loc, commaLocations);
+            FunctionNode fnNode = FunctionNode.newPositional(ident, loc, commaLocations);
             fnNode.addChildren(params);
             return fnNode;
           }
@@ -4116,7 +4174,7 @@ private ExprNode GlobalOrFunctionCallLike() :
       errorReporter.report(ident.location(), EMPTY_RECORD_LITERAL);
       return new RecordLiteralNode(ident, ImmutableList.of(), loc);
     }
-    return new FunctionNode(ident, loc, commaLocations);
+    return FunctionNode.newNone(headerInfo.resolveAlias(ident), loc);
   }
 }
 

@@ -22,7 +22,6 @@ import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.template.soy.jssrc.dsl.Expression.LITERAL_FALSE;
 import static com.google.template.soy.jssrc.dsl.Expression.LITERAL_NULL;
 import static com.google.template.soy.jssrc.dsl.Expression.LITERAL_TRUE;
-import static com.google.template.soy.jssrc.dsl.Expression.arrayLiteral;
 import static com.google.template.soy.jssrc.dsl.Expression.arrowFunction;
 import static com.google.template.soy.jssrc.dsl.Expression.construct;
 import static com.google.template.soy.jssrc.dsl.Expression.id;
@@ -43,6 +42,7 @@ import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_CHECK_NOT_NUL
 import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_COERCE_TO_BOOLEAN;
 import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_EQUALS;
 import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_FILTER_AND_MAP;
+import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_MAKE_ARRAY;
 import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_MAP_POPULATE;
 import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_NEWMAPS_TRANSFORM_VALUES;
 import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_VISUAL_ELEMENT;
@@ -90,7 +90,6 @@ import com.google.template.soy.exprtree.OperatorNodes.NotEqualOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.NotOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.NullCoalescingOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.OrOpNode;
-import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.TemplateLiteralNode;
@@ -100,6 +99,7 @@ import com.google.template.soy.exprtree.VeLiteralNode;
 import com.google.template.soy.internal.proto.ProtoUtils;
 import com.google.template.soy.jssrc.dsl.CodeChunk;
 import com.google.template.soy.jssrc.dsl.Expression;
+import com.google.template.soy.jssrc.dsl.GoogRequire;
 import com.google.template.soy.jssrc.dsl.JsDoc;
 import com.google.template.soy.jssrc.dsl.SoyJsPluginUtils;
 import com.google.template.soy.jssrc.internal.NullSafeAccumulator.FieldAccess;
@@ -107,6 +107,7 @@ import com.google.template.soy.jssrc.internal.NullSafeAccumulator.ProtoCall;
 import com.google.template.soy.jssrc.restricted.JsExpr;
 import com.google.template.soy.jssrc.restricted.SoyJsSrcFunction;
 import com.google.template.soy.logging.LoggingFunction;
+import com.google.template.soy.logging.ValidatedLoggingConfig.ValidatedLoggableElement;
 import com.google.template.soy.plugin.javascript.restricted.SoyJavaScriptSourceFunction;
 import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.shared.internal.BuiltinMethod;
@@ -288,7 +289,7 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
 
   @Override
   protected Expression visitListLiteralNode(ListLiteralNode node) {
-    return arrayLiteral(visitChildren(node));
+    return SOY_MAKE_ARRAY.call(visitChildren(node));
   }
 
   @Override
@@ -324,11 +325,24 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
       filterAndIndexBase =
           SOY_FILTER_AND_MAP.call(
               base,
-              arrowFunction(doc, visit(node.getFilterExpr())),
+              arrowFunction(
+                  doc,
+                  maybeCoerceToBoolean(
+                      node.getFilterExpr().getType(),
+                      visit(node.getFilterExpr()),
+                      /*force=*/ false)),
               arrowFunction(doc, visit(node.getListItemTransformExpr())));
     }
     if (node.getFilterExpr() != null) {
-      base = base.dotAccess("filter").call(arrowFunction(doc, visit(node.getFilterExpr())));
+      base =
+          base.dotAccess("filter")
+              .call(
+                  arrowFunction(
+                      doc,
+                      maybeCoerceToBoolean(
+                          node.getFilterExpr().getType(),
+                          visit(node.getFilterExpr()),
+                          /*force=*/ false)));
     }
     // handle a special case for trivial transformations
     if (node.getListItemTransformExpr().getKind() == ExprNode.Kind.VAR_REF_NODE) {
@@ -683,9 +697,10 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
    * Wraps an arbitrary expression to be checked for truthiness.
    *
    * @param force {@code true} to always coerce to boolean; {@code false} to only coerce for idom.
-   *     TODO(b/74192616): Remove this parameter and always convert.
    */
   protected Expression maybeCoerceToBoolean(SoyType type, Expression chunk, boolean force) {
+    // TODO(lukes): we can have smarter logic here,  most types have trivial boolean coercions
+    // we only need to be careful about ?,any and the sanitized types
     if (force && type.getKind() != Kind.BOOL) {
       return SOY_COERCE_TO_BOOLEAN.call(chunk);
     }
@@ -727,8 +742,7 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
     return assertNonNull(node.getChild(0));
   }
 
-  @Override
-  protected Expression visitProtoInitNode(ProtoInitNode node) {
+  protected Expression visitProtoInitFunction(FunctionNode node) {
     SoyProtoType type = (SoyProtoType) node.getType();
     Expression proto = construct(protoConstructor(type));
     for (int i = 0; i < node.numChildren(); i++) {
@@ -805,6 +819,8 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
           return visitXidFunction(node);
         case SOY_SERVER_KEY:
           return visitSoyServerKeyFunction(node);
+        case PROTO_INIT:
+          return visitProtoInitFunction(node);
         case UNKNOWN_JS_GLOBAL:
           return visitUnknownJsGlobal(node);
         case V1_EXPRESSION:
@@ -818,6 +834,7 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
           return GOOG_DEBUG.and(JsRuntime.SOY_DEBUG_SOY_TEMPLATE_INFO, codeGenerator);
         case VE_DATA:
           return visitVeDataFunction(node);
+        case LEGACY_DYNAMIC_TAG:
         case REMAINDER:
         case MSG_WITH_ID:
           // should have been removed earlier in the compiler
@@ -957,13 +974,26 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
 
   @Override
   protected Expression visitVeLiteralNode(VeLiteralNode node) {
+    ValidatedLoggableElement element = node.getLoggableElement();
+    Expression metadata;
+    if (element.hasMetadata()) {
+      metadata =
+          GoogRequire.create(element.getJsPackage())
+              .googModuleGet()
+              .dotAccess(element.getClassName())
+              .dotAccess(element.getGeneratedVeMetadataMethodName())
+              .call();
+    } else {
+      metadata = Expression.LITERAL_UNDEFINED;
+    }
     return Expression.ifExpression(
             GOOG_DEBUG,
             construct(
                 SOY_VISUAL_ELEMENT,
                 Expression.number(node.getId()),
+                metadata,
                 Expression.stringLiteral(node.getName().identifier())))
-        .setElse(construct(SOY_VISUAL_ELEMENT, Expression.number(node.getId())))
+        .setElse(construct(SOY_VISUAL_ELEMENT, Expression.number(node.getId()), metadata))
         .build(codeGenerator);
   }
 

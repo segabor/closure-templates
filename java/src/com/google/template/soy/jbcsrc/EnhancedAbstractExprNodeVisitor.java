@@ -104,10 +104,13 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
           return visitVeDataFunction(node);
         case SOY_SERVER_KEY:
           return visitSoyServerKeyFunction(node);
+        case PROTO_INIT:
+          return visitProtoInitFunction(node);
         case MSG_WITH_ID:
         case REMAINDER:
           // should have been removed earlier in the compiler
         case UNKNOWN_JS_GLOBAL:
+        case LEGACY_DYNAMIC_TAG:
         case V1_EXPRESSION:
           // V1 expressions and unknownJsGlobals should not exist in jbcsrc
           throw new AssertionError();
@@ -174,6 +177,10 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
   }
 
   T visitVeDataFunction(FunctionNode node) {
+    return visitExprNode(node);
+  }
+
+  T visitProtoInitFunction(FunctionNode node) {
     return visitExprNode(node);
   }
 

@@ -61,6 +61,7 @@ import com.google.template.soy.exprtree.ExprNode.PrimitiveNode;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.FieldAccessNode;
 import com.google.template.soy.exprtree.FunctionNode;
+import com.google.template.soy.exprtree.FunctionNode.ParamsStyle;
 import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
 import com.google.template.soy.exprtree.ListComprehensionNode;
@@ -87,7 +88,6 @@ import com.google.template.soy.exprtree.OperatorNodes.NullCoalescingOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.OrOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.PlusOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.TimesOpNode;
-import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.TemplateLiteralNode;
@@ -144,6 +144,7 @@ import com.google.template.soy.types.SoyType.Kind;
 import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.SoyTypes;
 import com.google.template.soy.types.StringType;
+import com.google.template.soy.types.TypeRegistries;
 import com.google.template.soy.types.UnionType;
 import com.google.template.soy.types.UnknownType;
 import com.google.template.soy.types.VeDataType;
@@ -175,10 +176,6 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
   private static final SoyErrorKind BAD_LIST_COMP_TYPE =
       SoyErrorKind.of("Bad list comprehension type. {0} has type: {1}, but should be a list.");
 
-  private static final SoyErrorKind BAD_LIST_COMP_FILTER_TYPE =
-      SoyErrorKind.of(
-          "List comprehension filter must evaluate to a boolean. {0} has type: {1}, but should be"
-              + " a boolean.");
   private static final SoyErrorKind BRACKET_ACCESS_NOT_SUPPORTED =
       SoyErrorKind.of("Type {0} does not support bracket access.");
   private static final SoyErrorKind BRACKET_ACCESS_NULLABLE_UNION =
@@ -239,7 +236,8 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
   private static final SoyErrorKind UNKNOWN_PROTO_TYPE =
       SoyErrorKind.of("Unknown proto type ''{0}''.");
   private static final SoyErrorKind PROTO_FIELD_DOES_NOT_EXIST =
-      SoyErrorKind.of("Proto field ''{0}'' does not exist.{1}", StyleAllowance.NO_PUNCTUATION);
+      SoyErrorKind.of(
+          "Proto field ''{0}'' does not exist on {1}.{2}", StyleAllowance.NO_PUNCTUATION);
   private static final SoyErrorKind PROTO_MISSING_REQUIRED_FIELD =
       SoyErrorKind.of("Missing required proto field ''{0}''.");
   private static final SoyErrorKind PROTO_NULL_ARG_TYPE =
@@ -304,7 +302,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
 
   private ExprEquivalence exprEquivalence;
   private SoyTypeRegistry typeRegistry;
-  private TypeNodeConverter typeNodeConverter;
+  private TypeNodeConverter pluginTypeConverter;
   private final PluginResolver.Mode pluginResolutionMode;
 
   ResolveExpressionTypesPass(
@@ -327,8 +325,11 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
     substitutions = null; // make sure substitutions don't leak across files
     exprEquivalence = new ExprEquivalence();
     typeRegistry = file.getSoyTypeRegistry();
-    typeNodeConverter =
-        new TypeNodeConverter(errorReporter, typeRegistry, /* disableAllTypeChecking= */ false);
+    pluginTypeConverter =
+        TypeNodeConverter.builder(errorReporter)
+            .setTypeRegistry(typeRegistry)
+            .setSystemExternal(true)
+            .build();
     new TypeAssignmentSoyVisitor().exec(file);
   }
 
@@ -396,15 +397,21 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
             SoyType declaredType = headerVar.type();
             // Validation for template types happens later, it's intentional that it is not
             // assignable at this stage in parsing.
-            if (!declaredType.isAssignableFrom(actualType)
-                && !(declaredType.getKind() == SoyType.Kind.TEMPLATE
-                    && actualType.getKind() == SoyType.Kind.NAMED_TEMPLATE)) {
-              errorReporter.report(
-                  headerVar.defaultValue().getSourceLocation(),
-                  DECLARED_DEFAULT_TYPE_MISMATCH,
-                  headerVar.name(),
-                  actualType,
-                  declaredType);
+            if (!(SoyTypes.transitivelyContainsKind(declaredType, SoyType.Kind.TEMPLATE)
+                && SoyTypes.transitivelyContainsKind(actualType, SoyType.Kind.NAMED_TEMPLATE))) {
+              if (!declaredType.isAssignableFrom(actualType)) {
+                actualType =
+                    RuntimeTypeCoercion.maybeCoerceType(
+                        headerVar.defaultValue().getRoot(), SoyTypes.expandUnions(declaredType));
+              }
+              if (!declaredType.isAssignableFrom(actualType)) {
+                errorReporter.report(
+                    headerVar.defaultValue().getSourceLocation(),
+                    DECLARED_DEFAULT_TYPE_MISMATCH,
+                    headerVar.name(),
+                    actualType,
+                    declaredType);
+              }
             }
           } else {
             // in this case the declaredType is inferred from the initializer expression, so just
@@ -728,7 +735,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
     @Override
     protected void visitListLiteralNode(ListLiteralNode node) {
       visitChildren(node);
-      List<SoyType> elementTypes = new ArrayList<>(node.getChildren().size());
+      List<SoyType> elementTypes = new ArrayList<>(node.numChildren());
       for (ExprNode child : node.getChildren()) {
         requireNodeType(child);
         elementTypes.add(child.getType());
@@ -754,6 +761,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       visit(node.getListExpr());
 
       // Report an error if listExpr did not actually evaluate to a list.
+      // TODO(lukes): Should we allow iterating over the unknown type?  We do for for-loops.
       if (!(node.getListExpr().getType() instanceof ListType)) {
         errorReporter.report(
             node.getListExpr().getSourceLocation(),
@@ -775,13 +783,6 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       if (node.getFilterExpr() != null) {
         // Visit the optional filter expr, and make sure it evaluates to a boolean.
         visit(node.getFilterExpr());
-        if (!(node.getFilterExpr().getType() instanceof BoolType)) {
-          errorReporter.report(
-              node.getFilterExpr().getSourceLocation(),
-              BAD_LIST_COMP_FILTER_TYPE,
-              node.getFilterExpr().toSourceString(),
-              node.getFilterExpr().getType());
-        }
       }
 
       // Resolve the type of the itemMapExpr, and use it to determine the comprehension's resulting
@@ -1336,7 +1337,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         if (paramType == null) {
           return null;
         }
-        paramTypes.add(typeNodeConverter.getOrCreateType(paramType));
+        paramTypes.add(pluginTypeConverter.getOrCreateType(paramType));
       }
       TypeNode returnType =
           SoyFileParser.parseType(signature.returnType(), className, errorReporter);
@@ -1345,7 +1346,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       }
       resolvedSignature =
           ResolvedSignature.create(
-              paramTypes.build(), typeNodeConverter.getOrCreateType(returnType));
+              paramTypes.build(), pluginTypeConverter.getOrCreateType(returnType));
       signatureMap.put(signature, resolvedSignature);
       return resolvedSignature;
     }
@@ -1373,7 +1374,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       tryApplySubstitution(node);
 
       // If we didn't set the allowed types for params above, then set them to unknown types.
-      if (node.getAllowedParamTypes() == null) {
+      if (node.getParamsStyle() == ParamsStyle.POSITIONAL && node.getAllowedParamTypes() == null) {
         node.setAllowedParamTypes(
             Collections.nCopies(node.numChildren(), UnknownType.getInstance()));
       }
@@ -1472,154 +1473,146 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       }
     }
 
-    @Override
-    protected void visitProtoInitNode(ProtoInitNode node) {
-      visitChildren(node);
-
-      String protoName = node.getProtoName();
-      SoyType type = typeRegistry.getType(protoName);
+    private void visitProtoInitFunction(FunctionNode node) {
+      String protoName = node.getFunctionName();
+      SoyType type =
+          TypeRegistries.getTypeOrProtoFqn(typeRegistry, errorReporter, node.getIdentifier());
 
       if (type == null) {
         errorReporter.report(node.getSourceLocation(), UNKNOWN_PROTO_TYPE, protoName);
         node.setType(ErrorType.getInstance());
-      } else if (type.getKind() != SoyType.Kind.PROTO) {
+        return;
+      }
+      if (type.getKind() != SoyType.Kind.PROTO) {
         errorReporter.report(node.getSourceLocation(), NOT_A_PROTO_TYPE, protoName, type);
         node.setType(ErrorType.getInstance());
-      } else if (SAFE_PROTO_TO_SANITIZED_TYPE.containsKey(protoName)) {
+        return;
+      }
+      if (SAFE_PROTO_TO_SANITIZED_TYPE.containsKey(protoName)) {
         errorReporter.report(
             node.getSourceLocation(),
             TypeNodeConverter.SAFE_PROTO_TYPE,
             SAFE_PROTO_TO_SANITIZED_TYPE.get(protoName),
             protoName);
         node.setType(ErrorType.getInstance());
-      } else {
-        node.setType(type);
+        return;
+      }
 
-        SoyProtoType protoType = (SoyProtoType) type;
-        // TODO(user): Consider writing a soyProtoTypeImpl.getRequiredFields()
-        Set<String> givenParams = new HashSet<>();
-        ImmutableSet<String> fields = protoType.getFieldNames();
+      node.setType(type);
 
-        SoyFileNode file = exprHolderNode.getNearestAncestor(SoyFileNode.class);
-        boolean hasAliasedParams = false;
-        List<Identifier> resolvedIdentifiers = new ArrayList<>();
+      SoyProtoType protoType = (SoyProtoType) type;
+      // TODO(user): Consider writing a soyProtoTypeImpl.getRequiredFields()
+      Set<String> givenParams = new HashSet<>();
+      ImmutableSet<String> fields = protoType.getFieldNames();
 
-        // Resolve aliases for the given field names of the proto.
-        for (Identifier id : node.getParamNames()) {
-          String originalName = id.identifier();
-          Identifier resolvedName = file.resolveAlias(id);
-          if (!resolvedName.identifier().equals(originalName)) {
-            // Check that the aliased name does not conflict with a field in the proto as we cannot
-            // determine whether the intended field to instantiate is the regular field or the
-            // aliased value.
-            if (fields.contains(originalName)
-                && !protoType.getFieldDescriptor(originalName).isExtension()) {
-              errorReporter.report(
-                  id.location(),
-                  PROTO_FIELD_NAME_ALIAS_CONFLICT,
-                  originalName,
-                  protoType.getDescriptor().getName());
-              node.setType(ErrorType.getInstance());
-              continue;
-            }
-            hasAliasedParams = true;
-            id = resolvedName;
-          }
-          resolvedIdentifiers.add(id);
-          givenParams.add(id.identifier());
-        }
+      SoyFileNode file = exprHolderNode.getNearestAncestor(SoyFileNode.class);
+      boolean hasAliasedParams = false;
+      List<Identifier> resolvedIdentifiers = new ArrayList<>();
 
-        if (node.getType().getKind() == Kind.ERROR) {
-          return;
-        }
-
-        // Replace the ProtoInitNode to have a list of the resolved param names.
-        if (hasAliasedParams) {
-          ProtoInitNode resolvedNode =
-              new ProtoInitNode(
-                  node.getIdentifier(), resolvedIdentifiers, node.getSourceLocation());
-          resolvedNode.setType(node.getType());
-          resolvedNode.addChildren(node.getChildren());
-          node.getParent().replaceChild(node, resolvedNode);
-          node = resolvedNode;
-        }
-
-        // Check that all proto required fields are present.
-        for (String field : fields) {
-          if (protoType.getFieldDescriptor(field).isRequired() && !givenParams.contains(field)) {
-            errorReporter.report(node.getSourceLocation(), PROTO_MISSING_REQUIRED_FIELD, field);
-          }
-        }
-
-        for (int i = 0; i < node.numChildren(); i++) {
-          Identifier fieldName = node.getParamNames().get(i);
-          ExprNode expr = node.getChild(i);
-
-          // Check that each arg exists in the proto.
-          if (!fields.contains(fieldName.identifier())) {
-            String extraErrorMessage;
-            List<String> extensionFieldNames =
-                protoType.getFullyQualifiedExtensionName(fieldName.identifier());
-            if (!extensionFieldNames.isEmpty()) {
-              extraErrorMessage =
-                  String.format(
-                      " Did you mean to initialize an extension field %s with the same name?"
-                          + " Initializing extension fields with their simple name is no longer"
-                          + " supported. Use the fully qualified name instead.",
-                      extensionFieldNames);
-            } else {
-              extraErrorMessage =
-                  SoyErrors.getDidYouMeanMessageForProtoFields(
-                      fields, protoType.getDescriptor(), fieldName.identifier());
-            }
+      // Resolve aliases for the given field names of the proto.
+      for (Identifier id : node.getParamNames()) {
+        String originalName = id.identifier();
+        Identifier resolvedName = file.resolveAlias(id);
+        if (!resolvedName.identifier().equals(originalName)) {
+          // Check that the aliased name does not conflict with a field in the proto as we cannot
+          // determine whether the intended field to instantiate is the regular field or the
+          // aliased value.
+          if (fields.contains(originalName)
+              && !protoType.getFieldDescriptor(originalName).isExtension()) {
             errorReporter.report(
-                fieldName.location(),
-                PROTO_FIELD_DOES_NOT_EXIST,
-                fieldName.identifier(),
-                extraErrorMessage);
+                id.location(),
+                PROTO_FIELD_NAME_ALIAS_CONFLICT,
+                originalName,
+                protoType.getDescriptor().getName());
+            node.setType(ErrorType.getInstance());
             continue;
           }
+          hasAliasedParams = true;
+          id = resolvedName;
+        }
+        resolvedIdentifiers.add(id);
+        givenParams.add(id.identifier());
+      }
 
-          // Check that the arg type is not null and that it matches the expected field type.
-          SoyType argType = expr.getType();
-          if (argType.equals(NullType.getInstance())) {
-            errorReporter.report(
-                expr.getSourceLocation(), PROTO_NULL_ARG_TYPE, fieldName.identifier());
-          }
+      if (node.getType().getKind() == Kind.ERROR) {
+        return;
+      }
 
-          SoyType fieldType = protoType.getFieldType(fieldName.identifier());
+      // Replace the proto init node to have a list of the resolved param names.
+      if (hasAliasedParams) {
+        FunctionNode resolvedNode =
+            FunctionNode.newNamed(
+                node.getIdentifier(), resolvedIdentifiers, node.getSourceLocation());
+        resolvedNode.setSoyFunction(node.getSoyFunction());
+        resolvedNode.setType(node.getType());
+        resolvedNode.addChildren(node.getChildren());
+        node.getParent().replaceChild(node, resolvedNode);
+        node = resolvedNode;
+      }
 
-          // Let args with unknown or error types pass
-          if (argType.equals(UnknownType.getInstance())
-              || argType.equals(ErrorType.getInstance())) {
+      // Check that all proto required fields are present.
+      for (String field : fields) {
+        if (protoType.getFieldDescriptor(field).isRequired() && !givenParams.contains(field)) {
+          errorReporter.report(node.getSourceLocation(), PROTO_MISSING_REQUIRED_FIELD, field);
+        }
+      }
+
+      for (int i = 0; i < node.numChildren(); i++) {
+        Identifier fieldName = node.getParamNames().get(i);
+        ExprNode expr = node.getChild(i);
+
+        // Check that each arg exists in the proto.
+        if (!fields.contains(fieldName.identifier())) {
+          String extraErrorMessage =
+              SoyErrors.getDidYouMeanMessageForProtoFields(
+                  fields, protoType.getDescriptor(), fieldName.identifier());
+          errorReporter.report(
+              fieldName.location(),
+              PROTO_FIELD_DOES_NOT_EXIST,
+              fieldName.identifier(),
+              protoType,
+              extraErrorMessage);
+          continue;
+        }
+
+        // Check that the arg type is not null and that it matches the expected field type.
+        SoyType argType = expr.getType();
+        if (argType.equals(NullType.getInstance())) {
+          errorReporter.report(
+              expr.getSourceLocation(), PROTO_NULL_ARG_TYPE, fieldName.identifier());
+        }
+
+        SoyType fieldType = protoType.getFieldType(fieldName.identifier());
+
+        // Let args with unknown or error types pass
+        if (argType.equals(UnknownType.getInstance()) || argType.equals(ErrorType.getInstance())) {
+          continue;
+        }
+
+        // Same for List<?>, for repeated fields
+        if (fieldType.getKind() == Kind.LIST && argType.getKind() == Kind.LIST) {
+          SoyType argElementType = ((ListType) argType).getElementType();
+          if (argElementType == null || argElementType.equals(UnknownType.getInstance())) {
             continue;
           }
+        }
 
-          // Same for List<?>, for repeated fields
-          if (fieldType.getKind() == Kind.LIST && argType.getKind() == Kind.LIST) {
-            SoyType argElementType = ((ListType) argType).getElementType();
-            if (argElementType == null || argElementType.equals(UnknownType.getInstance())) {
-              continue;
-            }
-          }
-
-          SoyType expectedType = SoyTypes.makeNullable(fieldType);
-          if (!expectedType.isAssignableFrom(argType)) {
-            argType =
-                RuntimeTypeCoercion.maybeCoerceType(
-                    expr,
-                    expectedType instanceof UnionType
-                        ? ((UnionType) expectedType).getMembers()
-                        : ImmutableList.of(expectedType));
-          }
-          if (!expectedType.isAssignableFrom(argType)) {
-            errorReporter.report(
-                expr.getSourceLocation(),
-                ARGUMENT_TYPE_MISMATCH,
-                fieldName.identifier(),
-                expectedType,
-                argType);
-          }
+        SoyType expectedType = SoyTypes.makeNullable(fieldType);
+        if (!expectedType.isAssignableFrom(argType)) {
+          argType =
+              RuntimeTypeCoercion.maybeCoerceType(
+                  expr,
+                  expectedType instanceof UnionType
+                      ? ((UnionType) expectedType).getMembers()
+                      : ImmutableList.of(expectedType));
+        }
+        if (!expectedType.isAssignableFrom(argType)) {
+          errorReporter.report(
+              expr.getSourceLocation(),
+              ARGUMENT_TYPE_MISMATCH,
+              fieldName.identifier(),
+              expectedType,
+              argType);
         }
       }
     }
@@ -1641,7 +1634,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         } else {
           type = VeType.NO_DATA;
         }
-        node.setId(config.getId());
+        node.setLoggableElement(config);
       }
       node.setType(type);
     }
@@ -1759,23 +1752,9 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
             if (fieldType != null) {
               return fieldType;
             } else {
-              String extraErrorMessage;
-
-              List<String> extensionFieldNames =
-                  protoType.getFullyQualifiedExtensionName(fieldName);
-              if (!extensionFieldNames.isEmpty()) {
-                extraErrorMessage =
-                    String.format(
-                        " Did you mean to access an extension field %s with the same name?"
-                            + " Accessing extension fields with their simple name is no longer"
-                            + " supported. Use the 'getExtension' method with the fully qualified"
-                            + " name instead.",
-                        extensionFieldNames);
-              } else {
-                extraErrorMessage =
-                    SoyErrors.getDidYouMeanMessageForProtoFields(
-                        protoType.getFieldNames(), protoType.getDescriptor(), fieldName);
-              }
+              String extraErrorMessage =
+                  SoyErrors.getDidYouMeanMessageForProtoFields(
+                      protoType.getFieldNames(), protoType.getDescriptor(), fieldName);
               errorReporter.report(
                   sourceLocation,
                   UNDEFINED_FIELD_FOR_PROTO_TYPE,
@@ -1852,6 +1831,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         case TEMPLATE:
         case VE:
         case VE_DATA:
+        case MESSAGE:
           errorReporter.report(sourceLocation, DOT_ACCESS_NOT_SUPPORTED, baseType);
           return ErrorType.getInstance();
       }
@@ -1958,6 +1938,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         case TEMPLATE:
         case VE:
         case VE_DATA:
+        case MESSAGE:
           errorReporter.report(baseLocation, BRACKET_ACCESS_NOT_SUPPORTED, baseType);
           return ErrorType.getInstance();
       }
@@ -2054,6 +2035,14 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
                       node.numChildren() > 0
                           ? node.getChild(0).getType()
                           : UnknownType.getInstance())));
+          break;
+        case LEGACY_DYNAMIC_TAG:
+          // Should only happen when an error prevents rewriting in LegacyTagNamePass.
+          node.setType(ErrorType.getInstance());
+          break;
+        case PROTO_INIT:
+          visitProtoInitFunction(node);
+          break;
       }
     }
 
@@ -2230,7 +2219,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
 
     @Override
     protected void visitAndOpNode(AndOpNode node) {
-      Preconditions.checkArgument(node.getChildren().size() == 2);
+      Preconditions.checkArgument(node.numChildren() == 2);
       // Create two separate visitors to analyze each side of the expression.
       TypeNarrowingConditionVisitor leftVisitor = new TypeNarrowingConditionVisitor();
       TypeNarrowingConditionVisitor rightVisitor = new TypeNarrowingConditionVisitor();
@@ -2252,7 +2241,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
 
     @Override
     protected void visitOrOpNode(OrOpNode node) {
-      Preconditions.checkArgument(node.getChildren().size() == 2);
+      Preconditions.checkArgument(node.numChildren() == 2);
       // Create two separate visitors to analyze each side of the expression.
       TypeNarrowingConditionVisitor leftVisitor = new TypeNarrowingConditionVisitor();
       TypeNarrowingConditionVisitor rightVisitor = new TypeNarrowingConditionVisitor();
@@ -2505,7 +2494,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
                     TypeNode typeNode =
                         SoyFileParser.parseType(t, fct.getClass().getName(), errorReporter);
                     return typeNode != null
-                        ? typeNodeConverter.getOrCreateType(typeNode)
+                        ? pluginTypeConverter.getOrCreateType(typeNode)
                         : ErrorType.getInstance();
                   }
                 });

@@ -62,6 +62,7 @@ public final class SoyFileSetParserBuilder {
   @Nullable private SoyAstCache astCache = null;
   private ErrorReporter errorReporter = ErrorReporter.exploding(); // See #parse for discussion.
   private boolean allowUnboundGlobals;
+  private boolean allowUnknownJsGlobals;
   private boolean allowV1Expression;
   // disable optimization by default
   private boolean runOptimizer = false;
@@ -239,6 +240,11 @@ public final class SoyFileSetParserBuilder {
     return this;
   }
 
+  public SoyFileSetParserBuilder allowUnknownJsGlobals(boolean allowUnknownJsGlobals) {
+    this.allowUnknownJsGlobals = allowUnknownJsGlobals;
+    return this;
+  }
+
   public SoyFileSetParserBuilder allowV1Expression(boolean allowV1Expression) {
     this.allowV1Expression = allowV1Expression;
     return this;
@@ -280,13 +286,15 @@ public final class SoyFileSetParserBuilder {
     return this;
   }
 
+  public static final String FILE_PATH = "no-path";
+
   private static List<SoyFileSupplier> buildTestSoyFileSuppliers(String... soyFileContents) {
 
     List<SoyFileSupplier> soyFileSuppliers = Lists.newArrayList();
     for (int i = 0; i < soyFileContents.length; i++) {
       String soyFileContent = soyFileContents[i];
       // Names are now required to be unique in a SoyFileSet. Use one-based indexing.
-      String filePath = (i == 0) ? "no-path" : ("no-path-" + (i + 1));
+      String filePath = (i == 0) ? FILE_PATH : (FILE_PATH + "-" + (i + 1));
       soyFileSuppliers.add(SoyFileSupplier.Factory.create(soyFileContent, filePath));
     }
     return soyFileSuppliers;
@@ -341,6 +349,9 @@ public final class SoyFileSetParserBuilder {
         .setLoggingConfig(loggingConfig);
     if (allowUnboundGlobals) {
       passManager.allowUnknownGlobals();
+    }
+    if (allowUnknownJsGlobals) {
+      passManager.allowUnknownJsGlobals();
     }
     if (allowV1Expression) {
       passManager.allowV1Expression();

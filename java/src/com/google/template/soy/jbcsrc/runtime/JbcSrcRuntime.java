@@ -196,7 +196,6 @@ public final class JbcSrcRuntime {
     // always fail.
     if (o instanceof SoyString
         && o instanceof SanitizedContent
-        && ((SanitizedContent) o).getContentKind() != ContentKind.TEXT
         && logger.isLoggable(Level.WARNING)) {
       logger.log(
           Level.WARNING,
@@ -484,6 +483,13 @@ public final class JbcSrcRuntime {
             }
           }
           SoyValueProvider placeholderValue = (SoyValueProvider) placeholders.get(placeholderName);
+          if (placeholderValue == null) {
+            throw new IllegalStateException(
+                "No value provided for placeholder: '"
+                    + placeholderValue
+                    + "', expected one of "
+                    + placeholders.keySet());
+          }
           try {
             RenderResult result = placeholderValue.renderAndResolve(out, /* isLast= */ false);
             if (!result.isDone()) {
@@ -578,7 +584,11 @@ public final class JbcSrcRuntime {
     private String getSelectCase(String selectVarName) {
       String selectCase = (String) placeholders.get(selectVarName);
       if (selectCase == null) {
-        throw new IllegalArgumentException("No value provided for select: '" + selectVarName + "'");
+        throw new IllegalArgumentException(
+            "No value provided for select: '"
+                + selectVarName
+                + "', expected one of "
+                + placeholders.keySet());
       }
       return selectCase;
     }
@@ -587,7 +597,11 @@ public final class JbcSrcRuntime {
     private double getPlural(String pluralVarName) {
       NumberData pluralValue = (NumberData) placeholders.get(pluralVarName);
       if (pluralValue == null) {
-        throw new IllegalArgumentException("No value provided for plural: '" + pluralVarName + "'");
+        throw new IllegalArgumentException(
+            "No value provided for plural: '"
+                + pluralVarName
+                + "', expected one of "
+                + placeholders.keySet());
       }
       return pluralValue.numberValue();
     }

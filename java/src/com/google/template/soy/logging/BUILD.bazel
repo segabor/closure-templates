@@ -1,0 +1,73 @@
+load("@rules_java//java:defs.bzl", "java_library")
+
+package(default_visibility = ["//:soy_internal"])
+
+java_library(
+    name = "internal",
+    srcs = [
+        "AnnotatedLoggingConfigGenerator.java",
+        "ValidatedLoggingConfig.java",
+        "VeMetadataExtensionRegistry.java",
+        "VeMetadataGenerator.java",
+    ],
+    resources = [":metadata_templates"],
+    deps = [
+        ":public",
+        "//java/src/com/google/template/soy/base",
+        "//java/src/com/google/template/soy/base/internal",
+        "//java/src/com/google/template/soy/error:error_reporter",
+        "//java/src/com/google/template/soy/types",
+        "//src/main/protobuf:annotated_logging_config_java_proto",
+        "//src/main/protobuf:logging_config_java_proto",
+        "//src/main/protobuf:ve_metadata_java_proto",
+        "@com_google_auto_value_auto_value",
+        "@com_google_protobuf//:protobuf_java",
+        "@maven//:com_google_code_findbugs_jsr305",
+        "@maven//:com_google_escapevelocity_escapevelocity",
+        "@maven//:com_google_guava_guava",
+    ],
+)
+
+java_library(
+    name = "public",
+    srcs = [
+        "LoggingFunction.java",
+        "SoyLogger.java",
+    ],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//java/src/com/google/template/soy/data",
+        "//java/src/com/google/template/soy/plugin/restricted",
+    ],
+)
+
+filegroup(
+    name = "metadata_templates",
+    srcs = glob(["*.vm"]),
+)
+
+java_library(
+    name = "methods",
+    srcs = [
+        "GetMetadataMethod.java",
+        "GetVeMetadataMethod.java",
+    ],
+    deps = [
+        "//java/src/com/google/template/soy/data:ve",
+        "//java/src/com/google/template/soy/plugin/java/restricted",
+        "//java/src/com/google/template/soy/plugin/javascript/restricted",
+        "//java/src/com/google/template/soy/shared/restricted",
+        "//java/src/com/google/template/soy/shared/restricted:method_annotation",
+        "//src/main/protobuf:ve_metadata_java_proto",
+        "@maven//:com_google_guava_guava",
+    ],
+)
+
+java_library(
+    name = "methods_runtime",
+    srcs = ["LoggingMethodsRuntime.java"],
+    deps = [
+        "//java/src/com/google/template/soy/data:ve",
+        "//src/main/protobuf:ve_metadata_java_proto",
+    ],
+)

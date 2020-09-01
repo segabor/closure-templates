@@ -19,7 +19,6 @@ package com.google.template.soy.soytree;
 import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.exprtree.ExprEquivalence;
 import com.google.template.soy.soytree.SoyNode.MsgSubstUnitNode;
-import javax.annotation.Nullable;
 
 /**
  * A node that is the direct child of a MsgBlockNode and will turn into a placeholder.
@@ -34,10 +33,7 @@ import javax.annotation.Nullable;
 public final class MsgPlaceholderNode extends AbstractBlockNode implements MsgSubstUnitNode {
 
   /** The base placeholder name (what the translator sees). */
-  private final String basePhName;
-
-  /** A user supplied example for the placeholder, or null if it doesn't exist. */
-  @Nullable private final String phExample;
+  private final MessagePlaceholder placeholder;
 
   /** The initial child's SoyNode kind. */
   private final SoyNode.Kind initialNodeKind;
@@ -56,8 +52,7 @@ public final class MsgPlaceholderNode extends AbstractBlockNode implements MsgSu
    */
   public MsgPlaceholderNode(int id, MsgPlaceholderInitialNode initialNode) {
     super(id, initialNode.getSourceLocation());
-    this.basePhName = initialNode.genBasePhName();
-    this.phExample = initialNode.getUserSuppliedPhExample();
+    this.placeholder = initialNode.getPlaceholder();
     this.initialNodeKind = initialNode.getKind();
     this.samenessKey = initialNode.genSamenessKey();
     this.addChild(initialNode);
@@ -70,8 +65,7 @@ public final class MsgPlaceholderNode extends AbstractBlockNode implements MsgSu
    */
   private MsgPlaceholderNode(MsgPlaceholderNode orig, CopyState copyState) {
     super(orig, copyState);
-    this.basePhName = orig.basePhName;
-    this.phExample = orig.phExample;
+    this.placeholder = orig.placeholder;
     this.initialNodeKind = orig.initialNodeKind;
     this.samenessKey = orig.samenessKey.copy(copyState);
     copyState.updateRefs(orig, this);
@@ -94,13 +88,8 @@ public final class MsgPlaceholderNode extends AbstractBlockNode implements MsgSu
 
   /** Returns the base placeholder name (what the translator sees). */
   @Override
-  public String getBaseVarName() {
-    return basePhName;
-  }
-
-  @Nullable
-  public String getPhExample() {
-    return phExample;
+  public MessagePlaceholder getPlaceholder() {
+    return placeholder;
   }
 
   /**

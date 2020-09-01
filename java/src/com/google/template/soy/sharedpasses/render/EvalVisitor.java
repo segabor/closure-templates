@@ -44,6 +44,8 @@ import com.google.template.soy.data.SoyRecords;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.SoyValueConverter;
 import com.google.template.soy.data.SoyValueProvider;
+import com.google.template.soy.data.SoyVisualElement;
+import com.google.template.soy.data.SoyVisualElementData;
 import com.google.template.soy.data.TofuTemplateValue;
 import com.google.template.soy.data.internal.DictImpl;
 import com.google.template.soy.data.internal.ListImpl;
@@ -93,7 +95,6 @@ import com.google.template.soy.exprtree.OperatorNodes.NullCoalescingOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.OrOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.PlusOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.TimesOpNode;
-import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.TemplateLiteralNode;
@@ -101,6 +102,8 @@ import com.google.template.soy.exprtree.VarDefn;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.exprtree.VeLiteralNode;
 import com.google.template.soy.logging.LoggingFunction;
+import com.google.template.soy.logging.SoyLogger;
+import com.google.template.soy.logging.ValidatedLoggingConfig;
 import com.google.template.soy.msgs.SoyMsgBundle;
 import com.google.template.soy.plugin.internal.JavaPluginExecContext;
 import com.google.template.soy.plugin.java.restricted.JavaValueFactory;
@@ -136,6 +139,12 @@ import javax.annotation.Nullable;
  *
  */
 public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
+
+  static final SoyVisualElement UNDEFINED_VE =
+      SoyVisualElement.create(SoyLogger.UNDEFINED_VE_ID, ValidatedLoggingConfig.UNDEFINED_VE_NAME);
+
+  static final SoyVisualElementData UNDEFINED_VE_DATA =
+      SoyVisualElementData.create(UNDEFINED_VE, /* data= */ null);
 
   /** Defines how we deal with and produce UndefinedData instanes. */
   public enum UndefinedDataHandlingMode {
@@ -286,7 +295,7 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
         env.bind(node.getIndexVar(), SoyValueConverter.INSTANCE.convert(i));
       }
       if (filterExpr != null) {
-        if (!visit(filterExpr).booleanValue()) {
+        if (!visit(filterExpr).coerceToBoolean()) {
           continue;
         }
       }
@@ -766,18 +775,21 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
           return visitSoyServerKeyFunction(node);
         case IS_PRIMARY_MSG_IN_USE:
           return visitIsPrimaryMsgInUseFunction(node);
+        case PROTO_INIT:
+          return visitProtoInitFunction(node);
         case UNKNOWN_JS_GLOBAL:
-          throw new UnsupportedOperationException(
-              "the unknownJsGlobal function can't be used in templates compiled to Java");
+        case LEGACY_DYNAMIC_TAG:
         case V1_EXPRESSION:
           throw new UnsupportedOperationException(
-              "the v1Expression function can't be used in templates compiled to Java");
+              "the "
+                  + nonpluginFn.getName()
+                  + " function can't be used in templates compiled to Java");
         case TO_FLOAT:
           return visitToFloatFunction(node);
         case DEBUG_SOY_TEMPLATE_INFO:
           return BooleanData.forValue(debugSoyTemplateInfo);
         case VE_DATA:
-          return NullData.INSTANCE;
+          return UNDEFINED_VE_DATA;
         case MSG_WITH_ID:
         case REMAINDER:
           // should have been removed earlier in the compiler
@@ -807,8 +819,7 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
     }
   }
 
-  @Override
-  protected SoyValue visitProtoInitNode(ProtoInitNode node) {
+  protected SoyValue visitProtoInitFunction(FunctionNode node) {
     // The downcast is safe because if it was anything else, compilation would have already failed.
     SoyProtoType soyProto = (SoyProtoType) node.getType();
     ImmutableList<Identifier> paramNames = node.getParamNames();
@@ -962,7 +973,7 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
 
   @Override
   protected SoyValue visitVeLiteralNode(VeLiteralNode node) {
-    return NullData.INSTANCE;
+    return UNDEFINED_VE;
   }
 
   @Override

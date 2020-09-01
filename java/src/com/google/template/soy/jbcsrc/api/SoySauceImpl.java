@@ -150,8 +150,6 @@ public final class SoySauceImpl implements SoySauce {
 
     private SoyRecord data = ParamStore.EMPTY_INSTANCE;
     private SoyRecord ij = ParamStore.EMPTY_INSTANCE;
-    // TODO(b/129547159): Clean up this variable.
-    private ContentKind expectedContentKind = ContentKind.HTML;
     private Map<String, Supplier<Object>> perRenderPluginInstances = null;
     private boolean dataSetInConstructor;
 
@@ -257,13 +255,6 @@ public final class SoySauceImpl implements SoySauce {
       return this;
     }
 
-    @Override @Deprecated
-    public Renderer setExpectedContentKind(ContentKind expectedContentKind) {
-      checkNotNull(expectedContentKind);
-      this.expectedContentKind = expectedContentKind;
-      return this;
-    }
-
     @Override
     public WriteContinuation renderHtml(AdvisingAppendable out) throws IOException {
       enforceContentKind(ContentKind.HTML);
@@ -344,26 +335,6 @@ public final class SoySauceImpl implements SoySauce {
       } catch (IOException e) {
         throw new AssertionError("impossible", e);
       }
-    }
-
-    @Override @Deprecated
-    public WriteContinuation render(AdvisingAppendable out) throws IOException {
-      enforceContentKind(expectedContentKind);
-      return startRender(OutputAppendable.create(out, logger));
-    }
-
-    @Override
-    @Deprecated
-    public Continuation<String> render() {
-      enforceContentKind(expectedContentKind);
-      return renderText();
-    }
-
-    @Override
-    @Deprecated
-    public Continuation<SanitizedContent> renderStrict() {
-      return renderSanitizedContent(expectedContentKind);
-      // TODO(b/129547159): prevent calling renderStrict with ContentKind.TEXT
     }
 
     /**

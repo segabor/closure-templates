@@ -28,6 +28,7 @@
 goog.module('soy.velog');
 goog.module.declareLegacyNamespace();
 
+const LoggableElementMetadata = goog.require('proto.soy.LoggableElementMetadata');
 const Message = goog.require('jspb.Message');
 const {assert} = goog.require('goog.asserts');
 const {startsWith} = goog.require('goog.string');
@@ -371,22 +372,17 @@ class Logger {
 /** The ID of the UndefinedVe. */
 const UNDEFINED_VE_ID = -1;
 
-/**
- * Soy's runtime representation of objects of the Soy `ve` type.
- *
- * <p>This is for use only in Soy internal code and Soy generated JS. DO NOT use
- * this from handwritten code.
- *
- * @final
- */
 class $$VisualElement {
   /**
    * @param {number} id
+   * @param {!LoggableElementMetadata|undefined} metadata
    * @param {string=} name
    */
-  constructor(id, name = undefined) {
+  constructor(id, metadata, name = undefined) {
     /** @private @const {number} */
     this.id_ = id;
+    /** @private @const {!LoggableElementMetadata|undefined} */
+    this.metadata_ = metadata;
     /** @private @const {string|undefined} */
     this.name_ = name;
   }
@@ -394,6 +390,12 @@ class $$VisualElement {
   /** @return {number} */
   getId() {
     return this.id_;
+  }
+
+  /** @return {!LoggableElementMetadata} */
+  getMetadata() {
+    return this.metadata_ === undefined ? new LoggableElementMetadata() :
+                                          this.metadata_;
   }
 
   /** @package @return {string} */
@@ -416,14 +418,6 @@ class $$VisualElement {
   }
 }
 
-/**
- * Soy's runtime representation of objects of the Soy `ve_data` type.
- *
- * <p>This is for use only in Soy internal code and Soy generated JS. DO NOT use
- * this from handwritten code.
- *
- * @final
- */
 class $$VisualElementData {
   /**
    * @param {!$$VisualElement} ve
@@ -457,6 +451,22 @@ class $$VisualElementData {
   }
 }
 
+/**
+ * @param {!$$VisualElement} ve
+ * @return {!LoggableElementMetadata}
+ */
+function $$getMetadata(ve) {
+  return ve.getMetadata();
+}
+
+/**
+ * @param {!$$VisualElementData} veData
+ * @return {!LoggableElementMetadata}
+ */
+function $$getVeMetadata(veData) {
+  return $$getMetadata(veData.getVe());
+}
+
 exports = {
   $$hasMetadata,
   $$getLoggingAttribute,
@@ -474,4 +484,6 @@ exports = {
   setMetadataTestOnly,
   setUpLogging,
   tearDownLogging,
+  $$getMetadata,
+  $$getVeMetadata,
 };

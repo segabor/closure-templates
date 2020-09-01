@@ -16,8 +16,6 @@
 
 package com.google.template.soy.types;
 
-import com.google.common.collect.ImmutableSet;
-import com.google.protobuf.Descriptors.FileDescriptor;
 import javax.annotation.Nullable;
 
 /** Repository of registered types. */
@@ -38,8 +36,4 @@ public interface TypeRegistry {
   /** Returns the sorted set of all types in this registry. */
   Iterable<String> getAllSortedTypeNames();
 
-  /** A subtype of {@link TypeRegistry} that has a set of proto descriptors. */
-  interface ProtoRegistry extends TypeRegistry {
-    ImmutableSet<FileDescriptor> getFileDescriptors();
-  }
 }

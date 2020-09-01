@@ -50,7 +50,6 @@ import com.google.template.soy.exprtree.OperatorNodes.EqualOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.NotEqualOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.NullCoalescingOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.PlusOpNode;
-import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.TemplateLiteralNode;
@@ -605,17 +604,21 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
         // Always resolve to false since there is no plan to support this feature in PySrc.
         return new PyExpr("False", Integer.MAX_VALUE);
       case V1_EXPRESSION:
-        throw new UnsupportedOperationException(
-            "the v1Expression function can't be used in templates compiled to Python");
+      case LEGACY_DYNAMIC_TAG:
       case UNKNOWN_JS_GLOBAL:
         throw new UnsupportedOperationException(
-            "the unknownJsGlobal function can't be used in templates compiled to Python");
+            "the "
+                + nonpluginFn.getName()
+                + " function can't be used in templates compiled to Python");
       case VE_DATA:
         return NONE;
       case MSG_WITH_ID:
       case REMAINDER:
         // should have been removed earlier in the compiler
         throw new AssertionError();
+      case PROTO_INIT:
+        errorReporter.report(node.getSourceLocation(), PROTO_INIT_NOT_SUPPORTED);
+        return ERROR;
     }
     throw new AssertionError();
   }
@@ -806,12 +809,6 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
             .append(PyExprUtils.maybeProtect(falseExpr, conditionalPrecedence).getText());
 
     return new PyExpr(exprSb.toString(), conditionalPrecedence);
-  }
-
-  @Override
-  protected PyExpr visitProtoInitNode(ProtoInitNode node) {
-    errorReporter.report(node.getSourceLocation(), PROTO_INIT_NOT_SUPPORTED);
-    return ERROR;
   }
 
   @Override

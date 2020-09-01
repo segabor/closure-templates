@@ -26,6 +26,7 @@ import static com.google.template.soy.jssrc.internal.JsSrcSubject.assertThatSoyF
 
 import com.google.common.collect.ImmutableMap;
 import com.google.template.soy.jssrc.dsl.Expression;
+import com.google.template.soy.logging.AnnotatedLoggableElement;
 import com.google.template.soy.logging.LoggableElement;
 import com.google.template.soy.logging.testing.LoggingConfigs;
 import org.junit.Test;
@@ -58,8 +59,9 @@ public final class TranslateExprNodeVisitorTest {
 
   @Test
   public void testListLiteral() {
-    assertThatSoyExpr("['blah', 123, $foo]").generatesCode("['blah', 123, opt_data.foo];");
-    assertThatSoyExpr("[]").generatesCode("[];");
+    assertThatSoyExpr("['blah', 123, $foo]")
+        .generatesCode("soy.$$makeArray('blah', 123, opt_data.foo);");
+    assertThatSoyExpr("[]").generatesCode("soy.$$makeArray();");
   }
 
   @Test
@@ -261,7 +263,32 @@ public final class TranslateExprNodeVisitorTest {
                 LoggableElement.newBuilder().setId(8675309).setName("MyVe").build()))
         .generatesCode(
             "goog.DEBUG "
-                + "? new soy.velog.$$VisualElement(8675309, 'MyVe') "
-                + ": new soy.velog.$$VisualElement(8675309);");
+                + "? new soy.velog.$$VisualElement(8675309, undefined, 'MyVe') "
+                + ": new soy.velog.$$VisualElement(8675309, undefined);");
+  }
+
+  @Test
+  public void testVeLiteralWithMetadata() {
+    assertThatSoyExpr("ve(MyMetadataVe)")
+        .withLoggingConfig(
+            LoggingConfigs.createLoggingConfig(
+                AnnotatedLoggableElement.newBuilder()
+                    .setElement(LoggableElement.newBuilder().setId(2383).setName("MyMetadataVe"))
+                    .setHasMetadata(true)
+                    .setClassName("MyTestLoggingConfig")
+                    .setJsPackage("root.this.is.a.package.logging_config")
+                    .build()))
+        .generatesCode(
+            "goog.DEBUG ? new soy.velog.$$VisualElement(2383,"
+                + " goog.module.get('root.this.is.a.package.logging_config').MyTestLoggingConfig"
+                + ".v2383(), 'MyMetadataVe') : new soy.velog.$$VisualElement(2383,"
+                + " goog.module.get('root.this.is.a.package.logging_config').MyTestLoggingConfig"
+                + ".v2383());");
+  }
+
+  @Test
+  public void tesUnknownJsGlobal() {
+    assertThatSoyExpr("unknownJsGlobal('foo.Bar')")
+        .generatesCode("/** @suppress {missingRequire} */", "const $tmp = foo.Bar;", "$tmp;");
   }
 }

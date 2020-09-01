@@ -42,7 +42,6 @@ import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.SoyValueProvider;
 import com.google.template.soy.data.SoyVisualElement;
 import com.google.template.soy.data.SoyVisualElementData;
-import com.google.template.soy.data.SoyVisualElementFactory;
 import com.google.template.soy.data.UnsafeSanitizedContentOrdainer;
 import com.google.template.soy.data.internal.DictImpl;
 import com.google.template.soy.data.internal.LazyProtoToSoyValueList;
@@ -62,6 +61,7 @@ import com.google.template.soy.jbcsrc.runtime.JbcSrcRuntime;
 import com.google.template.soy.jbcsrc.shared.CompiledTemplate;
 import com.google.template.soy.jbcsrc.shared.LegacyFunctionAdapter;
 import com.google.template.soy.jbcsrc.shared.RenderContext;
+import com.google.template.soy.logging.LoggableElementMetadata;
 import com.google.template.soy.logging.SoyLogger;
 import com.google.template.soy.msgs.restricted.SoyMsgRawTextPart;
 import com.google.template.soy.shared.internal.SharedRuntime;
@@ -75,6 +75,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.commons.Method;
@@ -82,6 +83,8 @@ import org.objectweb.asm.commons.Method;
 /** A reference to a method that can be called at runtime. */
 @AutoValue
 public abstract class MethodRef {
+
+  public static final Type[] NO_METHOD_ARGS = {};
 
   public static final MethodRef ADVISING_STRING_BUILDER_GET_AND_CLEAR =
       create(LoggingAdvisingAppendable.BufferingAppendable.class, "getAndClearBuffer")
@@ -460,7 +463,15 @@ public abstract class MethodRef {
       MethodRef.create(ProtocolMessageEnum.class, "getNumber").asCheap();
 
   public static final MethodRef SOY_VISUAL_ELEMENT_CREATE =
-      MethodRef.create(SoyVisualElementFactory.class, "create", long.class, String.class);
+      MethodRef.create(SoyVisualElement.class, "create", long.class, String.class);
+
+  public static final MethodRef SOY_VISUAL_ELEMENT_CREATE_METADATA =
+      MethodRef.create(
+          SoyVisualElement.class,
+          "create",
+          long.class,
+          String.class,
+          LoggableElementMetadata.class);
 
   public static final MethodRef SOY_VISUAL_ELEMENT_DATA_CREATE =
       MethodRef.create(SoyVisualElementData.class, "create", SoyVisualElement.class, Message.class);
@@ -586,6 +597,29 @@ public abstract class MethodRef {
   abstract ImmutableList<Type> argTypes();
 
   public abstract Features features();
+
+  public Handle asHandle() {
+    int tag;
+    switch (opcode()) {
+      case Opcodes.INVOKESTATIC:
+        tag = Opcodes.H_INVOKESTATIC;
+        break;
+      case Opcodes.INVOKEINTERFACE:
+        tag = Opcodes.H_INVOKEINTERFACE;
+        break;
+      case Opcodes.INVOKEVIRTUAL:
+        tag = Opcodes.H_INVOKEVIRTUAL;
+        break;
+      default:
+        throw new AssertionError("unsupported opcode: " + opcode());
+    }
+    return new Handle(
+        tag,
+        owner().internalName(),
+        method().getName(),
+        method().getDescriptor(),
+        owner().isInterface());
+  }
 
   // TODO(lukes): consider different names.  'invocation'? invoke() makes it sounds like we are
   // actually calling the method rather than generating an expression that will output code that

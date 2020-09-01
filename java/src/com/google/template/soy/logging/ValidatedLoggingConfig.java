@@ -36,7 +36,7 @@ import javax.annotation.Nullable;
  */
 public final class ValidatedLoggingConfig {
 
-  private static final String UNDEFINED_VE_NAME = "UndefinedVe";
+  public static final String UNDEFINED_VE_NAME = "UndefinedVe";
 
   public static final AnnotatedLoggableElement UNDEFINED_VE =
       AnnotatedLoggableElement.newBuilder()
@@ -137,7 +137,7 @@ public final class ValidatedLoggingConfig {
   }
 
   private static AnnotatedLoggableElement createForComparison(AnnotatedLoggableElement e) {
-    return e.toBuilder().clearJavaPackage().clearClassName().build();
+    return e.toBuilder().clearJavaPackage().clearJsPackage().clearClassName().build();
   }
 
   private final ImmutableMap<String, ValidatedLoggableElement> elementsByName;
@@ -167,7 +167,9 @@ public final class ValidatedLoggingConfig {
           element.getId(),
           Optional.ofNullable(Strings.emptyToNull(element.getProtoType())),
           annotatedElement.getJavaPackage(),
-          annotatedElement.getClassName());
+          annotatedElement.getJsPackage(),
+          annotatedElement.getClassName(),
+          annotatedElement.getHasMetadata());
     }
 
     ValidatedLoggableElement() {}
@@ -180,6 +182,15 @@ public final class ValidatedLoggingConfig {
 
     public abstract String getJavaPackage();
 
+    public abstract String getJsPackage();
+
     public abstract String getClassName();
+
+    public abstract boolean hasMetadata();
+
+    /** The name of the generated method to access the VE metadata for this VE ID. */
+    public final String getGeneratedVeMetadataMethodName() {
+      return String.format("v%s", getId());
+    }
   }
 }

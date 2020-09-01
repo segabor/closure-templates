@@ -20,7 +20,6 @@ import static org.junit.Assert.fail;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Strings;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.template.soy.SoyFileSetParser;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
@@ -39,9 +38,10 @@ import com.google.template.soy.logging.ValidatedLoggingConfig;
 import com.google.template.soy.logging.testing.LoggingConfigs;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
+import com.google.template.soy.testing.Foo;
+import com.google.template.soy.testing.SharedTestUtils;
 import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import com.google.template.soy.types.SoyTypeRegistry;
-import com.google.template.soy.types.SoyTypeRegistryBuilder;
 import java.io.IOException;
 import java.util.Map;
 import org.junit.Test;
@@ -133,7 +133,7 @@ public final class VeLoggingTest {
     renderTemplate(
         OutputAppendable.create(sb, testLogger),
         testLogger,
-        "{velog ve_data(Foo, soy.test.Foo(intField: 123))}<div data-id=1></div>{/velog}");
+        "{velog ve_data(Foo, Foo(intField: 123))}<div data-id=1></div>{/velog}");
     assertThat(sb.toString()).isEqualTo("<div data-id=1></div>");
     assertThat(testLogger.builder.toString())
         .isEqualTo("velog{id=1, data=soy.test.Foo{int_field: 123}}");
@@ -305,10 +305,7 @@ public final class VeLoggingTest {
   private void renderTemplate(
       Map<String, ?> params, OutputAppendable output, SoyLogger logger, String... templateBodyLines)
       throws IOException {
-    SoyTypeRegistry typeRegistry =
-        new SoyTypeRegistryBuilder()
-            .addDescriptors(ImmutableList.of(com.google.template.soy.testing.Foo.getDescriptor()))
-            .build();
+    SoyTypeRegistry typeRegistry = SharedTestUtils.importing(Foo.getDescriptor());
     SoyFileSetParser parser =
         SoyFileSetParserBuilder.forFileContents(
                 "{namespace ns}\n"

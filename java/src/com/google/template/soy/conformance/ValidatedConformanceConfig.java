@@ -43,7 +43,7 @@ public final class ValidatedConformanceConfig {
    * @throws IllegalArgumentException if there is an error in the config object.
    */
   public static ValidatedConformanceConfig create(ConformanceConfig config) {
-    ImmutableList.Builder<RuleWithWhitelists> rulesBuilder = new ImmutableList.Builder<>();
+    ImmutableList.Builder<RuleWithExemptions> rulesBuilder = new ImmutableList.Builder<>();
     for (Requirement requirement : config.getRequirementList()) {
       Preconditions.checkArgument(
           !requirement.getErrorMessage().isEmpty(), "requirement missing error message");
@@ -51,21 +51,21 @@ public final class ValidatedConformanceConfig {
           requirement.getRequirementTypeCase() != RequirementTypeCase.REQUIREMENTTYPE_NOT_SET,
           "requirement missing type");
       Rule<? extends Node> rule = forRequirement(requirement);
-      ImmutableList<String> whitelists = ImmutableList.copyOf(requirement.getWhitelistList());
+      ImmutableList<String> exemptedFilePaths = ImmutableList.copyOf(requirement.getExemptList());
       ImmutableList<String> onlyApplyToPaths =
           ImmutableList.copyOf(requirement.getOnlyApplyToList());
-      rulesBuilder.add(RuleWithWhitelists.create(rule, whitelists, onlyApplyToPaths));
+      rulesBuilder.add(RuleWithExemptions.create(rule, exemptedFilePaths, onlyApplyToPaths));
     }
     return new ValidatedConformanceConfig(rulesBuilder.build());
   }
 
-  private final ImmutableList<RuleWithWhitelists> rules;
+  private final ImmutableList<RuleWithExemptions> rules;
 
-  private ValidatedConformanceConfig(ImmutableList<RuleWithWhitelists> rules) {
+  private ValidatedConformanceConfig(ImmutableList<RuleWithExemptions> rules) {
     this.rules = rules;
   }
 
-  ImmutableList<RuleWithWhitelists> getRules() {
+  ImmutableList<RuleWithExemptions> getRules() {
     return rules;
   }
 
@@ -137,6 +137,6 @@ public final class ValidatedConformanceConfig {
 
   public ValidatedConformanceConfig concat(ValidatedConformanceConfig other) {
     return new ValidatedConformanceConfig(
-        ImmutableList.<RuleWithWhitelists>builder().addAll(rules).addAll(other.rules).build());
+        ImmutableList.<RuleWithExemptions>builder().addAll(rules).addAll(other.rules).build());
   }
 }

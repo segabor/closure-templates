@@ -33,7 +33,7 @@ import {getSoyUntyped} from './global';
 
 // Declare properties that need to be applied not as attributes but as
 // actual DOM properties.
-const {attributes} = incrementaldom;
+const {attributes, currentContext} = incrementaldom;
 
 const defaultIdomRenderer = new IncrementalDomRenderer();
 
@@ -103,11 +103,18 @@ function handleSoyElement<DATA, T extends SoyElement<DATA, {}>>(
       el = maybeSoyEl;
       break;
     }
+    // If we extend beyond the current scope of the patch, we may reach an
+    // element of an already hydrated element.
+    if (currentContext()?.node === currentPointer) {
+      break;
+    }
     currentPointer = currentPointer.nextSibling;
   }
   if (!el) {
     el = new elementClassCtor(data, ijData);
     el.key = soyElementKey;
+    // NOTE(b/166257386): Without this, SoyElement re-renders don't have logging
+    el.setLogger(incrementaldom.getLogger());
   }
   el.queueSoyElement(incrementaldom, data);
   el.renderInternal(incrementaldom, data);
@@ -396,6 +403,7 @@ function isTruthy(expr: unknown): boolean {
 }
 
 export {
+  SoyTemplate as $SoyTemplate,
   SoyElement as $SoyElement,
   isTruthy as $$isTruthy,
   print as $$print,

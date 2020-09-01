@@ -27,9 +27,9 @@ import com.google.common.collect.Iterables;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.BaseUtils;
 import com.google.template.soy.base.internal.Identifier;
-import com.google.template.soy.base.internal.Identifier.Type;
 import com.google.template.soy.base.internal.QuoteStyle;
 import com.google.template.soy.base.internal.SanitizedContentKind;
+import com.google.template.soy.base.internal.TemplateContentKind;
 import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
@@ -39,6 +39,7 @@ import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.OptionalLong;
 import java.util.Set;
 import javax.annotation.Nullable;
@@ -115,7 +116,8 @@ public final class CommandTagAttribute {
       String value,
       SourceLocation valueLocation,
       SourceLocation wholeAttributeLocation) {
-    checkArgument(key.type() == Type.SINGLE_IDENT, "expected a single identifier, got: %s", key);
+    checkArgument(
+        key.type() == Identifier.Type.SINGLE_IDENT, "expected a single identifier, got: %s", key);
     this.key = checkNotNull(key);
     this.quoteStyle = checkNotNull(quoteStyle);
     this.sourceLocation = wholeAttributeLocation;
@@ -129,7 +131,8 @@ public final class CommandTagAttribute {
       QuoteStyle quoteStyle,
       ImmutableList<ExprNode> valueExprList,
       SourceLocation sourceLocation) {
-    checkArgument(key.type() == Type.SINGLE_IDENT, "expected a single identifier, got: %s", key);
+    checkArgument(
+        key.type() == Identifier.Type.SINGLE_IDENT, "expected a single identifier, got: %s", key);
     checkArgument(valueExprList.size() >= 1);
     this.key = checkNotNull(key);
     this.quoteStyle = checkNotNull(quoteStyle);
@@ -184,14 +187,14 @@ public final class CommandTagAttribute {
     return quoteStyle;
   }
 
-  public int valueAsInteger(ErrorReporter errorReporter, int defaultValue) {
+  public OptionalInt valueAsOptionalInt(ErrorReporter errorReporter) {
     checkState(valueExprList == null);
 
     try {
-      return Integer.parseInt(value);
+      return OptionalInt.of(Integer.parseInt(value));
     } catch (NumberFormatException e) {
-      errorReporter.report(valueLocation, INVALID_ATTRIBUTE, key.identifier(), "an integer");
-      return defaultValue;
+      errorReporter.report(valueLocation, INVALID_ATTRIBUTE, key.identifier(), "a number");
+      return OptionalInt.empty();
     }
   }
 
@@ -306,6 +309,16 @@ public final class CommandTagAttribute {
           INVALID_ATTRIBUTE_LIST,
           key.identifier(),
           SanitizedContentKind.attributeValues().asList());
+    }
+    return contentKind;
+  }
+
+  public Optional<TemplateContentKind> valueAsTemplateContentKind(ErrorReporter errorReporter) {
+    checkState(valueExprList == null);
+
+    Optional<TemplateContentKind> contentKind = TemplateContentKind.fromAttributeValue(value);
+    if (!contentKind.isPresent()) {
+      errorReporter.report(valueLocation, TemplateContentKind.INVALID_ATTRIBUTE_VALUE);
     }
     return contentKind;
   }

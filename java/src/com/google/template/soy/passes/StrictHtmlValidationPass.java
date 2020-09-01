@@ -63,8 +63,6 @@ import javax.annotation.Nullable;
 
 /**
  * A {@link CompilerFilePass} that checks strict html mode. See go/soy-html for usages.
- *
- * <p>Note: This pass requires that the {@link SoyConformancePass} has already been run.
  */
 @RunAfter(ResolveNamesPass.class)
 public final class StrictHtmlValidationPass implements CompilerFilePass {
@@ -92,8 +90,8 @@ public final class StrictHtmlValidationPass implements CompilerFilePass {
             idGenerator,
             /** inCondition */
             false,
-            /** inForeignContent */
-            false,
+            /** foreignContentTagDepth */
+            0,
             /** parentBlockType */
             null)
         .run(htmlMatcherGraph);
@@ -252,8 +250,8 @@ public final class StrictHtmlValidationPass implements CompilerFilePass {
               idGenerator,
               /** inCondition */
               false,
-              /** inForeignContent */
-              false,
+              /** foreignContentTagDepth */
+              0,
               "let content")
           .run(htmlMatcherGraph);
     }
@@ -266,8 +264,8 @@ public final class StrictHtmlValidationPass implements CompilerFilePass {
               idGenerator,
               /** inCondition */
               false,
-              /** inForeignContent */
-              false,
+              /** foreignContentTagDepth */
+              0,
               "call param content")
           .run(htmlMatcherGraph);
     }

@@ -37,10 +37,9 @@ import javax.annotation.Nullable;
  * <p>Important: If you're a user of Soy, you should use the methods here (on a SoyTofu object
  * created by Soy), but should not create your own implementations of this interface.
  *
- * @deprecated Use SoySauce instead. Apps/framework users should follow this migration guide
- *     go/af-soy-migration. All other users should be able to switch from SoyFileSet.compileToTofu()
- *     to SoyFileSet.compileTemplates(). To use the support for precompilation (outside of
- *     apps/framework) see SoySauceBuilder.
+ * @deprecated Use SoySauce instead. All users should be able to switch from
+ *     SoyFileSet.compileToTofu() to SoyFileSet.compileTemplates(). To use the support for
+ *     precompilation (outside of apps/framework) see SoySauceBuilder.
  */
 @Deprecated
 public interface SoyTofu {
@@ -189,18 +188,6 @@ public interface SoyTofu {
 
     /** Configures if we should render additional HTML comments for runtime inspection. */
     Renderer setDebugSoyTemplateInfo(boolean debugSoyTemplateInfo);
-
-    /**
-     * Sets the expected content kind.
-     *
-     * <p>An attempt to render a template with a different kind will fail if this has
-     * been called.
-     *
-     * @deprecated Use type-specific render methods instead of setting content kind
-     *     before rendering (e.g. {@link #renderHtml()}, {@link #renderCss()}, etc.).
-     * TODO(b/138750285): Delete this method in July 2020.
-     */
-     @Deprecated Renderer setContentKind(SanitizedContent.ContentKind contentKind);
 
     /**
      * Renders the configured html template to the given appendable.

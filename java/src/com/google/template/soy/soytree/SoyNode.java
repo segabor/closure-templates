@@ -27,7 +27,6 @@ import com.google.template.soy.basetree.ParentNode;
 import com.google.template.soy.exprtree.ExprEquivalence;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.VarDefn;
-import javax.annotation.Nullable;
 
 /**
  * This class defines the base interface for a node in the parse tree, as well as a number of
@@ -273,14 +272,15 @@ public interface SoyNode extends Node {
     MsgBlockNode getParent();
 
     /**
-     * Returns the base var name for this substitution unit. (For a placeholder, this is the base
-     * placeholder name.)
+     * Returns the placeholder meta data for this substitution unit. {@code
+     * MessagePlaceholder::name} is the base placeholder name, it might have a suffix appended if it
+     * collides with another.
      *
      * <p>Note: This isn't quite correct semantically. It's conceivable that a new type of
      * substitution unit in the future could have multiple vars. But until that happens, this
      * simpler model is sufficient.
      */
-    String getBaseVarName();
+    MessagePlaceholder getPlaceholder();
 
     /**
      * Returns whether this substitution unit should use the same var name as another substitution
@@ -343,29 +343,8 @@ public interface SoyNode extends Node {
       }
     }
 
-    /**
-     * Gets the user-supplied placeholder name, or null if not supplied or not applicable. Note that
-     * this raw name can be any identifier (not necessarily in upper-underscore format).
-     *
-     * @return The user-supplied placeholder name, or null if not supplied or not applicable.
-     */
-    @Nullable
-    String getUserSuppliedPhName();
-
-    /**
-     * Gets the user-supplied placeholder example, or null if not supplied or not applicable.
-     *
-     * @return The user-supplied placeholder example, or null if not supplied or not applicable.
-     */
-    @Nullable
-    String getUserSuppliedPhExample();
-
-    /**
-     * Generates the base placeholder name for this node.
-     *
-     * @return The base placeholder name for this node.
-     */
-    String genBasePhName();
+    /** Base placeholder name and associated info, for this node. */
+    MessagePlaceholder getPlaceholder();
 
     /**
      * Generates the key object used in comparisons to determine whether two placeholder nodes

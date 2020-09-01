@@ -271,22 +271,55 @@ Returns a copy of a string with leading and trailing whitespace removed.
 ### `v1Expression(stringLiteral)` {#v1Expression}
 
 The `v1Expression` function is part of the support for deprecated V1 syntax.
-This function can only be used by the JavaScript backend in legacy whitelisted
+This function can only be used by the JavaScript backend in legacy exempted
 files. When used the function must take a
 [string literal](expressions.md#string-literal) that contains some pseudo Soy
 code. The JavaScript backend will perform some simple textual replacements to
 make variable references work, but otherwise emit it as is in the generated
 JavaScript.
 
+### `legacyDynamicTag($ag)` {#legacyDynamicTag}
+
+The `legacyTagName` function is used to create an HTML tag whose name is
+determined dynamically by a print node. Wrapping the tag name expression in
+`legacyTagName` is required in order to disambiguate it with other Soy syntax.
+
+```soy
+{template .foo}
+  {@param tagName: string}
+  <{legacyDynamicTag($tagName)}>Hello!</{legacyDynamicTag($tagName)}>
+{/template}
+```
+
 ### `unknownJsGlobal(stringLiteral)` {#unknownJsGlobal}
 
 The `unknownJsGlobal` function allows code compiled to the `jssrc` backend to
 access JavaScript global values outside of the normal support for globals.
 
-This function can only be used by the JavaScript backend in whitelisted files.
-When used the function must take a
+This function can only be used by the JavaScript backend, as such files that use
+it are incompatible with the other backends. When used the function must take a
 [string literal](expressions.md#string-literal) that contains some JS identifier
 reference.
+
+```soy
+{unknownJsGlobal('some.javascript.Identifier')}
+```
+
+This will compile to something like:
+
+```js
+/** @suppress {missingRequire} */ (foo.Bar)
+```
+
+This pattern is provided for backwards compatibility with old versions of the
+Soy compiler that didn't require globals definitions to be provided. Users
+should consider replacing the use of this function with one of the following:
+
+*   a custom soy plugin to represent the needed functionality.
+*   a globals definition for the referenced global.
+*   representing the value as a proto enum
+
+NOTE: b/162340156 is in progress enforcing that this is used
 
 ### `css([baseClass,] selector)` {#css}
 
@@ -395,8 +428,9 @@ See the documentation for the [ve_data literal](expressions.md#ve_data).
 
 Binds one or more parameters to the given template-type expression. The
 parameter record must be a record literal, and each member must match the name
-and type of an unbound parameter in the template-type expression. Parmeters
+and type of an unbound parameter in the template-type expression. Parameters
 already bound to the template type may not be bound again.
+
 
 ## Localization (l10n) Functions
 

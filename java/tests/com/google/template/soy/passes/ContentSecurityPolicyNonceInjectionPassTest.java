@@ -34,7 +34,7 @@ public final class ContentSecurityPolicyNonceInjectionPassTest {
   private static final String DEFN =
       "  {@inject? csp_nonce: any}  /** Created by ContentSecurityPolicyNonceInjectionPass. */\n";
   private static final String NONCE =
-      "{if $csp_nonce} nonce=\"{$csp_nonce |escapeHtmlAttribute}\"{/if}";
+      "{if $csp_nonce} nonce=\"{$csp_nonce |filterCspNonceValue |escapeHtmlAttribute}\"{/if}";
 
   @Test
   public void testTrivialTemplate() {
@@ -248,12 +248,10 @@ public final class ContentSecurityPolicyNonceInjectionPassTest {
             .compileTemplates()
             .renderTemplate("ns.foo")
             .setIj(ImmutableMap.of("csp_nonce", "\">alert('hello')</script><script data-foo=\""))
-            .render()
-            .get();
-    assertThat(renderedValue)
-        .isEqualTo(
-            "<script nonce=\"&quot;&gt;alert(&#39;hello&#39;)&lt;/script&gt;&lt;script "
-                + "data-foo=&quot;\">var innocentJs=\"foo\"</script>");
+            .renderHtml()
+            .get()
+            .getContent();
+    assertThat(renderedValue).isEqualTo("<script nonce=\"zSoyz\">var innocentJs=\"foo\"</script>");
   }
 
   @Test
@@ -272,8 +270,9 @@ public final class ContentSecurityPolicyNonceInjectionPassTest {
             .compileTemplates()
             .renderTemplate("ns.foo")
             .setIj(ImmutableMap.of("csp_nonce", "*/alert('hello');/*"))
-            .render()
-            .get();
+            .renderHtml()
+            .get()
+            .getContent();
     // We don't inject into inline event handlers anymore
     assertThat(renderedValue).isEqualTo("<a href='#' onmouseover='foo()'>click me</a>");
   }

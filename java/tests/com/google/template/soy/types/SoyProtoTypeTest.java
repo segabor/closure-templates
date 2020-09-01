@@ -24,6 +24,7 @@ import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.template.soy.testing.Example;
 import com.google.template.soy.testing.ExampleExtendable;
 import com.google.template.soy.testing.SomeNestedExtension.NestedExtension;
+import com.google.template.soy.types.SoyTypeRegistryBuilder.SoyTypeRegistryImpl;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -33,10 +34,11 @@ public class SoyProtoTypeTest {
 
   @Test
   public void testExtensionFieldNames() {
-    SoyTypeRegistry typeRegistry =
-        new SoyTypeRegistryBuilder()
-            .addDescriptors(ImmutableList.of(Example.getDescriptor()))
-            .build();
+    SoyTypeRegistryImpl typeRegistry =
+        (SoyTypeRegistryImpl)
+            new SoyTypeRegistryBuilder()
+                .addDescriptors(ImmutableList.of(Example.getDescriptor()))
+                .build();
 
     ImmutableSet<FieldDescriptor> extensions =
         ImmutableSet.of(
@@ -46,7 +48,11 @@ public class SoyProtoTypeTest {
             Example.listExtension.getDescriptor());
 
     SoyProtoType protoType =
-        new SoyProtoType(typeRegistry, ExampleExtendable.getDescriptor(), extensions);
+        new SoyProtoType(
+            typeRegistry.getDelegate(),
+            typeRegistry.getProtoRegistry(),
+            ExampleExtendable.getDescriptor(),
+            extensions);
 
     assertThat(protoType.getFieldNames())
         .containsAtLeast(

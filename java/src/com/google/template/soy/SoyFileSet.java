@@ -36,7 +36,6 @@ import com.google.template.soy.SoyFileSetParser.ParseResult;
 import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.base.internal.SoyFileSupplier;
 import com.google.template.soy.base.internal.TriState;
-import com.google.template.soy.base.internal.VolatileSoyFileSupplier;
 import com.google.template.soy.conformance.ValidatedConformanceConfig;
 import com.google.template.soy.css.CssRegistry;
 import com.google.template.soy.error.ErrorReporter;
@@ -333,9 +332,13 @@ public final class SoyFileSet {
      * @see #add(URL, String)
      * @param inputFileUrl The Soy file.
      * @return This builder.
+     * @deprecated This method is incompatible with imports since the filename is unlikely to be
+     *     correct. Please call {@link #add(URL, String)} instead, or better yet, migrate off of
+     *     SoyFileSet.
      */
+    @Deprecated
     public Builder add(URL inputFileUrl) {
-      return addFile(SoyFileSupplier.Factory.create(inputFileUrl));
+      return add(inputFileUrl, inputFileUrl.toString());
     }
 
     /**
@@ -358,20 +361,6 @@ public final class SoyFileSet {
      */
     public Builder add(File inputFile) {
       return addFile(SoyFileSupplier.Factory.create(inputFile));
-    }
-
-    /**
-     * Adds an input Soy file that supports checking for modifications, given a {@code File}.
-     *
-     * <p>Note: This does nothing by itself. It should be used in conjunction with a feature that
-     * actually checks for volatile files. Currently, that feature is {@link
-     * #setSoyAstCache(SoyAstCache)}.
-     *
-     * @param inputFile The Soy file.
-     * @return This builder.
-     */
-    public Builder addVolatile(File inputFile) {
-      return addFile(new VolatileSoyFileSupplier(inputFile));
     }
 
     /**
@@ -493,19 +482,6 @@ public final class SoyFileSet {
     }
 
     /**
-     * Add all proto descriptors found in the file to the type registry.
-     *
-     * @param descriptorFile A file containing FileDescriptorSet binary protos. These typically end
-     *     in {@code .proto.bin}. Note that this isn't the same as a {@code .proto} source file.
-     * @deprecated Call {@link #addProtoDescriptors} instead
-     */
-    @Deprecated
-    public Builder addProtoDescriptorsFromFile(File descriptorFile) throws IOException {
-      typeRegistryBuilder.addFileDescriptorSetFromFile(descriptorFile);
-      return this;
-    }
-
-    /**
      * Registers a collection of protocol buffer descriptors. This makes all the types defined in
      * the provided descriptors available to use in soy.
      */
@@ -536,7 +512,7 @@ public final class SoyFileSet {
       return this;
     }
 
-    Builder addFile(SoyFileSupplier supplier) {
+    private Builder addFile(SoyFileSupplier supplier) {
       filesBuilder.put(supplier.getFilePath(), supplier);
       return this;
     }
@@ -785,27 +761,40 @@ public final class SoyFileSet {
           // SoyConformance pass.
           parse(
               passManagerBuilder()
-                  // TODO(lukes): kill the pass continuation mechanism
-                  .allowUnknownGlobals()
                   .allowUnknownJsGlobals()
                   .allowV1Expression()
                   .desugarHtmlAndStateNodes(false)
                   .optimize(false)
                   .addHtmlAttributesForDebugging(false)
+                  // TODO(lukes): kill the pass continuation mechanism
                   .addPassContinuationRule(
                       SoyConformancePass.class, PassContinuationRule.STOP_AFTER_PASS));
         });
   }
 
   AnnotatedLoggingConfig generateAnnotatedLoggingConfig(
-      CharSource rawLoggingConfig, String javaPackage, String className) throws IOException {
-    return new AnnotatedLoggingConfigGenerator(
-            rawLoggingConfig, javaPackage, className, typeRegistry)
-        .generate();
+      CharSource rawLoggingConfig, String javaPackage, String jsPackage, String className) {
+    return entryPoint(
+        () -> {
+          try {
+            return new AnnotatedLoggingConfigGenerator(
+                    rawLoggingConfig,
+                    javaPackage,
+                    jsPackage,
+                    className,
+                    typeRegistry,
+                    errorReporter)
+                .generate();
+          } catch (IOException e) {
+            throw new IllegalStateException(e);
+          }
+        });
   }
 
-  String generateVeMetadata(ByteSource loggingConfigBytes, String generator) throws IOException {
-    return new VeMetadataGenerator(loggingConfigBytes, generator, typeRegistry).generate();
+  String generateVeMetadata(
+      VeMetadataGenerator.Mode mode, ByteSource loggingConfigBytes, String generator)
+      throws IOException {
+    return new VeMetadataGenerator(mode, loggingConfigBytes, generator, typeRegistry).generate();
   }
 
   /**
@@ -814,7 +803,9 @@ public final class SoyFileSet {
    *
    * @return A SoyMsgBundle containing all the extracted messages (locale "en").
    * @throws SoyCompilationException If compilation fails.
+   * @deprecated Use the command line APIs to extract messages instead
    */
+  @Deprecated
   public SoyMsgBundle extractMsgs() {
     return entryPoint(this::doExtractMsgs);
   }
@@ -827,7 +818,7 @@ public final class SoyFileSet {
    * @param output Where to write the extracted messages.
    * @throws IOException If there are errors writing to the output.
    */
-  public void extractAndWriteMsgs(
+  void extractAndWriteMsgs(
       SoyMsgBundleHandler msgBundleHandler, OutputFileOptions options, ByteSink output)
       throws IOException {
     entryPointVoid(
@@ -883,7 +874,11 @@ public final class SoyFileSet {
    *
    * @return The resulting {@code SoyTofu} object.
    * @throws SoyCompilationException If compilation fails.
+   * @deprecated Use SoySauce instead. All users should be able to switch from
+   *     SoyFileSet.compileToTofu() to SoyFileSet.compileTemplates(). To use the support for
+   *     precompilation see SoySauceBuilder.
    */
+  @Deprecated
   public SoyTofu compileToTofu() {
     return compileToTofu(ImmutableMap.of());
   }
@@ -893,7 +888,11 @@ public final class SoyFileSet {
    *
    * @return The resulting {@code SoyTofu} object.
    * @throws SoyCompilationException If compilation fails.
+   * @deprecated Use SoySauce instead. All users should be able to switch from
+   *     SoyFileSet.compileToTofu() to SoyFileSet.compileTemplates(). To use the support for
+   *     precompilation see SoySauceBuilder.
    */
+  @Deprecated
   public SoyTofu compileToTofu(Map<String, Supplier<Object>> pluginInstances) {
     return entryPoint(
         () -> {
@@ -1055,13 +1054,8 @@ public final class SoyFileSet {
       SoyJsSrcOptions jsSrcOptions, @Nullable SoyMsgBundle msgBundle) {
     return entryPoint(
         () -> {
-          // JS has traditionally allowed unknown globals, as a way for soy to reference normal js
-          // enums and constants. For consistency/reusability of templates it would be nice to not
-          // allow that but the cat is out of the bag.
           PassManager.Builder builder =
               passManagerBuilder()
-                  // TODO(lukes): remove this in favor of allowUnknownJsGlobals
-                  .allowUnknownGlobals()
                   .allowV1Expression()
                   .allowUnknownJsGlobals()
                   .desugarHtmlAndStateNodes(false);
@@ -1082,13 +1076,7 @@ public final class SoyFileSet {
    * @return A list of strings where each string represents the JS source code that belongs in one
    *     JS file. The generated JS files correspond one-to-one to the original Soy source files.
    * @throws SoyCompilationException If compilation fails.
-   * @deprecated Do not call. Use the command line API.
    */
-  @Deprecated
-  public List<String> compileToIncrementalDomSrc(SoyIncrementalDomSrcOptions jsSrcOptions) {
-    return compileToIncrementalDomSrcInternal(jsSrcOptions);
-  }
-
   List<String> compileToIncrementalDomSrcInternal(SoyIncrementalDomSrcOptions jsSrcOptions) {
     return entryPoint(
         () -> {
@@ -1150,8 +1138,6 @@ public final class SoyFileSet {
               passManagerBuilder()
                   // Because we allow this for JS generated templates, we allow this for
                   // headers.
-                  // TODO(lukes): remove this in favor of allowUnknownJsGlobals
-                  .allowUnknownGlobals()
                   .allowUnknownJsGlobals()
                   // Only run passes that not cross template checking.
                   .addPassContinuationRule(
@@ -1171,14 +1157,13 @@ public final class SoyFileSet {
                   // the optimizer mutates the AST heavily which inhibits certain source analysis
                   // rules.
                   .optimize(false)
-                  .rewritePlugins(false)
+                  .astRewrites(false)
                   // skip adding extra attributes
                   .addHtmlAttributesForDebugging(false)
                   // skip the autoescaper
                   .insertEscapingDirectives(false)
                   .desugarHtmlAndStateNodes(false)
-                  // TODO(lukes): other passes should be disabled, basically anything that mutates
-                  // the AST
+                  // TODO(lukes): This is needed for kythe apparently
                   .allowUnknownGlobals()
                   .allowUnknownJsGlobals()
                   .allowV1Expression(),
@@ -1191,18 +1176,15 @@ public final class SoyFileSet {
    * builders.
    */
   private ParseResult parseForGenJava() {
-    // TODO(lukes): see if we can enforce that globals are provided at compile time here.
-    // given that types have to be, this should be possible.  Currently it is disabled for
-    // backwards compatibility
     // N.B. we do not run the optimizer here for 2 reasons:
     // 1. it would just waste time, since we are not running code generation the optimization
     //    work doesn't help anything
     // 2. it potentially removes metadata from the tree by precalculating expressions. For
     //     example, trivial print nodes are evaluated, which can remove globals from the tree,
-    //     but the
+    //     but the gencode needs to find these so that their proto types can be used to bootstrap
+    // development mode compilation.
     return parse(
         passManagerBuilder()
-            .allowUnknownGlobals()
             .optimize(false)
             // Don't desugar, this is a bit of a waste of time and it destroys type
             // information about @state parameters

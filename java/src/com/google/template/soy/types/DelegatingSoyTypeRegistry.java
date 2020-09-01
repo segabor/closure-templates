@@ -16,8 +16,14 @@
 
 package com.google.template.soy.types;
 
+import com.google.common.collect.ImmutableSet;
+import com.google.protobuf.Descriptors.Descriptor;
+import com.google.protobuf.Descriptors.EnumDescriptor;
+import com.google.protobuf.Descriptors.FileDescriptor;
+import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.types.RecordType.Member;
 import java.util.Collection;
+import java.util.function.Function;
 import javax.annotation.Nullable;
 
 /**
@@ -30,6 +36,25 @@ public abstract class DelegatingSoyTypeRegistry implements SoyTypeRegistry {
 
   protected DelegatingSoyTypeRegistry(SoyTypeRegistry delegate) {
     this.delegate = delegate;
+  }
+
+  protected SoyTypeRegistry getDelegate() {
+    return delegate;
+  }
+
+  @Override
+  public ImmutableSet<FileDescriptor> getProtoDescriptors() {
+    return delegate.getProtoDescriptors();
+  }
+
+  @Override
+  public Identifier resolve(Identifier id) {
+    return delegate.resolve(id);
+  }
+
+  @Override
+  public ProtoTypeRegistry getProtoRegistry() {
+    return delegate.getProtoRegistry();
   }
 
   @Override
@@ -70,6 +95,17 @@ public abstract class DelegatingSoyTypeRegistry implements SoyTypeRegistry {
   @Override
   public VeType getOrCreateVeType(String dataType) {
     return delegate.getOrCreateVeType(dataType);
+  }
+
+  @Override
+  public SoyProtoType getOrComputeProtoType(
+      Descriptor descriptor, Function<? super String, ? extends SoyProtoType> mapper) {
+    return delegate.getOrComputeProtoType(descriptor, mapper);
+  }
+
+  @Override
+  public SoyProtoEnumType getOrCreateProtoEnumType(EnumDescriptor descriptor) {
+    return delegate.getOrCreateProtoEnumType(descriptor);
   }
 
   @Override

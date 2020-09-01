@@ -16,13 +16,12 @@
 
 package com.google.template.soy.soytree;
 
-
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.base.internal.Identifier;
-import com.google.template.soy.base.internal.SanitizedContentKind;
+import com.google.template.soy.base.internal.TemplateContentKind;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.soytree.TemplateNode.SoyFileHeaderInfo;
@@ -37,7 +36,7 @@ import java.util.List;
 public final class TemplateElementNodeBuilder
     extends TemplateNodeBuilder<TemplateElementNodeBuilder> {
 
-  protected static final ImmutableSet<String> BANNED_ATTRIBUTE_NAMES =
+  static final ImmutableSet<String> BANNED_ATTRIBUTE_NAMES =
       ImmutableSet.of("autoescape", "kind", "stricthtml", "visibility");
 
   private static final SoyErrorKind BANNED_ATTRIBUTE_NAMES_ERROR =
@@ -49,7 +48,7 @@ public final class TemplateElementNodeBuilder
   public TemplateElementNodeBuilder(
       SoyFileHeaderInfo soyFileHeaderInfo, ErrorReporter errorReporter) {
     super(soyFileHeaderInfo, errorReporter);
-    setContentKind(SanitizedContentKind.HTML);
+    setContentKind(TemplateContentKind.ElementContentKind.ELEMENT);
   }
 
   @Override

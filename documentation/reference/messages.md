@@ -54,12 +54,17 @@ Here are details on how Soy generates placeholders in messages:
     message might look like in the `desc` attribute and consider setting a
     `phname`.
 
--   If you find a need to specify a placeholder name for a `print`, `call`, or
-    HTML tag instead of allowing the compiler generate the default name, you can
-    add the `phname` attribute. The value can either be camel case or upper
-    underscore. For example, `{call .emailAddr phname="emailAddress" /}` causes
-    the placeholder name to be `EMAIL_ADDRESS` instead of `XXX`. Note that
-    changing a placeholder name changes the message id, causing retranslation.
+-   If you find a need to specify a placeholder name for a `print`, `call`,
+    `plural`, `select` or HTML tag instead of allowing the compiler to generate
+    the default name, you can add the `phname` attribute. The value follows
+    standard variable naming conventions (must start with alphabet character,
+    and contain only alpha-numerics and underscore). By convention, it is
+    recommended that all names be UPPER_SNAKE_CASE. For historic reasons, the
+    generated placeholder name for `print`, `call`, and tag is converted to
+    UPPER_SNAKE_CASE, but not `plural` or `select`. For example, `{call
+    .emailAddr phname="emailAddress" /}` causes the placeholder name to be
+    `EMAIL_ADDRESS` instead of `XXX`. Note that changing a placeholder name
+    changes the message id, causing retranslation.
 
 -   You can set placeholder examples to aid translation. For example, `{$url
     phex="www.google.com"}` or `{$name phex="Alice"}`. Placeholder examples are
@@ -69,7 +74,9 @@ Here are details on how Soy generates placeholders in messages:
 
 -   If a message contains multiple placeholders that would result in the same
     placeholder name, then the compiler appends number suffixes to distinguish
-    them, e.g. `START_LINK_1`, `START_LINK_2`.
+    them, e.g. `START_LINK_1`, `START_LINK_2`. If any of these are explicitly
+    provided via `phname`, a compiler error will instruct the caller to change
+    it.
 
 -   Template commands for control flow (`if`, `switch`, `for`) are not allowed
     in `msg` blocks. However, you can put them in a `let` block and then print
@@ -204,6 +211,11 @@ written using a select statement, while `$userGender` is declared in the
 {/msg}
 ```
 
+Each `select` block appears as a placeholder in the containing message. The
+placeholder name is `phname` (if present) or the UPPER_SNAKE_CASE version of the
+variable name (`TARGET_GENDER` in this example). By convention, it is
+recommended that all names be UPPER_SNAKE_CASE.
+
 ### Plural {#plural}
 
 Message pluralization syntax:
@@ -217,6 +229,11 @@ Message pluralization syntax:
   {/plural}
 {/msg}
 ```
+
+Each `plural` block appears as a placeholder in the containing message. The
+placeholder name is `phname` (if present) or the UPPER_SNAKE_CASE version of the
+variable name (`NUM_DRAFTS` in this example). By convention, it is recommended
+that all names be UPPER_SNAKE_CASE.
 
 WARNING: You cannot nest `plural` tags.
 

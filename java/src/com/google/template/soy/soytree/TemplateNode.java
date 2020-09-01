@@ -27,6 +27,7 @@ import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.BaseUtils;
 import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.base.internal.SanitizedContentKind;
+import com.google.template.soy.base.internal.TemplateContentKind;
 import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
@@ -106,6 +107,12 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
     /** Map from aliases to namespaces for this file. */
     private final ImmutableList<AliasDeclaration> aliasDeclarations;
 
+    /**
+     * The names of all import symbols that can be referenced, (e.g. "foo" and "myBar" in: "import
+     * {foo, bar as myBar} from ...").
+     */
+    private final ImmutableList<String> importSymbols;
+
     @Nullable private final DelPackageDeclaration delPackage;
     private final Priority priority;
     @Nullable private final String namespace;
@@ -116,29 +123,33 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
         ErrorReporter errorReporter,
         @Nullable DelPackageDeclaration delPackage,
         NamespaceDeclaration namespaceDeclaration,
-        Collection<AliasDeclaration> aliases) {
+        Collection<AliasDeclaration> aliases,
+        Collection<String> importSymbols) {
       this(
           delPackage,
           namespaceDeclaration.getNamespace(),
           createAliasMap(errorReporter, namespaceDeclaration, aliases),
-          ImmutableList.copyOf(aliases));
+          ImmutableList.copyOf(aliases),
+          ImmutableList.copyOf(importSymbols));
     }
 
     @VisibleForTesting
     public SoyFileHeaderInfo(String namespace) {
-      this(null, namespace, ImmutableMap.of(), ImmutableList.of());
+      this(null, namespace, ImmutableMap.of(), ImmutableList.of(), ImmutableList.of());
     }
 
     private SoyFileHeaderInfo(
         @Nullable DelPackageDeclaration delPackage,
         String namespace,
         ImmutableMap<String, String> aliasToNamespaceMap,
-        ImmutableList<AliasDeclaration> aliasDeclarations) {
+        ImmutableList<AliasDeclaration> aliasDeclarations,
+        ImmutableList<String> importSymbols) {
       this.delPackage = delPackage;
       this.priority = (delPackage == null) ? Priority.STANDARD : Priority.HIGH_PRIORITY;
       this.namespace = namespace;
       this.aliasToNamespaceMap = aliasToNamespaceMap;
       this.aliasDeclarations = aliasDeclarations;
+      this.importSymbols = importSymbols;
       this.usedAliases = new HashSet<>();
     }
 
@@ -148,6 +159,7 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
       this.namespace = orig.namespace;
       this.aliasToNamespaceMap = orig.aliasToNamespaceMap;
       this.aliasDeclarations = orig.aliasDeclarations;
+      this.importSymbols = orig.importSymbols;
       this.usedAliases = new HashSet<>(orig.usedAliases);
     }
 
@@ -164,6 +176,11 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
       } else {
         firstIdent = fullName;
         remainder = "";
+      }
+
+      // If this references an import, don't try to resolve as an alias.
+      if (importSymbols.contains(firstIdent)) {
+        return identifier;
       }
 
       String alias = aliasToNamespaceMap.get(firstIdent);
@@ -253,7 +270,7 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
   private final WhitespaceMode whitespaceMode;
 
   /** Strict mode context. Nonnull. */
-  private final SanitizedContentKind contentKind;
+  private final TemplateContentKind contentKind;
 
   /** Required CSS namespaces. */
   private final ImmutableList<String> requiredCssNamespaces;
@@ -429,7 +446,7 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
     if (strictHtmlDisabled) {
       // Use the value that is explicitly set in template.
       return false;
-    } else if (contentKind != SanitizedContentKind.HTML) {
+    } else if (contentKind.getSanitizedContentKind() != SanitizedContentKind.HTML) {
       // Non-HTML templates couldn't be strictHtml.
       return false;
     } else {
@@ -446,6 +463,11 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
   /** Returns the content kind for strict autoescaping. */
   @Override
   public SanitizedContentKind getContentKind() {
+    return contentKind.getSanitizedContentKind();
+  }
+
+  /** Returns the template's content kind (e.g. "attributes", "element", "html", etc). */
+  public TemplateContentKind getTemplateContentKind() {
     return contentKind;
   }
 

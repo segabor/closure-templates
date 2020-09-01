@@ -22,6 +22,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.passes.CompilerFileSetPass.Result;
+import com.google.template.soy.shared.SoyGeneralOptions;
 import com.google.template.soy.soytree.ImportNode;
 import com.google.template.soy.soytree.ImportNode.ImportType;
 import com.google.template.soy.soytree.ImportsContext.ImportsTemplateRegistry;
@@ -43,10 +44,12 @@ import java.util.Map;
 })
 public final class ResolveTemplateImportsPass extends ImportsPass implements CompilerFileSetPass {
   private TemplateNameRegistry templateNameRegistry;
+  private final SoyGeneralOptions options;
   private final ErrorReporter errorReporter;
 
-  ResolveTemplateImportsPass(ErrorReporter errorReporter) {
+  ResolveTemplateImportsPass(SoyGeneralOptions options, ErrorReporter errorReporter) {
     this.templateNameRegistry = null;
+    this.options = options;
     this.errorReporter = errorReporter;
   }
 
@@ -69,7 +72,7 @@ public final class ResolveTemplateImportsPass extends ImportsPass implements Com
 
   @Override
   TemplateImportVisitor createImportVisitorForFile(SoyFileNode file) {
-    return new TemplateImportVisitor(file, templateNameRegistry, errorReporter);
+    return new TemplateImportVisitor(file, templateNameRegistry, options, errorReporter);
   }
 
   static final class TemplateImportVisitor extends ImportVisitor {
@@ -80,18 +83,23 @@ public final class ResolveTemplateImportsPass extends ImportsPass implements Com
     final Map<String, TemplateName> symbolsToTemplatesMap = new LinkedHashMap<>();
 
     TemplateImportVisitor(
-        SoyFileNode file, TemplateNameRegistry templateNameRegistry, ErrorReporter errorReporter) {
-      super(file, ImmutableSet.of(ImportType.TEMPLATE), errorReporter);
+        SoyFileNode file,
+        TemplateNameRegistry templateNameRegistry,
+        SoyGeneralOptions options,
+        ErrorReporter errorReporter) {
+      super(file, ImmutableSet.of(ImportType.TEMPLATE), options, errorReporter);
+
       this.templateNameRegistry = templateNameRegistry;
     }
 
     /**
-     * Visits a template import node: verifies that the template names are valid and stores a
-     * mapping from the imported symbol to the template info. Note that this is only called after
-     * we've verified that the import path exists and any alias symbols are valid.
+     * Registers the imported templates for a symbol-level import node (as opposed to a module-level
+     * import node). Verifies that the template names are valid and stores a mapping from the
+     * imported symbol to the template info. Note that this is only called after we've verified that
+     * the import path exists and any alias symbols are valid.
      */
     @Override
-    void visitImportNodeWithValidPathAndSymbol(ImportNode node) {
+    void processImportedSymbols(ImportNode node) {
       TemplatesPerFile templatesPerFile = templateNameRegistry.getTemplatesForFile(node.getPath());
       for (ImportedVar symbol : node.getIdentifiers()) {
         String name = symbol.name();
@@ -108,7 +116,25 @@ public final class ResolveTemplateImportsPass extends ImportsPass implements Com
         // compiler error (if they have the same path).
         symbolsToTemplatesMap.put(symbol.aliasOrName(), templatesPerFile.getFullTemplateName(name));
       }
-      node.setIsResolved(); // Node has been validated
+    }
+
+    /**
+     * Visits a template module import (e.g. "import * as fooTemplates from foo.soy"). Registers all
+     * the templates in the imported file (e.g. "fooTemplates.render"). Note that this is only
+     * called after we've verified that the import path exists and the module alias symbol is valid
+     * (doesn't collide with other import symbol aliases).
+     */
+    @Override
+    void processImportedModule(ImportNode node) {
+      TemplatesPerFile templatesPerFile = templateNameRegistry.getTemplatesForFile(node.getPath());
+      // For each template, add a mapping from "ModuleName.templateName" -> templateFqn.
+      templatesPerFile
+          .getUnqualifiedTemplateNames()
+          .forEach(
+              template ->
+                  symbolsToTemplatesMap.put(
+                      node.getModuleAlias() + "." + template,
+                      templatesPerFile.getFullTemplateName(template)));
     }
 
     @Override

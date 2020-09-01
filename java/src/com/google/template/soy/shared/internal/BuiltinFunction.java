@@ -47,9 +47,11 @@ public enum BuiltinFunction implements SoyFunction {
   REMAINDER("remainder"),
   MSG_WITH_ID("msgWithId"),
   VE_DATA("ve_data"),
+  LEGACY_DYNAMIC_TAG("legacyDynamicTag"),
   IS_PRIMARY_MSG_IN_USE("$$isPrimaryMsgInUse"),
   TO_FLOAT("$$toFloat"),
   DEBUG_SOY_TEMPLATE_INFO("$$debugSoyTemplateInfo"),
+  PROTO_INIT("$$protoInit"),
   ;
 
   public static ImmutableSet<String> names() {
@@ -106,11 +108,14 @@ public enum BuiltinFunction implements SoyFunction {
       case CHECK_NOT_NULL:
       case XID:
       case UNKNOWN_JS_GLOBAL:
+      case LEGACY_DYNAMIC_TAG:
       case V1_EXPRESSION:
       case REMAINDER:
       case MSG_WITH_ID:
       case TO_FLOAT:
         return ImmutableSet.of(1);
+      case PROTO_INIT:
+        throw new UnsupportedOperationException();
     }
     throw new AssertionError(this);
   }
@@ -130,6 +135,7 @@ public enum BuiltinFunction implements SoyFunction {
       case MSG_WITH_ID:
       case VE_DATA:
       case TO_FLOAT:
+      case PROTO_INIT:
         return true;
       case IS_FIRST: // implicitly depends on loop index
       case IS_LAST: // implicitly depends on loop index
@@ -138,6 +144,7 @@ public enum BuiltinFunction implements SoyFunction {
       case XID: // implicitly depends on a renaming map or js compiler flag
       case SOY_SERVER_KEY: // Relies on call stack dependent on rendering
       case UNKNOWN_JS_GLOBAL: // this is a black box from the compiler perspective
+      case LEGACY_DYNAMIC_TAG: // this is a black box from the compiler perspective
       case V1_EXPRESSION: // this is a black box from the compiler perspective
       case REMAINDER: // implicitly depends on a plural value
       case IS_PRIMARY_MSG_IN_USE: // implicitly depends on a message bundle

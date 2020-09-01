@@ -36,7 +36,8 @@ export const patch = patchInner;
 /** Type for HTML templates */
 export type Template<T> =
     // tslint:disable-next-line:no-any
-    (renderer: IncrementalDomRenderer, args: T, ijData?: googSoy.IjData) => any;
+    (renderer: IncrementalDomRenderer, args: T, ijData?: googSoy.IjData|null) =>
+        void;
 
 interface IdomRendererApi {
   open(nameOrCtor: string, key?: string): void|HTMLElement;
@@ -210,7 +211,11 @@ export class IncrementalDomRenderer implements IdomRendererApi {
   }
 
   text(value: string): Text|void {
-    return incrementaldom.text(value);
+    // This helps ensure that hydrations on the server are consistent with
+    // client-side renders.
+    if (value) {
+      return incrementaldom.text(value);
+    }
   }
 
   attr(name: string, value: string) {

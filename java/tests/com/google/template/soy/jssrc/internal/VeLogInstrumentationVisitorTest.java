@@ -18,7 +18,6 @@ package com.google.template.soy.jssrc.internal;
 import static com.google.common.truth.Truth.assertThat;
 
 import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
 import com.google.common.truth.StringSubject;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
 import com.google.template.soy.error.ErrorReporter;
@@ -29,10 +28,12 @@ import com.google.template.soy.logging.testing.LoggingConfigs;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.soytree.SoyFileSetNode;
+import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
+import com.google.template.soy.testing.Foo;
+import com.google.template.soy.testing.SharedTestUtils;
 import com.google.template.soy.testing.SoyFileSetParserBuilder;
-import com.google.template.soy.types.SoyTypeRegistryBuilder;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -92,13 +93,13 @@ public final class VeLogInstrumentationVisitorTest {
                 + "{/velog}");
     assertThatSourceString(
             runPass(
-                "{velog ve_data(Foo, soy.test.Foo(intField: 123))}"
+                "{velog ve_data(Foo, Foo(intField: 123))}"
                     + "<input id=\"1\" class=\"fooClass\"/>"
                     + "{/velog}"))
         .isEqualTo(
-            "{velog ve_data(ve(Foo), soy.test.Foo(intField: 123))}"
+            "{velog ve_data(ve(Foo), Foo(intField: 123))}"
                 + "<input id=\"1\" class=\"fooClass\""
-                + "{$$velog(ve_data(ve(Foo), soy.test.Foo(intField: 123)))}/>"
+                + "{$$velog(ve_data(ve(Foo), Foo(intField: 123)))}/>"
                 + "{/velog}");
   }
 
@@ -227,7 +228,9 @@ public final class VeLogInstrumentationVisitorTest {
                 + "{@param foo: string}"
                 + "{$foo}={currentVed()}");
     StringBuilder sb = new StringBuilder();
-    ((TemplateNode) node.getChild(0).getChild(0)).appendSourceStringForChildren(sb);
+    SoyTreeUtils.getAllNodesOfType(node, TemplateNode.class)
+        .get(0)
+        .appendSourceStringForChildren(sb);
     assertThat(sb.toString())
         .isEqualTo(
             "{velog ve_data(ve(Bar), null)}"
@@ -237,7 +240,9 @@ public final class VeLogInstrumentationVisitorTest {
                 + "</div>"
                 + "{/velog}");
     sb = new StringBuilder();
-    ((TemplateNode) node.getChild(0).getChild(1)).appendSourceStringForChildren(sb);
+    SoyTreeUtils.getAllNodesOfType(node, TemplateNode.class)
+        .get(1)
+        .appendSourceStringForChildren(sb);
     assertThat(sb.toString())
         .isEqualTo(
             "{let $soy_logging_function_attribute_16 kind=\"text\"}{$foo}{/let}"
@@ -263,16 +268,18 @@ public final class VeLogInstrumentationVisitorTest {
   /** Parses the given input as a template content. */
   private static SoyFileSetNode runPass(String input) {
     String soyFile =
-        Joiner.on('\n').join("{namespace ns}", "", "{template .t}", input, "{/template}");
+        Joiner.on('\n')
+            .join(
+                "{namespace ns}",
+                "",
+                "{template .t}",
+                input,
+                "{/template}");
     ParseResult result =
         SoyFileSetParserBuilder.forFileContents(soyFile)
             // Disable desguaring pass and manually run it later
             .desugarHtmlAndStateNodes(false)
-            .typeRegistry(
-                new SoyTypeRegistryBuilder()
-                    .addDescriptors(
-                        ImmutableList.of(com.google.template.soy.testing.Foo.getDescriptor()))
-                    .build())
+            .typeRegistry(SharedTestUtils.importing(Foo.getDescriptor()))
             .setLoggingConfig(LOGGING_CONFIG)
             .addSoySourceFunction(new TestLoggingFunction())
             .errorReporter(ErrorReporter.exploding())
@@ -285,7 +292,9 @@ public final class VeLogInstrumentationVisitorTest {
 
   private static StringSubject assertThatSourceString(SoyFileSetNode node) {
     StringBuilder sb = new StringBuilder();
-    ((TemplateNode) node.getChild(0).getChild(0)).appendSourceStringForChildren(sb);
+    SoyTreeUtils.getAllNodesOfType(node, TemplateNode.class)
+        .get(0)
+        .appendSourceStringForChildren(sb);
     return assertThat(sb.toString());
   }
 }

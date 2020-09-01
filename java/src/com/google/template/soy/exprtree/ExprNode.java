@@ -82,7 +82,6 @@ public interface ExprNode extends Node {
     ASSERT_NON_NULL_OP_NODE,
 
     FUNCTION_NODE,
-    PROTO_INIT_NODE,
 
     VE_LITERAL_NODE,
 
@@ -117,6 +116,9 @@ public interface ExprNode extends Node {
   public static interface OperatorNode extends ParentExprNode {
 
     public Operator getOperator();
+
+    @Override
+    public OperatorNode copy(CopyState copyState);
   }
 
   // -----------------------------------------------------------------------------------------------

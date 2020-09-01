@@ -18,10 +18,14 @@ package com.google.template.soy.soytree;
 
 import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.template.soy.base.internal.BaseUtils.convertToUpperUnderscore;
+import static com.google.template.soy.soytree.MessagePlaceholder.PHEX_ATTR;
+import static com.google.template.soy.soytree.MessagePlaceholder.PHNAME_ATTR;
+import static com.google.template.soy.soytree.MessagePlaceholder.validatePlaceholderExample;
+import static com.google.template.soy.soytree.MessagePlaceholder.validatePlaceholderName;
 
 import com.google.common.collect.ImmutableList;
 import com.google.template.soy.base.SourceLocation;
-import com.google.template.soy.base.internal.BaseUtils;
 import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.ExprRootNode;
@@ -36,6 +40,7 @@ import com.google.template.soy.soytree.SoyNode.StandaloneNode;
 import com.google.template.soy.soytree.SoyNode.StatementNode;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Predicate;
 import javax.annotation.Nullable;
 
@@ -74,11 +79,7 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
   /** The key= expression, or null if the call does not pass key. */
   @Nullable private ExprRootNode keyExpr;
 
-  /** The user-supplied placeholder name, or null if not supplied or not applicable. */
-  @Nullable private final String userSuppliedPlaceholderName;
-
-  /** The user-supplied placeholder example, or null if not supplied or not applicable. */
-  @Nullable private final String userSuppliedPlaceholderExample;
+  private final MessagePlaceholder placeholder;
 
   /** The HTML context that the call is in, such as in HTML or Attributes. */
   @Nullable private HtmlContext htmlContext;
@@ -112,9 +113,9 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
       ErrorReporter reporter) {
     super(id, location, commandName);
 
-    String phname = null;
-    String phex = null;
-
+    SourceLocation phNameLocation = null;
+    String phName = null;
+    Optional<String> phExample = Optional.empty();
     for (CommandTagAttribute attr : attributes) {
       String name = attr.getName().identifier();
 
@@ -133,15 +134,14 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
         case "key":
           this.keyExpr = attr.valueAsExpr(reporter);
           break;
-        case MessagePlaceholders.PHNAME_ATTR:
-          phname =
-              MessagePlaceholders.validatePlaceholderName(
-                  attr.getValue(), attr.getValueLocation(), reporter);
+        case PHNAME_ATTR:
+          phNameLocation = attr.getValueLocation();
+          phName = validatePlaceholderName(attr.getValue(), phNameLocation, reporter);
           break;
-        case MessagePlaceholders.PHEX_ATTR:
-          phex =
-              MessagePlaceholders.validatePlaceholderExample(
-                  attr.getValue(), attr.getValueLocation(), reporter);
+        case PHEX_ATTR:
+          phExample =
+              Optional.ofNullable(
+                  validatePlaceholderExample(attr.getValue(), attr.getValueLocation(), reporter));
           break;
         default:
           // do nothing, validated by subclasses
@@ -150,8 +150,11 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
 
     this.attributes = attributes;
     this.selfClosing = selfClosing;
-    this.userSuppliedPlaceholderName = phname;
-    this.userSuppliedPlaceholderExample = phex;
+    this.placeholder =
+        (phName == null)
+            ? MessagePlaceholder.create(FALLBACK_BASE_PLACEHOLDER_NAME, phExample)
+            : MessagePlaceholder.createWithUserSuppliedName(
+                convertToUpperUnderscore(phName), phName, phNameLocation, phExample);
     this.openTagLocation = openTagLocation;
   }
 
@@ -165,8 +168,7 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
     this.isPassingAllData = orig.isPassingAllData;
     this.dataExpr = (orig.dataExpr != null) ? orig.dataExpr.copy(copyState) : null;
     this.keyExpr = (orig.keyExpr != null) ? orig.keyExpr.copy(copyState) : null;
-    this.userSuppliedPlaceholderName = orig.userSuppliedPlaceholderName;
-    this.userSuppliedPlaceholderExample = orig.userSuppliedPlaceholderExample;
+    this.placeholder = orig.placeholder;
     this.escapingDirectives = orig.escapingDirectives;
     this.callKey = orig.callKey;
     this.isPcData = orig.getIsPcData();
@@ -237,24 +239,9 @@ public abstract class CallNode extends AbstractParentCommandNode<CallParamNode>
     this.isPcData = isPcData;
   }
 
-  @Nullable
   @Override
-  public String getUserSuppliedPhName() {
-    return userSuppliedPlaceholderName;
-  }
-
-  @Nullable
-  @Override
-  public String getUserSuppliedPhExample() {
-    return userSuppliedPlaceholderExample;
-  }
-
-  @Override
-  public String genBasePhName() {
-    if (userSuppliedPlaceholderName != null) {
-      return BaseUtils.convertToUpperUnderscore(userSuppliedPlaceholderName);
-    }
-    return FALLBACK_BASE_PLACEHOLDER_NAME;
+  public MessagePlaceholder getPlaceholder() {
+    return placeholder;
   }
 
   @Override

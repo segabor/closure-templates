@@ -50,6 +50,7 @@ import com.google.template.soy.types.BoolType;
 import com.google.template.soy.types.ErrorType;
 import com.google.template.soy.types.FloatType;
 import com.google.template.soy.types.IntType;
+import com.google.template.soy.types.MessageType;
 import com.google.template.soy.types.NullType;
 import com.google.template.soy.types.RecordType;
 import com.google.template.soy.types.SanitizedType.AttributesType;
@@ -78,7 +79,7 @@ public final class TemplateMetadataSerializer {
   private static final SoyErrorKind UNABLE_TO_PARSE_TEMPLATE_HEADER =
       SoyErrorKind.of("Unable to parse template header for {0} from Soy file {1}: {2}.");
   private static final SoyErrorKind UNABLE_TO_FIND_TYPE =
-      SoyErrorKind.of("Unable to {0}: {1} referenced by dependency.");
+      SoyErrorKind.of("Unable to find {0}: {1} referenced by dependency.");
   private static final SoyErrorKind UNEXPECTED_TYPE =
       SoyErrorKind.of("Expected {0} to be a {1} but it was a {2}.");
 
@@ -307,9 +308,11 @@ public final class TemplateMetadataSerializer {
         return typeRegistry.getOrCreateMapType(
             fromProto(proto.getMap().getKey(), typeRegistry, filePath, errorReporter),
             fromProto(proto.getMap().getValue(), typeRegistry, filePath, errorReporter));
+      case MESSAGE:
+        return MessageType.getInstance();
       case PROTO:
         {
-          SoyType type = typeRegistry.getType(proto.getProto());
+          SoyType type = typeRegistry.getProtoRegistry().getProtoType(proto.getProto());
           if (type == null) {
             errorReporter.report(
                 new SourceLocation(filePath), UNABLE_TO_FIND_TYPE, "proto", proto.getProto());
@@ -330,7 +333,7 @@ public final class TemplateMetadataSerializer {
         }
       case PROTO_ENUM:
         {
-          SoyType type = typeRegistry.getType(proto.getProtoEnum());
+          SoyType type = typeRegistry.getProtoRegistry().getProtoType(proto.getProtoEnum());
           if (type == null) {
             errorReporter.report(
                 new SourceLocation(filePath),

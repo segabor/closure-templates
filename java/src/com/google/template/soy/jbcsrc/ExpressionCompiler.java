@@ -30,7 +30,6 @@ import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.ternary;
 
 import com.google.common.collect.Iterables;
 import com.google.template.soy.base.internal.Identifier;
-import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.data.SoyLegacyObjectMap;
 import com.google.template.soy.data.SoyMap;
 import com.google.template.soy.data.SoyRecord;
@@ -77,7 +76,6 @@ import com.google.template.soy.exprtree.OperatorNodes.NullCoalescingOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.OrOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.PlusOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.TimesOpNode;
-import com.google.template.soy.exprtree.ProtoInitNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.TemplateLiteralNode;
@@ -96,10 +94,14 @@ import com.google.template.soy.jbcsrc.restricted.MethodRef;
 import com.google.template.soy.jbcsrc.restricted.SoyExpression;
 import com.google.template.soy.jbcsrc.restricted.SoyRuntimeType;
 import com.google.template.soy.jbcsrc.restricted.Statement;
+import com.google.template.soy.jbcsrc.restricted.TypeInfo;
 import com.google.template.soy.jbcsrc.shared.LegacyFunctionAdapter;
+import com.google.template.soy.jbcsrc.shared.TemplateCallFactory;
+import com.google.template.soy.logging.ValidatedLoggingConfig.ValidatedLoggableElement;
 import com.google.template.soy.plugin.internal.JavaPluginExecContext;
 import com.google.template.soy.plugin.java.internal.PluginAnalyzer;
 import com.google.template.soy.plugin.java.restricted.SoyJavaSourceFunction;
+import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.shared.internal.BuiltinMethod;
 import com.google.template.soy.shared.restricted.SoyMethod;
 import com.google.template.soy.shared.restricted.SoySourceFunctionMethod;
@@ -113,13 +115,17 @@ import com.google.template.soy.types.SoyProtoType;
 import com.google.template.soy.types.SoyType.Kind;
 import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.SoyTypes;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import javax.annotation.Nullable;
+import org.objectweb.asm.Handle;
 import org.objectweb.asm.Label;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.commons.Method;
 
 /**
  * Compiles an {@link ExprNode} to a {@link SoyExpression}.
@@ -433,7 +439,7 @@ final class ExpressionCompiler {
       // TODO(lukes): this should really box the children as SoyValueProviders, we are boxing them
       // anyway and could additionally delay detach generation. Ditto for RecordLiteralNode.
       return SoyExpression.forList(
-          (ListType) node.getType(), SoyExpression.asBoxedList(visitChildren(node)));
+          (ListType) node.getType(), SoyExpression.asBoxedValueProviderList(visitChildren(node)));
     }
 
     @Override
@@ -442,12 +448,7 @@ final class ExpressionCompiler {
       // invocation, as we do for regular loops.
       ExprNode listExpr = node.getListExpr();
       SoyExpression soyList = visit(listExpr);
-      Expression javaList;
-      if (soyList.isBoxed()) {
-        javaList = soyList.unboxAsList();
-      } else {
-        javaList = soyList.checkedCast(LIST_TYPE);
-      }
+      SoyExpression javaList = soyList.unboxAsList();
       ExprNode mapExpr = node.getListItemTransformExpr();
       ExprNode filterExpr = node.getFilterExpr();
 
@@ -482,7 +483,9 @@ final class ExpressionCompiler {
                       .checkedCast(SOY_VALUE_PROVIDER_TYPE),
                   userIndexVar.start());
 
-      SoyExpression visitedMap = visit(mapExpr).box();
+      // TODO: Consider compiling to a SoyValueProvider instead of boxing.
+      Expression visitedMap = visit(mapExpr).boxAsSoyValueProvider();
+
       SoyExpression visitedFilter = filterExpr != null ? visit(filterExpr).coerceToBoolean() : null;
 
       Statement exitScope = scope.exitScope();
@@ -1514,30 +1517,64 @@ final class ExpressionCompiler {
     // Proto initialization calls
 
     @Override
-    protected final SoyExpression visitProtoInitNode(ProtoInitNode node) {
+    protected SoyExpression visitProtoInitFunction(FunctionNode node) {
       return ProtoUtils.createProto(node, this::visit, detacher, varManager);
     }
 
     @Override
     protected SoyExpression visitVeLiteralNode(VeLiteralNode node) {
-      return SoyExpression.forSoyValue(
-          node.getType(),
-          MethodRef.SOY_VISUAL_ELEMENT_CREATE.invoke(
-              constant(node.getId()), constant(node.getName().identifier())));
+      Expression visualElement;
+      ValidatedLoggableElement element = node.getLoggableElement();
+      if (element.hasMetadata()) {
+        MethodRef metadata =
+            MethodRef.createStaticMethod(
+                    TypeInfo.create(
+                        String.format("%s.%s", element.getJavaPackage(), element.getClassName()),
+                        /* isInterface= */ false),
+                    new Method(
+                        element.getGeneratedVeMetadataMethodName(),
+                        BytecodeUtils.LOGGABLE_ELEMENT_METADATA_TYPE,
+                        MethodRef.NO_METHOD_ARGS))
+                .asNonNullable()
+                .asCheap();
+        visualElement =
+            MethodRef.SOY_VISUAL_ELEMENT_CREATE_METADATA.invoke(
+                constant(node.getId()), constant(node.getName().identifier()), metadata.invoke());
+      } else {
+        visualElement =
+            MethodRef.SOY_VISUAL_ELEMENT_CREATE.invoke(
+                constant(node.getId()), constant(node.getName().identifier()));
+      }
+      return SoyExpression.forSoyValue(node.getType(), visualElement);
     }
+
+    private static final Handle GETFACTORY_HANDLE =
+        MethodRef.create(
+                TemplateCallFactory.class,
+                "bootstrapFactoryLookup",
+                MethodHandles.Lookup.class,
+                String.class,
+                MethodType.class,
+                String.class)
+            .asHandle();
+
+    private static final String TEMPLATE_FACTORY_SIGNATURE =
+        Type.getMethodDescriptor(
+            BytecodeUtils.COMPILED_TEMPLATE_FACTORY_TYPE, BytecodeUtils.RENDER_CONTEXT_TYPE);
 
     @Override
     protected SoyExpression visitTemplateLiteralNode(TemplateLiteralNode node) {
-      CompiledTemplateMetadata callee =
-          compiledTemplateRegistry.getBasicTemplateInfoByTemplateName(node.getResolvedName());
-      // TODO(cwgordon): It used to be that factories were only ever constructed by
-      // CompiledTemplates, which would cache them. If this turns out to be too expensive, consider
-      // always using CompiledTemplates to create them, or otherwise 'singletonify' them.
+      Expression renderContext = parameters.getRenderContext();
       return SoyExpression.forSoyValue(
           node.getType(),
-          callee.filekind() == SoyFileKind.SRC
-              ? callee.factoryConstructor().construct()
-              : parameters.getRenderContext().getTemplateFactory(node.getResolvedName()));
+          new Expression(BytecodeUtils.COMPILED_TEMPLATE_FACTORY_TYPE) {
+            @Override
+            protected void doGen(CodeBuilder adapter) {
+              renderContext.gen(adapter);
+              adapter.visitInvokeDynamicInsn(
+                  "create", TEMPLATE_FACTORY_SIGNATURE, GETFACTORY_HANDLE, node.getResolvedName());
+            }
+          });
     }
 
     // Catch-all for unimplemented nodes
@@ -1628,8 +1665,11 @@ final class ExpressionCompiler {
     }
 
     @Override
-    protected Boolean visitProtoInitNode(ProtoInitNode node) {
-      return areAllChildrenConstant(node);
+    protected Boolean visitMethodCallNode(MethodCallNode node) {
+      if (node.getMethodName().toString().equals("bind")) {
+        return areAllChildrenConstant(node);
+      }
+      return false;
     }
 
     @Override
@@ -1653,6 +1693,9 @@ final class ExpressionCompiler {
     protected Boolean visitFunctionNode(FunctionNode node) {
       if (!areAllChildrenConstant(node)) {
         return false;
+      }
+      if (node.getSoyFunction() == BuiltinFunction.PROTO_INIT) {
+        return true;
       }
       if (!node.isPure()) {
         return false;
@@ -1718,12 +1761,25 @@ final class ExpressionCompiler {
     }
 
     @Override
+    protected Boolean visitMethodCallNode(MethodCallNode node) {
+      if (node.getMethodName().toString().equals("bind")) {
+        for (Boolean childRequiresDetach : visitChildren(node)) {
+          if (childRequiresDetach) {
+            return true;
+          }
+        }
+        return false;
+      }
+      return true;
+    }
+
+    @Override
     protected Boolean visitDataAccessNode(DataAccessNode node) {
       return true;
     }
 
     @Override
-    protected Boolean visitProtoInitNode(ProtoInitNode node) {
+    protected Boolean visitProtoInitFunction(FunctionNode node) {
       for (Boolean i : visitChildren(node)) {
         if (i) {
           return true;

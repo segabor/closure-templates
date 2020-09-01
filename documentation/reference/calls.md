@@ -77,13 +77,11 @@ passing makes code more readable and easier to debug.
 
 #### Pass values using the `data` attribute
 
-**WARNING**: This is not supported by JSWire. b/123785421
 
 You can also pass data to the callee with the `call` command's `data` attribute.
-This accepts a variable of type
-[record](/third_party/java_src/soy/g3doc/reference/types.md#record). The `call`
-command sets the values of any parameters in the callee whose names match fields
-in the record.
+This accepts a variable of type [record](types.md#record). The `call` command
+sets the values of any parameters in the callee whose names match fields in the
+record.
 
 For example, the following call sets the value of the `largerNum` parameter to
 20 and the `smallerNum` parameter to 10. It is equivalent to the call in the
@@ -104,8 +102,7 @@ the wrong type.
 If the record contains fields whose names do not match any parameter names,
 these are ignored by the callee. Similarly, if there are any parameters whose
 names do not match any field names, these are not set; whether this causes an
-error depends on [whether the parameter is
-required](/third_party/java_src/soy/g3doc/reference/templates.md#param).
+error depends on [whether the parameter is required](templates.md#param).
 
 #### Pass all of the caller's `data`
 
@@ -293,26 +290,39 @@ If a call includes a `param` command with the same name as a field in the `data`
 record, the value from the `param` command is used. In subsequent calls that use
 `data="all"`, the value of the field is the `param` value.
 
-### Calling a template in a different namespace
+### Calling a template in a different file
 
-All of the above examples demonstrate calling a template in the same namespace,
-hence the partial template name (beginning with a dot) used in the `call`
-command text. To call a template from a different namespace, use the full
-template name including namespace. For example:
+All of the above examples demonstrate calling a template in the same file, hence
+the partial template name (beginning with a dot) used in the `call` command
+text.
+
+To call a template in a different file, you must
+[import the template](file-declarations.md#import), and then you can call it
+using the usual syntax:
 
 ```soy
-{call myproject.mymodule.myfeature.exampleCallee}
-  {param pair: $pair /}
-{/call}
+import {button, dialog} from 'path/to/soy/file/foo.soy'
+
+{template .myTemplate}
+  {call button /}
+  {call dialog}
+    {param someParam: 1 /}
+  {/call}
+{/template}
 ```
 
-Or, if you've aliased the namespace of the template you're calling to its last
-identifier, then
+Note that there is no "." dot in the call, since the imported template symbol is
+not relative to the current namespace.
+
+In case of naming collisions, or if the imported template name is unclear from a
+readability perspective (e.g. "content"), you can alias the imported template:
 
 ```soy
-{call myfeature.exampleCallee}
-  {param pair: $pair /}
-{/call}
+import {content as hotelReviewContent} from 'path/to/soy/file/bar.soy'
+
+{template .myTemplate}
+  {call hotelReviewContent /}
+{/template}
 ```
 
 ### Aliasing

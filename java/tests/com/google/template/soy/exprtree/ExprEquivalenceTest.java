@@ -19,7 +19,6 @@ package com.google.template.soy.exprtree;
 import static com.google.common.truth.Truth.assertWithMessage;
 
 import com.google.common.base.Joiner;
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.truth.StandardSubjectBuilder;
 import com.google.template.soy.base.SourceLocation;
@@ -27,10 +26,10 @@ import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
-import com.google.template.soy.testing.Example;
+import com.google.template.soy.testing.KvPair;
+import com.google.template.soy.testing.SharedTestUtils;
 import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import com.google.template.soy.types.SoyTypeRegistry;
-import com.google.template.soy.types.SoyTypeRegistryBuilder;
 import java.util.Set;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -47,8 +46,8 @@ public final class ExprEquivalenceTest {
     runTest("{assertReflexive(true)}");
     runTest("{assertReflexive(false)}");
     runTest("{assertReflexive(1.2)}");
-    runTest("{assertReflexive(['a', 1.2, true, example.KvPair()])}");
-    runTest("{assertReflexive(map('a': 1.2, 'b': true, 'c': example.KvPair()))}");
+    runTest("{assertReflexive(['a', 1.2, true, KvPair()])}");
+    runTest("{assertReflexive(map('a': 1.2, 'b': true, 'c': KvPair()))}");
     runTest("{@param map: map<string, string>}", "{assertReflexive($map)}");
     runTest("{@param map: map<string, string>}", "{assertReflexive($map['a'])}");
     runTest(
@@ -63,9 +62,9 @@ public final class ExprEquivalenceTest {
     runTest("{@param rec: [a: string, b: [a: string]]}", "{assertReflexive($rec.a)}");
     runTest("{@param rec: [a: string, b: [a: string]]}", "{assertReflexive($rec.b)}");
     runTest("{@param rec: [a: string, b: [a: string]]}", "{assertReflexive($rec.b.a)}");
-    runTest("{@param proto: example.KvPair}", "{assertReflexive($proto)}");
-    runTest("{@param proto: example.KvPair}", "{assertReflexive($proto.key)}");
-    runTest("{@param proto: example.KvPair}", "{assertReflexive($proto.value)}");
+    runTest("{@param proto: KvPair}", "{assertReflexive($proto)}");
+    runTest("{@param proto: KvPair}", "{assertReflexive($proto.key)}");
+    runTest("{@param proto: KvPair}", "{assertReflexive($proto.value)}");
   }
 
   @Test
@@ -79,8 +78,8 @@ public final class ExprEquivalenceTest {
     // proto inits
     runTest(
         "{assertEquals(",
-        "  example.KvPair(key: 'a', value: 'b'),",
-        "  example.KvPair(value: 'b', key: 'a')",
+        "  KvPair(key: 'a', value: 'b'),",
+        "  KvPair(value: 'b', key: 'a')",
         ")}");
     // TODO(b/78775420): randomInt isn't a pure function so it shouldn't ever be equivalent :/
     // fixing this behavior requires a cleanup.
@@ -102,15 +101,12 @@ public final class ExprEquivalenceTest {
   }
 
   private static final SoyTypeRegistry TYPE_REGISTRY =
-      new SoyTypeRegistryBuilder()
-          .addDescriptors(ImmutableList.of(Example.getDescriptor()))
-          .build();
+      SharedTestUtils.importing(KvPair.getDescriptor());
 
   public void runTest(String... templateSourceLines) {
     SoyFileSetNode soyTree =
         SoyFileSetParserBuilder.forFileContents(
-                ""
-                    + "{namespace ns}\n"
+                "{namespace ns}\n"
                     + "{template .aaa}\n"
                     + "  "
                     + Joiner.on("\n   ").join(templateSourceLines)
