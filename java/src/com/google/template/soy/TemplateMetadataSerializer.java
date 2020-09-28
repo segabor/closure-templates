@@ -25,6 +25,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.SanitizedContentKind;
 import com.google.template.soy.base.internal.SoyFileKind;
+import com.google.template.soy.base.internal.TemplateContentKind;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.soytree.CompilationUnit;
@@ -38,8 +39,6 @@ import com.google.template.soy.soytree.SoyTypeP;
 import com.google.template.soy.soytree.TemplateDelegateNodeBuilder;
 import com.google.template.soy.soytree.TemplateKindP;
 import com.google.template.soy.soytree.TemplateMetadata;
-import com.google.template.soy.soytree.TemplateMetadata.DataAllCallSituation;
-import com.google.template.soy.soytree.TemplateMetadata.Parameter;
 import com.google.template.soy.soytree.TemplateMetadataP;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
@@ -47,13 +46,14 @@ import com.google.template.soy.soytree.Visibility;
 import com.google.template.soy.soytree.VisibilityP;
 import com.google.template.soy.types.AnyType;
 import com.google.template.soy.types.BoolType;
-import com.google.template.soy.types.ErrorType;
 import com.google.template.soy.types.FloatType;
 import com.google.template.soy.types.IntType;
 import com.google.template.soy.types.MessageType;
 import com.google.template.soy.types.NullType;
 import com.google.template.soy.types.RecordType;
+import com.google.template.soy.types.SanitizedType;
 import com.google.template.soy.types.SanitizedType.AttributesType;
+import com.google.template.soy.types.SanitizedType.ElementType;
 import com.google.template.soy.types.SanitizedType.HtmlType;
 import com.google.template.soy.types.SanitizedType.JsType;
 import com.google.template.soy.types.SanitizedType.StyleType;
@@ -65,6 +65,8 @@ import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.StringType;
 import com.google.template.soy.types.TemplateType;
+import com.google.template.soy.types.TemplateType.DataAllCallSituation;
+import com.google.template.soy.types.TemplateType.Parameter;
 import com.google.template.soy.types.UnknownType;
 import com.google.template.soy.types.VeDataType;
 import java.util.ArrayList;
@@ -118,12 +120,12 @@ public final class TemplateMetadataSerializer {
       String headerFilePath,
       ErrorReporter errorReporter) {
     ImmutableList.Builder<TemplateMetadata> templates = ImmutableList.builder();
-      for (TemplateMetadataP templateProto : fileProto.getTemplateList()) {
-        try {
+    for (TemplateMetadataP templateProto : fileProto.getTemplateList()) {
+      try {
         templates.add(
             metadataFromProto(
                 fileProto, templateProto, fileKind, typeRegistry, headerFilePath, errorReporter));
-        } catch (IllegalArgumentException iae) {
+      } catch (IllegalArgumentException iae) {
         errorReporter.report(
             new SourceLocation(headerFilePath),
             UNABLE_TO_PARSE_TEMPLATE_HEADER,
@@ -136,23 +138,37 @@ public final class TemplateMetadataSerializer {
   }
 
   private static TemplateMetadataP protoFromTemplate(TemplateMetadata meta, SoyFileNode fileNode) {
+    TemplateType templateType = meta.getTemplateType();
     TemplateMetadataP.Builder builder =
         TemplateMetadataP.newBuilder()
             .setTemplateName(
-                meta.getTemplateKind() == TemplateType.TemplateKind.DELTEMPLATE
+                templateType.getTemplateKind() == TemplateType.TemplateKind.DELTEMPLATE
                     ? meta.getDelTemplateName()
                     : maybeShortenTemplateName(fileNode.getNamespace(), meta.getTemplateName()))
-            .setTemplateKind(TEMPLATE_KIND_CONVERTER.reverse().convert(meta.getTemplateKind()))
+            .setTemplateKind(
+                TEMPLATE_KIND_CONVERTER.reverse().convert(templateType.getTemplateKind()))
             .setVisibility(VISIBILITY_CONVERTER.reverse().convert(meta.getVisibility()))
+            // TODO(b/168821294): Stop setting this field once a new Kythe is deployed.
             .setContentKind(
-                meta.getContentKind() == null
+                templateType.getContentKind() == null
                     ? SanitizedContentKindP.NONE
-                    : CONTENT_KIND_CONVERTER.reverse().convert(meta.getContentKind()))
+                    : CONTENT_KIND_CONVERTER
+                        .reverse()
+                        .convert(templateType.getContentKind().getSanitizedContentKind()))
+            .setTemplateType(
+                SoyTypeP.TemplateTypeP.newBuilder()
+                    .setReturnType(
+                        SanitizedType.getTypeForContentKind(
+                                templateType.getContentKind().getSanitizedContentKind())
+                            .toProto())
+                    .addAllParameter(protosFromParameters(templateType.getParameters()))
+                    .build())
             .setDelTemplateVariant(Strings.nullToEmpty(meta.getDelTemplateVariant()))
-            .setStrictHtml(meta.isStrictHtml())
+            .setStrictHtml(templateType.isStrictHtml())
             .addAllDataAllCallSituation(
-                protosFromCallSitatuations(meta.getDataAllCallSituations(), fileNode))
-            .addAllParameter(protosFromParameters(meta.getParameters()));
+                protosFromCallSitatuations(templateType.getDataAllCallSituations(), fileNode))
+            // TODO(b/168821294): Stop setting this field once a new Kythe is deployed.
+            .addAllParameter(protosFromParameters(templateType.getParameters()));
     // This may be null because some flows such as conformance tests do not run the SoyElementPass.
     if (meta.getHtmlElement() != null && meta.getSoyElement() != null) {
       builder = builder.setHtmlElement(meta.getHtmlElement()).setSoyElement(meta.getSoyElement());
@@ -189,25 +205,39 @@ public final class TemplateMetadataSerializer {
       default:
         throw new AssertionError();
     }
+
+    SoyType returnType =
+        fromProto(
+            templateProto.getTemplateType().getReturnType(), typeRegistry, filePath, errorReporter);
+
     return builder
         .setTemplateName(templateName)
         .setSoyFileKind(fileKind)
         .setDelPackageName(delPackageName)
         .setHtmlElement(templateProto.getHtmlElement())
         .setSoyElement(templateProto.getSoyElement())
-        .setStrictHtml(templateProto.getStrictHtml())
-        .setTemplateKind(templateKind)
+        .setTemplateType(
+            TemplateType.builder()
+                .setTemplateKind(templateKind)
+                .setContentKind(
+                    TemplateContentKind.fromSanitizedContentKind(
+                        returnType instanceof StringType
+                            ? SanitizedContentKind.TEXT
+                            : ((SanitizedType) returnType).getContentKind()))
+                .setStrictHtml(templateProto.getStrictHtml())
+                .setDataAllCallSituations(
+                    callSituationsFromProto(templateProto.getDataAllCallSituationList(), fileProto))
+                .setParameters(
+                    parametersFromProto(
+                        templateProto.getTemplateType().getParameterList(),
+                        typeRegistry,
+                        filePath,
+                        errorReporter))
+                .setIdentifierForDebugging(templateName)
+                .setInferredType(true)
+                .build())
         .setSourceLocation(new SourceLocation(fileProto.getFilePath()))
-        .setContentKind(
-            templateProto.getContentKind() == SanitizedContentKindP.NONE
-                ? null
-                : CONTENT_KIND_CONVERTER.convert(templateProto.getContentKind()))
         .setVisibility(VISIBILITY_CONVERTER.convert(templateProto.getVisibility()))
-        .setDataAllCallSituations(
-            callSituationsFromProto(templateProto.getDataAllCallSituationList(), fileProto))
-        .setParameters(
-            parametersFromProto(
-                templateProto.getParameterList(), typeRegistry, filePath, errorReporter))
         .build();
   }
 
@@ -276,8 +306,6 @@ public final class TemplateMetadataSerializer {
             return FloatType.getInstance();
           case STRING:
             return StringType.getInstance();
-          case HTML:
-            return HtmlType.getInstance();
           case ATTRIBUTES:
             return AttributesType.getInstance();
           case JS:
@@ -295,6 +323,12 @@ public final class TemplateMetadataSerializer {
             // fall-through
         }
         throw new AssertionError("Unknown primitive: " + proto.getPrimitive());
+      case HTML:
+        if (proto.getHtml().getIsElement()) {
+          return ElementType.getInstance();
+        } else {
+          return HtmlType.getInstance();
+        }
       case LIST_ELEMENT:
         return typeRegistry.getOrCreateListType(
             fromProto(proto.getListElement(), typeRegistry, filePath, errorReporter));
@@ -316,7 +350,7 @@ public final class TemplateMetadataSerializer {
           if (type == null) {
             errorReporter.report(
                 new SourceLocation(filePath), UNABLE_TO_FIND_TYPE, "proto", proto.getProto());
-            return ErrorType.getInstance();
+            return UnknownType.getInstance();
           }
           // allow unknown to support message extraction which configures the DEFAULT_UNKNOWN type
           // registry
@@ -329,7 +363,7 @@ public final class TemplateMetadataSerializer {
               proto.getProto(),
               "proto",
               type.getKind());
-          return ErrorType.getInstance();
+          return UnknownType.getInstance();
         }
       case PROTO_ENUM:
         {
@@ -340,7 +374,7 @@ public final class TemplateMetadataSerializer {
                 UNABLE_TO_FIND_TYPE,
                 "proto enum",
                 proto.getProtoEnum());
-            return ErrorType.getInstance();
+            return UnknownType.getInstance();
           }
           // allow unknown to support message extraction which configures the DEFAULT_UNKNOWN type
           // registry
@@ -353,7 +387,7 @@ public final class TemplateMetadataSerializer {
               proto.getProtoEnum(),
               "proto enum",
               type.getKind());
-          return ErrorType.getInstance();
+          return UnknownType.getInstance();
         }
       case RECORD:
         {
@@ -369,26 +403,21 @@ public final class TemplateMetadataSerializer {
         }
       case TEMPLATE:
         {
-          List<TemplateType.Parameter> parameters = new ArrayList<>();
-          // TODO: this relies on proto map insertion order, which is not guaranteed by the spec.
-          for (Map.Entry<String, SoyTypeP> entry :
-              proto.getTemplate().getParameterMap().entrySet()) {
+          List<Parameter> parameters = new ArrayList<>();
+          // TODO: this relies on proto list insertion order, which is not guaranteed by the spec.
+          for (ParameterP parameter : proto.getTemplate().getParameterList()) {
             parameters.add(
-                TemplateType.Parameter.create(
-                    entry.getKey(),
-                    fromProto(entry.getValue(), typeRegistry, filePath, errorReporter),
-                    true /* isRequired */));
+                Parameter.builder()
+                    .setName(parameter.getName())
+                    .setType(fromProto(parameter.getType(), typeRegistry, filePath, errorReporter))
+                    .setRequired(parameter.getRequired())
+                    .build());
           }
           return typeRegistry.internTemplateType(
               TemplateType.declaredTypeOf(
                   parameters,
                   fromProto(
-                      SoyTypeP.newBuilder()
-                          .setPrimitive(proto.getTemplate().getReturnType())
-                          .build(),
-                      typeRegistry,
-                      filePath,
-                      errorReporter)));
+                      proto.getTemplate().getReturnType(), typeRegistry, filePath, errorReporter)));
         }
       case UNION:
         {

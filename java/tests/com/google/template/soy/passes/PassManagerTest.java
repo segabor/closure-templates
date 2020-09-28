@@ -79,6 +79,7 @@ public final class PassManagerTest {
         .containsExactly(
             "ResolveProtoImports",
             "ResolveTemplateImports",
+            "ResolveTemplateFunctions",
             "ResolveTemplateNames",
             "ResolveTemplateParamTypes",
             "ResolvePlugins")
@@ -96,8 +97,11 @@ public final class PassManagerTest {
 
     assertThat(names(manager.partialTemplateRegistryPasses))
         .containsExactly(
-            "ResolveProtoImports", "ResolveTemplateImports",
-            "ResolveTemplateNames", "ResolveTemplateParamTypes")
+            "ResolveProtoImports",
+            "ResolveTemplateImports",
+            "ResolveTemplateFunctions",
+            "ResolveTemplateNames",
+            "ResolveTemplateParamTypes")
         .inOrder();
     assertThat(names(manager.crossTemplateCheckingPasses)).isEmpty();
   }
@@ -130,12 +134,10 @@ public final class PassManagerTest {
         ImmutableList.of(
             AutoescaperPass.class,
             BasicHtmlValidationPass.class,
-            CallAnnotationPass.class,
             CheckBadContextualUsagePass.class,
             CheckDeclaredTypesPass.class,
             CheckDelegatesPass.class,
             CheckGlobalsPass.class,
-            CheckNoNamedTemplateTypesPass.class,
             CheckNonEmptyMsgNodesPass.class,
             CheckTemplateCallsPass.class,
             CheckTemplateHeaderVarsPass.class,
@@ -159,7 +161,6 @@ public final class PassManagerTest {
             SimplifyAssertNonNullPass.class,
             StrictDepsPass.class,
             UnknownJsGlobalPass.class,
-            UpgradeTemplateTypesPass.class,
             V1ExpressionPass.class,
             ValidateAliasesPass.class,
             ValidateSkipNodesPass.class,

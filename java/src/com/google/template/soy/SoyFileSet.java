@@ -20,6 +20,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 
+import com.google.auto.value.AutoValue;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Supplier;
@@ -694,7 +695,8 @@ public final class SoyFileSet {
           SoyFileSetNode soyTree = result.fileSet();
 
           // Generate template invocation builders for the soy tree.
-          return new GenInvocationBuildersVisitor(javaPackage, registry).exec(soyTree);
+          return new GenInvocationBuildersVisitor(errorReporter, javaPackage, registry)
+              .exec(soyTree);
         });
   }
 
@@ -1126,48 +1128,97 @@ public final class SoyFileSet {
     reportWarnings();
   }
 
+  @AutoValue
+  abstract static class HeaderResult {
+    abstract SoyFileSetNode fileSet();
+
+    abstract TemplateRegistry templateRegistry();
+
+    abstract CssRegistry cssRegistry();
+  }
+
   /**
    * Performs the minimal amount of work needed to calculate TemplateMetadata objects for header
    * compilation.
    */
-  ParseResult compileMinimallyForHeaders() {
+  HeaderResult compileMinimallyForHeaders() {
     return entryPoint(
         () -> {
           disallowExternalCalls();
-          return parse(
-              passManagerBuilder()
-                  // Because we allow this for JS generated templates, we allow this for
-                  // headers.
-                  .allowUnknownJsGlobals()
-                  // Only run passes that not cross template checking.
-                  .addPassContinuationRule(
-                      CheckTemplateHeaderVarsPass.class, PassContinuationRule.STOP_BEFORE_PASS)
-                  .allowV1Expression(),
-              typeRegistry);
+          ParseResult parseResult =
+              parse(
+                  passManagerBuilder()
+                      // Because we allow this for JS generated templates, we allow this for
+                      // headers.
+                      .allowUnknownJsGlobals()
+                      // Only run passes that not cross template checking.
+                      .addPassContinuationRule(
+                          CheckTemplateHeaderVarsPass.class, PassContinuationRule.STOP_BEFORE_PASS)
+                      .allowV1Expression(),
+                  typeRegistry);
+          // throw before accessing registry() to make sure it is definitely available.
+          throwIfErrorsPresent();
+          return new AutoValue_SoyFileSet_HeaderResult(
+              parseResult.fileSet(), parseResult.registry(), cssRegistry.get());
         });
   }
 
+  /** Returns the result of {@link #compileForAnalysis}. */
+  @AutoValue
+  public abstract static class AnalysisResult {
+    AnalysisResult() {}
+
+    /**
+     * The template registry, will be empty if errors occurred early and it couldn't be constructed.
+     */
+    public abstract Optional<TemplateRegistry> registry();
+
+    /** The full parsed AST. */
+    public abstract SoyFileSetNode fileSet();
+
+    /** Compiler warnings. This will include errors if {@code treatErrorsAsWarnings} was set. */
+    public abstract ImmutableList<SoyError> warnings();
+  }
+
   /** Performs enough work to retrieve all possible warnings in a compile. */
-  public ParseResult compileForAnalysis() {
+  public AnalysisResult compileForAnalysis(boolean treatErrorsAsWarnings) {
     return entryPoint(
         () -> {
           disallowExternalCalls();
-          return parse(
-              passManagerBuilder()
-                  // the optimizer mutates the AST heavily which inhibits certain source analysis
-                  // rules.
-                  .optimize(false)
-                  .astRewrites(false)
-                  // skip adding extra attributes
-                  .addHtmlAttributesForDebugging(false)
-                  // skip the autoescaper
-                  .insertEscapingDirectives(false)
-                  .desugarHtmlAndStateNodes(false)
-                  // TODO(lukes): This is needed for kythe apparently
-                  .allowUnknownGlobals()
-                  .allowUnknownJsGlobals()
-                  .allowV1Expression(),
-              typeRegistry);
+          ParseResult result =
+              parse(
+                  passManagerBuilder()
+                      // the optimizer mutates the AST heavily which inhibits certain source
+                      // analysis
+                      // rules.
+                      .optimize(false)
+                      .astRewrites(false)
+                      // skip adding extra attributes
+                      .addHtmlAttributesForDebugging(false)
+                      // skip the autoescaper
+                      .insertEscapingDirectives(false)
+                      .desugarHtmlAndStateNodes(false)
+                      // TODO(lukes): This is needed for kythe apparently
+                      .allowUnknownGlobals()
+                      .allowUnknownJsGlobals()
+                      .allowV1Expression(),
+                  typeRegistry);
+          ImmutableList<SoyError> warnings;
+          if (treatErrorsAsWarnings) {
+            // we are essentially ignoring errors
+            resetErrorReporter();
+            warnings =
+                ImmutableList.<SoyError>builder()
+                    .addAll(errorReporter.getErrors())
+                    .addAll(errorReporter.getWarnings())
+                    .build();
+          } else {
+            warnings = errorReporter.getWarnings();
+          }
+          return new AutoValue_SoyFileSet_AnalysisResult(
+              result.hasRegistry() ? Optional.of(result.registry()) : Optional.empty(),
+              result.fileSet(),
+              warnings);
         });
   }
 

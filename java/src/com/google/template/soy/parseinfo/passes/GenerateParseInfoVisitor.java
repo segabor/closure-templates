@@ -56,12 +56,12 @@ import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateDelegateNode;
 import com.google.template.soy.soytree.TemplateMetadata;
-import com.google.template.soy.soytree.TemplateMetadata.Parameter;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.Visibility;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.types.TemplateType;
+import com.google.template.soy.types.TemplateType.Parameter;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -577,12 +577,14 @@ public final class GenerateParseInfoVisitor
     ilb.increaseIndent(2);
     ilb.appendLine("\"", node.getTemplateName(), "\",");
 
-    if (!nodeMetadata.getParameters().isEmpty() || !indirectParamsInfo.indirectParams.isEmpty()) {
+    if (!nodeMetadata.getTemplateType().getParameters().isEmpty()
+        || !indirectParamsInfo.indirectParams.isEmpty()) {
       ImmutableMap.Builder<String, String> entrySnippetPairs = ImmutableMap.builder();
       Set<String> seenParams = Sets.newHashSet();
       for (Parameter param :
           Iterables.concat(
-              nodeMetadata.getParameters(), indirectParamsInfo.indirectParams.values())) {
+              nodeMetadata.getTemplateType().getParameters(),
+              indirectParamsInfo.indirectParams.values())) {
         if (seenParams.add(param.getName())) {
           entrySnippetPairs.put(
               "\"" + param.getName() + "\"",
@@ -682,11 +684,11 @@ public final class GenerateParseInfoVisitor
     StringBuilder resultSb = new StringBuilder();
 
     if (template.getSourceLocation().getFilePath().equals(currSoyFile.getFilePath())
-        && template.getTemplateKind() != TemplateType.TemplateKind.DELTEMPLATE) {
+        && template.getTemplateType().getTemplateKind() != TemplateType.TemplateKind.DELTEMPLATE) {
       resultSb.append(
           template.getTemplateName().substring(template.getTemplateName().lastIndexOf('.')));
     } else {
-      switch (template.getTemplateKind()) {
+      switch (template.getTemplateType().getTemplateKind()) {
         case BASIC:
         case ELEMENT:
           resultSb.append(template.getTemplateName());
@@ -704,7 +706,7 @@ public final class GenerateParseInfoVisitor
     if (template.getVisibility() != Visibility.PUBLIC) {
       resultSb.append(" (private)");
     }
-    if (template.getTemplateKind() == TemplateType.TemplateKind.DELTEMPLATE) {
+    if (template.getTemplateType().getTemplateKind() == TemplateType.TemplateKind.DELTEMPLATE) {
       resultSb.append(" (delegate)");
     }
 

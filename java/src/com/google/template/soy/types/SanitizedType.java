@@ -49,6 +49,9 @@ public abstract class SanitizedType extends PrimitiveType {
       case CSS:
         return StyleType.getInstance();
 
+      case HTML_ELEMENT:
+        return ElementType.getInstance();
+
       case HTML:
         return HtmlType.getInstance();
 
@@ -90,12 +93,46 @@ public abstract class SanitizedType extends PrimitiveType {
 
     @Override
     void doToProto(SoyTypeP.Builder builder) {
-      builder.setPrimitive(SoyTypeP.PrimitiveTypeP.HTML);
+      builder.setHtml(SoyTypeP.HtmlTypeP.newBuilder().setIsElement(false));
     }
 
     /** Return the single instance of this type. */
     public static HtmlType getInstance() {
       return INSTANCE;
+    }
+  }
+
+  /** Type produced by templates whose kind is "html<?>". */
+  public static final class ElementType extends SanitizedType {
+
+    private static final ElementType INSTANCE = new ElementType();
+
+    // Not constructible - use getInstance().
+    private ElementType() {}
+
+    @Override
+    public Kind getKind() {
+      return Kind.ELEMENT;
+    }
+
+    @Override
+    public SanitizedContentKind getContentKind() {
+      return SanitizedContentKind.HTML_ELEMENT;
+    }
+
+    @Override
+    void doToProto(SoyTypeP.Builder builder) {
+      builder.setHtml(SoyTypeP.HtmlTypeP.newBuilder().setIsElement(true));
+    }
+
+    /** Return the single instance of this type. */
+    public static ElementType getInstance() {
+      return INSTANCE;
+    }
+
+    @Override
+    public String toString() {
+      return "html<?>";
     }
   }
 

@@ -32,9 +32,9 @@ import com.google.template.soy.soytree.CallParamContentNode;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateMetadata;
-import com.google.template.soy.soytree.TemplateMetadata.Parameter;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
+import com.google.template.soy.types.TemplateType.Parameter;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
@@ -134,23 +134,24 @@ final class CheckDelegatesPass implements CompilerFileSetPass {
         // group must be empty
         continue;
       }
-      Set<TemplateMetadata.Parameter> firstRequiredParamSet = getRequiredParamSet(firstDelTemplate);
-      SanitizedContentKind firstContentKind = firstDelTemplate.getContentKind();
+      Set<Parameter> firstRequiredParamSet = getRequiredParamSet(firstDelTemplate);
+      SanitizedContentKind firstContentKind =
+          firstDelTemplate.getTemplateType().getContentKind().getSanitizedContentKind();
       boolean firstStrictHtml =
-          firstDelTemplate.isStrictHtml() && firstContentKind == SanitizedContentKind.HTML;
+          firstDelTemplate.getTemplateType().isStrictHtml() && firstContentKind.isHtml();
       // loop over all members of the deltemplate group.
       for (TemplateMetadata delTemplate : delTemplateGroup) {
         if (firstDelTemplate == delTemplate) {
           continue; // skip
         }
         // Not first template encountered.
-        Set<TemplateMetadata.Parameter> currRequiredParamSet = getRequiredParamSet(delTemplate);
+        Set<Parameter> currRequiredParamSet = getRequiredParamSet(delTemplate);
         if (!paramSetsEqual(currRequiredParamSet, firstRequiredParamSet)) {
-          List<Parameter> firstParamList = firstDelTemplate.getParameters();
-          List<Parameter> currParamList = delTemplate.getParameters();
-          Set<TemplateMetadata.Parameter> missingParamSet =
+          List<Parameter> firstParamList = firstDelTemplate.getTemplateType().getParameters();
+          List<Parameter> currParamList = delTemplate.getTemplateType().getParameters();
+          Set<Parameter> missingParamSet =
               getRequiredParamsDifference(firstParamList, currParamList);
-          Set<TemplateMetadata.Parameter> unexpectedParamSet =
+          Set<Parameter> unexpectedParamSet =
               getRequiredParamsDifference(currParamList, firstParamList);
           errorReporter.report(
               delTemplate.getSourceLocation(),
@@ -159,7 +160,8 @@ final class CheckDelegatesPass implements CompilerFileSetPass {
               firstDelTemplate.getSourceLocation().toString(),
               getInconsistentParamMessage(missingParamSet, unexpectedParamSet));
         }
-        if (delTemplate.getContentKind() != firstContentKind) {
+        if (delTemplate.getTemplateType().getContentKind().getSanitizedContentKind()
+            != firstContentKind) {
           // TODO: This is only *truly* a requirement if the strict mode deltemplates are
           // being called by contextual templates. For a strict-to-strict call, everything
           // is escaped at runtime at the call sites. You could imagine delegating between
@@ -171,14 +173,15 @@ final class CheckDelegatesPass implements CompilerFileSetPass {
           errorReporter.report(
               firstDelTemplate.getSourceLocation(),
               STRICT_DELTEMPLATES_WITH_DIFFERENT_CONTENT_KIND,
-              String.valueOf(delTemplate.getContentKind()),
+              String.valueOf(
+                  delTemplate.getTemplateType().getContentKind().getSanitizedContentKind()),
               String.valueOf(firstContentKind),
               delTemplate.getSourceLocation().toString());
         }
         // Check if all del templates have the same settings of strict HTML mode.
         // We do not need to check {@code ContentKind} again since we already did that earlier
         // in this pass.
-        if (delTemplate.isStrictHtml() != firstStrictHtml) {
+        if (delTemplate.getTemplateType().isStrictHtml() != firstStrictHtml) {
           errorReporter.report(
               firstDelTemplate.getSourceLocation(),
               DELTEMPLATES_WITH_DIFFERENT_STRICT_HTML_MODE,
@@ -189,16 +192,15 @@ final class CheckDelegatesPass implements CompilerFileSetPass {
     }
   }
 
-  private static boolean paramSetsEqual(
-      Set<TemplateMetadata.Parameter> s1, Set<TemplateMetadata.Parameter> s2) {
+  private static boolean paramSetsEqual(Set<Parameter> s1, Set<Parameter> s2) {
     // We can use Set equality because we normalize parameters with toComparable().
     return s1.equals(s2);
   }
 
-  private static Set<TemplateMetadata.Parameter> getRequiredParamSet(TemplateMetadata delTemplate) {
-    return delTemplate.getParameters().stream()
-        .filter(TemplateMetadata.Parameter::isRequired)
-        .map(TemplateMetadata.Parameter::toComparable)
+  private static Set<Parameter> getRequiredParamSet(TemplateMetadata delTemplate) {
+    return delTemplate.getTemplateType().getParameters().stream()
+        .filter(Parameter::isRequired)
+        .map(Parameter::toComparable)
         .collect(Collectors.toSet());
   }
 
@@ -255,8 +257,7 @@ final class CheckDelegatesPass implements CompilerFileSetPass {
   }
 
   private static String getInconsistentParamMessage(
-      Set<TemplateMetadata.Parameter> missingParamSet,
-      Set<TemplateMetadata.Parameter> unexpectedParamSet) {
+      Set<Parameter> missingParamSet, Set<Parameter> unexpectedParamSet) {
     StringBuilder message = new StringBuilder();
     if (!missingParamSet.isEmpty()) {
       message.append(String.format("\n  Missing params: %s", formatParamSet(missingParamSet)));
@@ -268,7 +269,7 @@ final class CheckDelegatesPass implements CompilerFileSetPass {
     return message.toString();
   }
 
-  private static Set<String> formatParamSet(Set<TemplateMetadata.Parameter> paramSet) {
+  private static Set<String> formatParamSet(Set<Parameter> paramSet) {
     return paramSet.stream()
         .map(
             (param) -> {
@@ -279,7 +280,7 @@ final class CheckDelegatesPass implements CompilerFileSetPass {
         .collect(Collectors.toSet());
   }
 
-  private static Set<TemplateMetadata.Parameter> getRequiredParamsDifference(
+  private static Set<Parameter> getRequiredParamsDifference(
       List<Parameter> paramList1, List<Parameter> paramList2) {
     Map<String, Parameter> nameToParamMap =
         paramList2.stream()

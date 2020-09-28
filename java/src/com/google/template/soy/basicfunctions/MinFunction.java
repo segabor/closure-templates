@@ -47,7 +47,8 @@ import com.google.template.soy.shared.restricted.SoyPureFunction;
 @SoyFunctionSignature(
     name = "min",
     value =
-        // TODO(b/70946095):these should all be number
+        // TODO(b/70946095):these should all be number. The ResolveExpressionTypesPass narrows the
+        // type.
         @Signature(
             returnType = "?",
             parameterTypes = {"?", "?"}))

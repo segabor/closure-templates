@@ -72,6 +72,7 @@ public abstract class SoyRuntimeType {
       case ATTRIBUTES:
       case CSS:
       case URI:
+      case ELEMENT:
       case HTML:
       case JS:
       case TRUSTED_RESOURCE_URI:
@@ -119,7 +120,6 @@ public abstract class SoyRuntimeType {
       case ANY:
         // SoyValue
         return new BoxedSoyType(soyType, BytecodeUtils.SOY_VALUE_TYPE);
-      case ERROR:
       default:
         throw new AssertionError("can't map " + soyType + " to a boxed soy runtime type");
     }
@@ -148,6 +148,7 @@ public abstract class SoyRuntimeType {
       case ATTRIBUTES:
       case CSS:
       case URI:
+      case ELEMENT:
       case HTML:
       case JS:
       case TRUSTED_RESOURCE_URI:
@@ -209,8 +210,6 @@ public abstract class SoyRuntimeType {
       case ANY:
         // no unique unboxed representation
         return null;
-      case ERROR:
-        // continue
     }
     throw new AssertionError("can't map " + soyType + " to an unboxed soy runtime type");
   }
@@ -264,8 +263,9 @@ public abstract class SoyRuntimeType {
   }
 
   private boolean assignableToNullableType(SoyType type) {
-    return type.isAssignableFrom(soyType)
-        || (soyType.getKind() == Kind.UNION && type.isAssignableFrom(SoyTypes.removeNull(soyType)));
+    return type.isAssignableFromStrict(soyType)
+        || (soyType.getKind() == Kind.UNION
+            && type.isAssignableFromStrict(SoyTypes.removeNull(soyType)));
   }
 
   /**
@@ -363,7 +363,7 @@ public abstract class SoyRuntimeType {
    * <em>not</em> a number, just that it is not <em>known</em> to be a number at compile time.
    */
   public final boolean isKnownNumber() {
-    return SoyTypes.NUMBER_TYPE.isAssignableFrom(soyType);
+    return SoyTypes.NUMBER_TYPE.isAssignableFromStrict(soyType);
   }
 
   public final SoyRuntimeType asNonNullable() {

@@ -391,6 +391,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     String fileOverviewDescription = "Templates in namespace " + node.getNamespace() + ".";
     JsDoc.Builder jsDocBuilder = JsDoc.builder();
     jsDocBuilder.addAnnotation("fileoverview", fileOverviewDescription);
+    jsDocBuilder.addAnnotation("suppress", "{missingRequire} TODO(b/152440355)");
     if (node.getDelPackageName() != null) {
       jsDocBuilder.addParameterizedAnnotation("modName", node.getDelPackageName());
     }
@@ -398,11 +399,6 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     addJsDocToRequireDelTemplates(jsDocBuilder, node);
     addCodeToRequireCss(jsDocBuilder, node);
     jsDocBuilder.addAnnotation("public");
-    // TODO(b/157149103) Enable this either by migrating SoyJS to goog.module or conditionally
-    // using aliases when possible.
-    if (jsSrcOptions.shouldGenerateGoogModules()) {
-      jsDocBuilder.addParameterizedAnnotation("suppress", "missingRequire");
-    }
     file.append(jsDocBuilder.build());
     file.append("\n\n");
 
@@ -1102,7 +1098,9 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     Expression switchOn = translateExpr(expr);
     SoyType type = expr.getType();
     // If the type is possibly a sanitized content type then we need to toString it.
-    if (SoyTypes.makeNullable(StringType.getInstance()).isAssignableFrom(type)
+    // TODO(lukes): this condition is wrong. it should be if is unknown, any or sanitized (or union
+    // of sanitized)
+    if (SoyTypes.makeNullable(StringType.getInstance()).isAssignableFromStrict(type)
         || type.equals(AnyType.getInstance())
         || type.equals(UnknownType.getInstance())) {
       CodeChunk.Generator codeGenerator = templateTranslationContext.codeGenerator();

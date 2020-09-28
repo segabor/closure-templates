@@ -82,10 +82,11 @@ public class IncrementalDomTranslateExprNodeVisitor extends TranslateExprNodeVis
     // Unions are enforced to have the same content kind in CheckTemplateCallsPass.
     SanitizedContentKind kind =
         Iterables.getOnlyElement(
-            SoyTypes.expandUnions(templateType).stream()
-                .map(type -> ((TemplateType) type).getContentKind())
-                .collect(toImmutableSet()));
-    if (kind == SanitizedContentKind.HTML || kind == SanitizedContentKind.ATTRIBUTES) {
+                SoyTypes.expandUnions(templateType).stream()
+                    .map(type -> ((TemplateType) type).getContentKind())
+                    .collect(toImmutableSet()))
+            .getSanitizedContentKind();
+    if (kind.isHtml() || kind == SanitizedContentKind.ATTRIBUTES) {
       return BIND_TEMPLATE_PARAMS_FOR_IDOM.call(template, paramRecord);
     } else {
       return super.genCodeForBind(template, paramRecord, templateType);
@@ -109,7 +110,7 @@ public class IncrementalDomTranslateExprNodeVisitor extends TranslateExprNodeVis
 
   /** Types that might possibly be idom function callbacks, which always need custom truthiness. */
   private static final ImmutableSet<Kind> FUNCTION_TYPES =
-      Sets.immutableEnumSet(Kind.HTML, Kind.ATTRIBUTES, Kind.UNKNOWN, Kind.ANY);
+      Sets.immutableEnumSet(Kind.HTML, Kind.ELEMENT, Kind.ATTRIBUTES, Kind.UNKNOWN, Kind.ANY);
 
   @Override
   protected Expression maybeCoerceToBoolean(SoyType type, Expression chunk, boolean force) {

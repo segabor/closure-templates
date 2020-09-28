@@ -20,12 +20,11 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import com.google.common.collect.ImmutableMap;
 import com.google.template.soy.error.SoyErrorKind;
 import java.util.Optional;
-import java.util.TreeMap;
 
 /**
  * The different types for template kind="" values. These have a many-to-one relationship with
- * {@link SanitizedContentKind} (for example, kind="html", kind="element", and kind="element<div>"
- * would all map to ContentKind.HTML).
+ * {@link SanitizedContentKind} (for example, kind="html", kind="html<?>" would all map to
+ * ContentKind.HTML).
  */
 public abstract class TemplateContentKind {
 
@@ -42,16 +41,23 @@ public abstract class TemplateContentKind {
    */
   public static Optional<TemplateContentKind> fromAttributeValue(String attrValue) {
     checkNotNull(attrValue);
-
+    if (attrValue.equals("html<?>")) {
+      return Optional.of(ElementContentKind.ELEMENT);
+    }
     if (BasicTemplateContentKind.KINDS_BY_ATTR_VALUE.containsKey(attrValue)) {
       return Optional.of(BasicTemplateContentKind.KINDS_BY_ATTR_VALUE.get(attrValue));
-    } else if (attrValue.equals("element")) {
-      return Optional.of(ElementContentKind.ELEMENT);
     }
     return Optional.empty();
   }
 
-  public static final BasicTemplateContentKind HTML =
+  public static TemplateContentKind fromSanitizedContentKind(
+      SanitizedContentKind sanitizedContentKind) {
+    checkNotNull(sanitizedContentKind);
+
+    return BasicTemplateContentKind.KINDS_BY_KIND.get(sanitizedContentKind);
+  }
+
+  public static final TemplateContentKind HTML =
       BasicTemplateContentKind.KINDS_BY_ATTR_VALUE.get(
           SanitizedContentKind.HTML.asAttributeValue());
 
@@ -61,14 +67,26 @@ public abstract class TemplateContentKind {
    */
   public static class BasicTemplateContentKind extends TemplateContentKind {
 
-    private static final ImmutableMap<String, BasicTemplateContentKind> KINDS_BY_ATTR_VALUE;
+    private static final ImmutableMap<SanitizedContentKind, TemplateContentKind> KINDS_BY_KIND;
+    private static final ImmutableMap<String, TemplateContentKind> KINDS_BY_ATTR_VALUE;
 
     static {
-      TreeMap<String, BasicTemplateContentKind> kindsByAttributeValue = new TreeMap<>();
+      ImmutableMap.Builder<SanitizedContentKind, TemplateContentKind> kindsByKind =
+          new ImmutableMap.Builder<>();
+      ImmutableMap.Builder<String, TemplateContentKind> kindsByAttributeValue =
+          new ImmutableMap.Builder<>();
       for (SanitizedContentKind kind : SanitizedContentKind.values()) {
-        kindsByAttributeValue.put(kind.asAttributeValue(), new BasicTemplateContentKind(kind));
+        TemplateContentKind contentKind;
+        if (kind == SanitizedContentKind.HTML_ELEMENT) {
+          contentKind = new ElementContentKind("html<?>");
+        } else {
+          contentKind = new BasicTemplateContentKind(kind);
+        }
+        kindsByKind.put(kind, contentKind);
+        kindsByAttributeValue.put(kind.asAttributeValue(), contentKind);
       }
-      KINDS_BY_ATTR_VALUE = ImmutableMap.copyOf(kindsByAttributeValue);
+      KINDS_BY_KIND = kindsByKind.build();
+      KINDS_BY_ATTR_VALUE = kindsByAttributeValue.build();
     }
 
     private final SanitizedContentKind sanitizedContentKind;
@@ -86,6 +104,25 @@ public abstract class TemplateContentKind {
     public SanitizedContentKind getSanitizedContentKind() {
       return sanitizedContentKind;
     }
+
+    @Override
+    public boolean equals(Object o) {
+      if (!(o instanceof BasicTemplateContentKind)) {
+        return false;
+      }
+      BasicTemplateContentKind other = (BasicTemplateContentKind) o;
+      return this.sanitizedContentKind == other.sanitizedContentKind;
+    }
+
+    @Override
+    public int hashCode() {
+      return this.sanitizedContentKind.hashCode();
+    }
+
+    @Override
+    public String toString() {
+      return this.sanitizedContentKind.toString();
+    }
   }
 
   /**
@@ -95,7 +132,7 @@ public abstract class TemplateContentKind {
    */
   public static class ElementContentKind extends TemplateContentKind {
 
-    public static final ElementContentKind ELEMENT = new ElementContentKind("element");
+    public static final ElementContentKind ELEMENT = new ElementContentKind("html<?>");
 
     // TODO(b/163796852): Flip when ready.
     public static final boolean IS_GA = false;
@@ -113,7 +150,26 @@ public abstract class TemplateContentKind {
 
     @Override
     public SanitizedContentKind getSanitizedContentKind() {
-      return SanitizedContentKind.HTML;
+      return SanitizedContentKind.HTML_ELEMENT;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+      if (!(o instanceof ElementContentKind)) {
+        return false;
+      }
+      ElementContentKind other = (ElementContentKind) o;
+      return this.attrValue.equals(other.attrValue);
+    }
+
+    @Override
+    public int hashCode() {
+      return this.attrValue.hashCode();
+    }
+
+    @Override
+    public String toString() {
+      return this.attrValue;
     }
   }
 
@@ -122,4 +178,14 @@ public abstract class TemplateContentKind {
 
   /** Returns the sanitized content type for this template kind. */
   public abstract SanitizedContentKind getSanitizedContentKind();
+
+  @Override
+  public abstract boolean equals(Object o);
+
+  @Override
+  public abstract int hashCode();
+
+  /** String representation used in error messages. */
+  @Override
+  public abstract String toString();
 }

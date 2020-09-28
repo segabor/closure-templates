@@ -40,6 +40,7 @@ import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.template.soy.base.SoyBackendKind;
 import com.google.template.soy.base.internal.SanitizedContentKind;
+import com.google.template.soy.base.internal.TemplateContentKind;
 import com.google.template.soy.data.internalutils.NodeContentKinds;
 import com.google.template.soy.jssrc.dsl.CodeChunk.Generator;
 import com.google.template.soy.jssrc.dsl.Expression;
@@ -283,6 +284,7 @@ public final class JsType {
         }
         // fall through
       case HTML:
+      case ELEMENT:
         if (isIncrementalDom) {
           // idom has a different strategy for handling these
           return IDOM_HTML;
@@ -475,28 +477,27 @@ public final class JsType {
           return builder.build();
         }
       case NAMED_TEMPLATE:
-      case ERROR:
-        // continue
     }
     throw new AssertionError("unhandled soytype: " + soyType);
   }
 
   private static JsType templateReturnType(
-      SanitizedContentKind templateReturnType, boolean isIncrementalDom) {
-    switch (templateReturnType) {
+      TemplateContentKind templateReturnType, boolean isIncrementalDom) {
+    SanitizedContentKind contentKind = templateReturnType.getSanitizedContentKind();
+    switch (contentKind) {
       case TEXT:
         return STRING_TYPE;
       case ATTRIBUTES:
       case CSS:
+      case HTML_ELEMENT:
       case HTML:
       case JS:
       case URI:
       case TRUSTED_RESOURCE_URI:
         Builder builder = builder();
-        String type = NodeContentKinds.toJsSanitizedContentCtorName(templateReturnType);
+        String type = NodeContentKinds.toJsSanitizedContentCtorName(contentKind);
         if (isIncrementalDom
-            && (templateReturnType == SanitizedContentKind.HTML
-                || templateReturnType == SanitizedContentKind.ATTRIBUTES)) {
+            && (contentKind.isHtml() || contentKind == SanitizedContentKind.ATTRIBUTES)) {
           builder.addType("void");
         } else {
           builder.addType("!" + type);
@@ -643,6 +644,7 @@ public final class JsType {
       case CSS:
         builder.addType("!goog.html.SafeStyle");
         break;
+      case HTML_ELEMENT:
       case HTML:
         builder.addType("!goog.html.SafeHtml");
         break;

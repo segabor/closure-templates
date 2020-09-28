@@ -48,7 +48,7 @@ public final class TypeRegistries {
 
   private static final SoyErrorKind PROTO_FQN =
       SoyErrorKind.of(
-          "Proto types should be imported rather than referenced by their fully qualified names.");
+          "Proto types must be imported rather than referenced by their fully qualified names.");
 
   private TypeRegistries() {}
 
@@ -86,8 +86,7 @@ public final class TypeRegistries {
 
     SoyType protoFqnType = registry.getProtoRegistry().getProtoType(typeName);
     if (protoFqnType != null) {
-      errorReporter.warn(id.location(), PROTO_FQN);
-      return protoFqnType;
+      errorReporter.report(id.location(), PROTO_FQN);
     }
 
     return null;
@@ -254,11 +253,6 @@ public final class TypeRegistries {
     }
 
     @Override
-    public String findTypeWithMatchingNamespace(String prefix) {
-      return null;
-    }
-
-    @Override
     public ImmutableSet<String> getAllSortedTypeNames() {
       return BUILTIN_TYPES.keySet();
     }
@@ -278,11 +272,6 @@ public final class TypeRegistries {
     @Nullable
     public SoyType getType(String typeName) {
       return typeRegistry.getType(typeName);
-    }
-
-    @Override
-    public String findTypeWithMatchingNamespace(String prefix) {
-      return typeRegistry.findTypeWithMatchingNamespace(prefix);
     }
 
     @Override

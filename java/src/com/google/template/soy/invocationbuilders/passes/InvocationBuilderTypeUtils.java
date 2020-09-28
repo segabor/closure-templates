@@ -49,11 +49,11 @@ import java.util.Optional;
 import java.util.Set;
 
 /** Utils for handling types used in Soy Java invocation builders. */
-final class InvocationBuilderTypeUtils {
+public final class InvocationBuilderTypeUtils {
 
   private InvocationBuilderTypeUtils() {}
 
-  static ImmutableList<JavaType> getJavaTypes(SoyType soyType) {
+  public static ImmutableList<JavaType> getJavaTypes(SoyType soyType) {
     return getJavaTypes(soyType, false);
   }
 
@@ -79,6 +79,7 @@ final class InvocationBuilderTypeUtils {
       case STRING:
         types = ImmutableList.of(SimpleJavaType.STRING);
         break;
+      case ELEMENT:
       case HTML:
         types = ImmutableList.of(SimpleJavaType.HTML);
         break;
@@ -148,7 +149,6 @@ final class InvocationBuilderTypeUtils {
       case RECORD:
         types = trySimpleRecordType((RecordType) soyType, false);
         break;
-      case ERROR:
       case NULL:
       case VE:
       case VE_DATA:
@@ -198,7 +198,7 @@ final class InvocationBuilderTypeUtils {
     }
   }
 
-  static Optional<SoyType> upcastTypesForIndirectParams(Set<SoyType> allTypes) {
+  public static Optional<SoyType> upcastTypesForIndirectParams(Set<SoyType> allTypes) {
     if (allTypes.size() == 1) {
       return Optional.of(Iterables.getOnlyElement(allTypes));
     }

@@ -16,11 +16,8 @@
 
 package com.google.template.soy.passes;
 
-import com.google.common.base.Predicate;
-import com.google.common.base.Predicates;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Lists;
 import com.google.common.collect.Multimap;
@@ -28,6 +25,7 @@ import com.google.common.collect.Sets;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.base.internal.SanitizedContentKind;
+import com.google.template.soy.base.internal.TemplateContentKind;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.error.SoyErrorKind.StyleAllowance;
@@ -49,12 +47,10 @@ import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.types.SanitizedType;
 import com.google.template.soy.types.SoyType;
-import com.google.template.soy.types.SoyType.Kind;
 import com.google.template.soy.types.SoyTypes;
 import com.google.template.soy.types.StringType;
 import com.google.template.soy.types.TemplateType;
 import com.google.template.soy.types.UnionType;
-import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -90,8 +86,6 @@ final class CheckTemplateCallsPass implements CompilerFileSetPass {
           "''{0}'' is not a declared parameter of {1} or any indirect callee.{2}",
           StyleAllowance.NO_PUNCTUATION);
   private static final SoyErrorKind MISSING_PARAM = SoyErrorKind.of("Call missing required {0}.");
-  private static final SoyErrorKind PASSING_PROTOBUF_FROM_STRICT_TO_NON_STRICT =
-      SoyErrorKind.of("Passing protobuf {0} of type {1} to an untyped template is not allowed.");
   private static final SoyErrorKind STRICT_HTML =
       SoyErrorKind.of(
           "Found call to non stricthtml template. Strict HTML template "
@@ -100,6 +94,9 @@ final class CheckTemplateCallsPass implements CompilerFileSetPass {
       SoyErrorKind.of("'{'call'}' is only valid on template types, but found type ''{0}''.");
   private static final SoyErrorKind CANNOT_CALL_MIXED_CONTENT_TYPE =
       SoyErrorKind.of("Cannot call expressions of different content types; found {0} and {1}.");
+
+  private static final SoyErrorKind INVALID_DATA_EXPR =
+      SoyErrorKind.of("''data='' should be a record type, found ''{0}''.", StyleAllowance.NO_CAPS);
 
   /** The error reporter that is used in this compiler pass. */
   private final ErrorReporter errorReporter;
@@ -142,32 +139,28 @@ final class CheckTemplateCallsPass implements CompilerFileSetPass {
     void checkCall(TemplateNode callerTemplate, CallBasicNode node) {
       SoyType calleeType = node.getCalleeExpr().getType();
       if (calleeType.getKind() == SoyType.Kind.TEMPLATE) {
-        Predicate<String> paramsToRuntimeCheck =
-            checkCall(callerTemplate, node, (TemplateType) calleeType);
-        node.setParamsToRuntimeCheck(paramsToRuntimeCheck);
+        checkCall(callerTemplate, node, (TemplateType) calleeType);
       } else if (calleeType.getKind() == SoyType.Kind.UNION) {
-        List<Predicate<String>> paramsToRuntimeCheckList = new ArrayList<>();
-        SanitizedContentKind sanitizedContentKind = null;
+        TemplateContentKind templateContentKind = null;
         for (SoyType member : ((UnionType) calleeType).getMembers()) {
           if (member.getKind() == SoyType.Kind.TEMPLATE) {
             // Check that all members of a union type have the same content kind.
             TemplateType templateType = (TemplateType) member;
-            if (sanitizedContentKind == null) {
-              sanitizedContentKind = templateType.getContentKind();
-            } else if (templateType.getContentKind() != sanitizedContentKind) {
+            if (templateContentKind == null) {
+              templateContentKind = templateType.getContentKind();
+            } else if (!templateType.getContentKind().equals(templateContentKind)) {
               errorReporter.report(
                   node.getSourceLocation(),
                   CANNOT_CALL_MIXED_CONTENT_TYPE,
-                  sanitizedContentKind,
+                  templateContentKind,
                   templateType.getContentKind());
             }
-            paramsToRuntimeCheckList.add(checkCall(callerTemplate, node, templateType));
+            checkCall(callerTemplate, node, templateType);
           } else {
             errorReporter.report(
                 node.getSourceLocation(), CAN_ONLY_CALL_TEMPLATE_TYPES, calleeType);
           }
         }
-        node.setParamsToRuntimeCheck(Predicates.or(paramsToRuntimeCheckList));
       } else if (calleeType.getKind() == SoyType.Kind.UNKNOWN) {
         // We may end up with UNKNOWN here for external calls.
       } else {
@@ -175,53 +168,42 @@ final class CheckTemplateCallsPass implements CompilerFileSetPass {
       }
     }
 
-    Predicate<String> checkCall(
-        TemplateNode callerTemplate, CallBasicNode node, TemplateType calleeType) {
+    void checkCall(TemplateNode callerTemplate, CallBasicNode node, TemplateType calleeType) {
       checkCallParamNames(node, calleeType);
       checkPassesUnusedParams(node, calleeType);
       checkStrictHtml(callerTemplate, node, calleeType);
-      return checkCallParamTypes(callerTemplate, node, calleeType);
+      checkCallParamTypes(callerTemplate, node, calleeType);
     }
 
     void checkCall(TemplateNode callerTemplate, CallDelegateNode node) {
-      ImmutableMap.Builder<String, java.util.function.Predicate<String>> paramsToCheckByTemplate =
-          ImmutableMap.builder();
       ImmutableList<TemplateMetadata> potentialCallees =
           templateRegistry
               .getDelTemplateSelector()
               .delTemplateNameToValues()
               .get(node.getDelCalleeName());
       for (TemplateMetadata delTemplate : potentialCallees) {
-        TemplateType delTemplateType = TemplateMetadata.asTemplateType(delTemplate);
-        Predicate<String> params = checkCallParamTypes(callerTemplate, node, delTemplateType);
-        paramsToCheckByTemplate.put(delTemplate.getTemplateName(), params);
+        TemplateType delTemplateType = delTemplate.getTemplateType();
+        checkCallParamTypes(callerTemplate, node, delTemplateType);
         checkCallParamNames(node, delTemplateType);
         // We don't call checkPassesUnusedParams here because we might not know all delegates.
       }
-      node.setParamsToRuntimeCheck(paramsToCheckByTemplate.build());
       // NOTE: we only need to check one of them.  If there is more than one of them and they have
       // different content kinds of stricthtml settings then the CheckDelegatesPass will flag that
       // as an error independently.
       if (!potentialCallees.isEmpty()) {
-        checkStrictHtml(
-            callerTemplate, node, TemplateMetadata.asTemplateType(potentialCallees.get(0)));
+        checkStrictHtml(callerTemplate, node, potentialCallees.get(0).getTemplateType());
       }
     }
 
     /**
-     * Returns the subset of {@link TemplateNode#getParams() callee params} that require runtime
-     * type checking.
+     * Checks that the parameters being passed have compatble types and reports errors if they do
+     * not.
      */
-    private Predicate<String> checkCallParamTypes(
+    private void checkCallParamTypes(
         TemplateNode callerTemplate, CallNode call, TemplateType callee) {
       TemplateParamTypes calleeParamTypes = getTemplateParamTypes(callee);
       // Explicit params being passed by the CallNode
       Set<String> explicitParams = new HashSet<>();
-      // The set of params that need runtime type checking at template call time. We start this with
-      // all the params of the callee and remove each param that is statically verified.
-      Set<String> paramNamesToRuntimeCheck = new HashSet<>(calleeParamTypes.params.keySet());
-      // indirect params should be checked at their callsites, not this one.
-      paramNamesToRuntimeCheck.removeAll(calleeParamTypes.indirectParamNames);
 
       // First check all the {param} blocks of the caller to make sure that the types match.
       for (CallParamNode callerParam : call.getChildren()) {
@@ -236,15 +218,12 @@ final class CheckTemplateCallsPass implements CompilerFileSetPass {
         // report anything.
         Collection<SoyType> declaredParamTypes = calleeParamTypes.params.get(paramName);
 
-        // Type of the param value. May be null if the param is a v1 expression.
-        SoyType argType = null;
+        // Type of the param value.
+        SoyType argType;
         if (callerParam.getKind() == SoyNode.Kind.CALL_PARAM_VALUE_NODE) {
           CallParamValueNode node = (CallParamValueNode) callerParam;
-          ExprNode expr = node.getExpr();
-          if (expr != null) {
-            argType =
-                RuntimeTypeCoercion.maybeCoerceType(node.getExpr().getRoot(), declaredParamTypes);
-          }
+          argType =
+              RuntimeTypeCoercion.maybeCoerceType(node.getExpr().getRoot(), declaredParamTypes);
         } else if (callerParam.getKind() == SoyNode.Kind.CALL_PARAM_CONTENT_NODE) {
           SanitizedContentKind contentKind = ((CallParamContentNode) callerParam).getContentKind();
           argType =
@@ -255,23 +234,9 @@ final class CheckTemplateCallsPass implements CompilerFileSetPass {
           throw new AssertionError(); // CallParamNode shouldn't have any other kind of child
         }
 
-        // If the param is a v1 expression (so argType == null) we can't check anything, or if the
-        // calculated type is an error type (because we already reported a type error for this
-        // expression) don't check whether it matches the formal param.
-        if (argType != null && argType.getKind() != SoyType.Kind.ERROR) {
-          boolean staticTypeSafe = true;
-          for (SoyType formalType : declaredParamTypes) {
-            staticTypeSafe &=
-                checkArgumentAgainstParamType(
-                    callerParam.getSourceLocation(),
-                    paramName,
-                    argType,
-                    formalType,
-                    calleeParamTypes);
-          }
-          if (staticTypeSafe) {
-            paramNamesToRuntimeCheck.remove(paramName);
-          }
+        for (SoyType formalType : declaredParamTypes) {
+          checkArgumentAgainstParamType(
+              callerParam.getSourceLocation(), paramName, argType, formalType, calleeParamTypes);
         }
 
         explicitParams.add(paramName);
@@ -293,27 +258,27 @@ final class CheckTemplateCallsPass implements CompilerFileSetPass {
             }
 
             Collection<SoyType> declaredParamTypes = calleeParamTypes.params.get(paramName);
-            boolean staticTypeSafe = true;
             for (SoyType formalType : declaredParamTypes) {
-              staticTypeSafe &=
-                  checkArgumentAgainstParamType(
-                      call.getSourceLocation(),
-                      paramName,
-                      callerParam.type(),
-                      formalType,
-                      calleeParamTypes);
-            }
-            if (staticTypeSafe) {
-              paramNamesToRuntimeCheck.remove(paramName);
+              checkArgumentAgainstParamType(
+                  call.getSourceLocation(),
+                  paramName,
+                  callerParam.type(),
+                  formalType,
+                  calleeParamTypes);
             }
           }
         } else {
-          // TODO: Check if the fields of the type of data arg can be assigned to the params.
-          // This is possible for some types, and never allowed for other types.
+          ExprNode dataExpr = call.getDataExpr();
+          // TODO(b/168852179): enforce that the correct set of properties are present
+          if (!SoyTypes.isKindOrUnionOfKind(dataExpr.getType(), SoyType.Kind.RECORD)
+              && dataExpr.getType().getKind() != SoyType.Kind.UNKNOWN
+              // We allow 'any' due to a convention in wiz components :(
+              && dataExpr.getType().getKind() != SoyType.Kind.ANY) {
+            errorReporter.report(
+                dataExpr.getSourceLocation(), INVALID_DATA_EXPR, dataExpr.getType());
+          }
         }
       }
-
-      return ImmutableSet.copyOf(paramNamesToRuntimeCheck)::contains;
     }
 
     /**
@@ -325,61 +290,28 @@ final class CheckTemplateCallsPass implements CompilerFileSetPass {
      * @param argType The type of the value being passed.
      * @param formalType The type of the parameter.
      * @param calleeParams metadata about the callee parameters
-     * @return true if runtime type checks can be elided for this param
      */
-    private boolean checkArgumentAgainstParamType(
+    private void checkArgumentAgainstParamType(
         SourceLocation location,
         String paramName,
         SoyType argType,
         SoyType formalType,
         TemplateParamTypes calleeParams) {
-      if (formalType.getKind() == SoyType.Kind.ANY) {
-        // Special rules for unknown / any
-        if (argType.getKind() == SoyType.Kind.PROTO) {
-          errorReporter.report(
-              location, PASSING_PROTOBUF_FROM_STRICT_TO_NON_STRICT, paramName, argType);
+      // We use loose assignability because soy templates generate runtime type checking code for
+      // parameter types.  So passing loosely typed values will generally be checked at runtime.
+      // Our runtime type checking code isn't perfect and varies by backend.
+      if (!formalType.isAssignableFromLoose(argType)) {
+        if (calleeParams.isIndirect(paramName)
+            && formalType.isAssignableFromLoose(SoyTypes.tryRemoveNull(argType))) {
+          // Special case for indirect params: Allow a nullable type to be assigned
+          // to a non-nullable type if the non-nullable type is an indirect parameter type.
+          // The reason is because without flow analysis, we can't know whether or not
+          // there are if-statements preventing null from being passed as an indirect
+          // param, so we assume all indirect params are optional.
+          return;
         }
-      } else if (argType.getKind() == SoyType.Kind.UNKNOWN
-          // TODO(b/69048281): consider allowing passing `?`-typed values to `map`-typed params.
-          // As long as there are two map types, `map` cannot be assigned <em>to</em> the unknown
-          // type; the jssrc backend wouldn't know what code to generate for bracket access on a
-          // `?`-typed value. However, assigning `map` <em>from</em> the unknown type is possible
-          // and perhaps useful, since it is equivalent to a runtime type assertion. During the
-          // legacy_object_map to map migration, it is disallowed in order to catch bugs in the
-          // migration tool (e.g. upgrading a callee's param to `map` without inserting
-          // `legacyObjectMapToMap` calls in the caller). But it may be useful in order to work with
-          // recursive map-like structures such as JSON.
-          && SoyTypes.tryRemoveNull(formalType).getKind() != Kind.MAP
-          // ve and ve_data usage is limited to prevent abuse, so don't allow the unknown type to be
-          // upgraded to the ve or ve_data types.
-          && SoyTypes.tryRemoveNull(formalType).getKind() != Kind.VE
-          && SoyTypes.tryRemoveNull(formalType).getKind() != Kind.VE_DATA) {
-        // Special rules for unknown / any
-        //
-        // This check disabled: We now allow maps created from protos to be passed
-        // to a function accepting a proto, this makes migration easier.
-        // (See GenJsCodeVisitor.genParamTypeChecks).
-        // TODO(user): Re-enable at some future date?
-        // if (formalType.getKind() == SoyType.Kind.PROTO || SoyType.Kind.PROTO_ENUM) {
-        //   reportProtoArgumentTypeMismatch(call, paramName, formalType, argType);
-        // }
-      } else {
-        if (!formalType.isAssignableFrom(argType)) {
-          if (calleeParams.isIndirect(paramName)
-              && argType.getKind() == SoyType.Kind.UNION
-              && ((UnionType) argType).isNullable()
-              && SoyTypes.makeNullable(formalType).isAssignableFrom(argType)) {
-            // Special case for indirect params: Allow a nullable type to be assigned
-            // to a non-nullable type if the non-nullable type is an indirect parameter type.
-            // The reason is because without flow analysis, we can't know whether or not
-            // there are if-statements preventing null from being passed as an indirect
-            // param, so we assume all indirect params are optional.
-            return false;
-          }
-          errorReporter.report(location, ARGUMENT_TYPE_MISMATCH, paramName, formalType, argType);
-        }
+        errorReporter.report(location, ARGUMENT_TYPE_MISMATCH, paramName, formalType, argType);
       }
-      return true;
     }
 
     /**
@@ -431,8 +363,8 @@ final class CheckTemplateCallsPass implements CompilerFileSetPass {
       if (callerTemplate.isStrictHtml()
           && caller.getIsPcData()
           && callee != null
-          && callee.getContentKind() == SanitizedContentKind.HTML
-          && !callee.isStrictHtml()) {
+          && (callee.getContentKind().getSanitizedContentKind().isHtml()
+              && !callee.isStrictHtml())) {
         errorReporter.report(caller.getSourceLocation(), STRICT_HTML);
       }
     }
