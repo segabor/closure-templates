@@ -81,6 +81,7 @@ import com.google.template.soy.soytree.CallNode;
 import com.google.template.soy.soytree.CallParamContentNode;
 import com.google.template.soy.soytree.CallParamNode;
 import com.google.template.soy.soytree.CallParamValueNode;
+import com.google.template.soy.soytree.CaseOrDefaultNode;
 import com.google.template.soy.soytree.DebuggerNode;
 import com.google.template.soy.soytree.ForNode;
 import com.google.template.soy.soytree.ForNonemptyNode;
@@ -238,9 +239,9 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
             .setSanitizedContentDirectionality(
                 ContentKind.valueOf(node.getContentKind().name()).getDefaultDir())
             .toStatement());
-    statements.add(prefix.compile(exprCompiler, appendableExpression));
+    statements.add(prefix.compile(exprCompiler, appendableExpression, detachState));
     statements.add(visitChildrenInNewScope(node));
-    statements.add(suffix.compile(exprCompiler, appendableExpression));
+    statements.add(suffix.compile(exprCompiler, appendableExpression, detachState));
     statements.add(
         // needs to go at the beginning but can only be generated after the whole method body.
         0, detachState.generateReattachTable());
@@ -282,7 +283,8 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     for (SoyNode child : node.getChildren()) {
       if (child instanceof IfCondNode) {
         IfCondNode icn = (IfCondNode) child;
-        SoyExpression cond = exprCompiler.compile(icn.getExpr(), detachState).coerceToBoolean();
+        SoyExpression cond =
+            exprCompiler.compileRootExpression(icn.getExpr(), detachState).coerceToBoolean();
         Statement block = visitChildrenInNewScope(icn);
         ifs.add(IfBlock.create(cond, block));
       } else {
@@ -300,7 +302,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     // 2. no children.  Just return the empty statement
     // Note that in both of these cases we do not evalutate (or generate code) for the switch
     // expression.
-    List<BlockNode> children = node.getChildren();
+    List<CaseOrDefaultNode> children = node.getChildren();
     if (children.isEmpty()) {
       return Statement.NULL_STATEMENT;
     }
@@ -309,7 +311,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     }
 
     // otherwise we need to evaluate the switch variable and generate dispatching logic.
-    SoyExpression switchVar = exprCompiler.compile(node.getExpr(), detachState);
+    SoyExpression switchVar = exprCompiler.compileRootExpression(node.getExpr(), detachState);
 
     Scope scope = variables.enterScope();
     Variable variable = scope.createSynthetic(SyntheticVarName.forSwitch(node), switchVar, STORE);
@@ -327,7 +329,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
           comparisons.add(
               compareSoyEquals(
                   switchVar,
-                  exprCompiler.compile(
+                  exprCompiler.compileSubExpression(
                       caseExpr, detachState.createExpressionDetacher(reattachPoint))));
         }
         Expression condition = BytecodeUtils.logicalOr(comparisons).labelStart(reattachPoint);
@@ -400,7 +402,8 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
               },
               DERIVED);
     } else {
-      SoyExpression expr = exprCompiler.compile(node.getExpr(), detachState).unboxAsList();
+      SoyExpression expr =
+          exprCompiler.compileRootExpression(node.getExpr(), detachState).unboxAsList();
       Variable listVar =
           scope.createSynthetic(SyntheticVarName.foreachLoopList(nonEmptyNode), expr, STORE);
       initializers.add(listVar.initializer());
@@ -550,7 +553,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
       // Note: If the value of rangeArgs.start() is above 32 bits, Ints.checkedCast() will fail at
       // runtime with IllegalArgumentException.
       SoyExpression compiledExpression =
-          exprCompiler.compile(
+          exprCompiler.compileSubExpression(
               expression.get(), detachState.createExpressionDetacher(startDetachPoint));
       Expression rangeValue;
       SoyRuntimeType type = compiledExpression.soyRuntimeType();
@@ -798,7 +801,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     // Call JbcSrcRuntime.debuggger.  This logs a stack trace by default and is an obvious place to
     // put a breakpoint.
     return MethodRef.RUNTIME_DEBUGGER.invokeVoid(
-        constant(node.getSourceLocation().getFilePath()),
+        constant(node.getSourceLocation().getFilePath().path()),
         constant(node.getSourceLocation().getBeginLine()));
   }
 
@@ -904,7 +907,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     } else {
       variantExpr =
           exprCompiler
-              .compile(
+              .compileSubExpression(
                   node.getDelCalleeVariantExpr(),
                   detachState.createExpressionDetacher(reattachPoint))
               .coerceToString();
@@ -969,7 +972,8 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     } else {
       calleeExpression =
           exprCompiler
-              .compile(node.getCalleeExpr(), detachState.createExpressionDetacher(reattachPoint))
+              .compileSubExpression(
+                  node.getCalleeExpr(), detachState.createExpressionDetacher(reattachPoint))
               .invoke(MethodRef.COMPILED_TEMPLATE_FACTORY_CREATE, params, ijRecord);
     }
     return renderCallNode(reattachPoint, node, calleeExpression);
@@ -979,7 +983,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
   protected Statement visitVeLogNode(final VeLogNode node) {
     final Label restartPoint = new Label();
     final Expression veData =
-        exprCompiler.compile(
+        exprCompiler.compileSubExpression(
             node.getVeDataExpression(), detachState.createExpressionDetacher(restartPoint));
     final Expression hasLogger = parameterLookup.getRenderContext().hasLogger();
     final Statement exitStatement =
@@ -989,7 +993,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     if (node.getLogonlyExpression() != null) {
       final Expression logonlyExpression =
           exprCompiler
-              .compile(
+              .compileSubExpression(
                   node.getLogonlyExpression(), detachState.createExpressionDetacher(restartPoint))
               .unboxAsBoolean();
       // needs to be called after evaluating the logonly expression so variables defined in the
@@ -1229,7 +1233,8 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
 
   private Expression getDataRecordExpression(CallNode node, Label reattachPoint) {
     return exprCompiler
-        .compile(node.getDataExpr(), detachState.createExpressionDetacher(reattachPoint))
+        .compileSubExpression(
+            node.getDataExpr(), detachState.createExpressionDetacher(reattachPoint))
         .box()
         .checkedCast(SoyRecord.class);
   }
@@ -1288,14 +1293,14 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
           @Override
           public Expression compileToString(ExprRootNode node, Label reattachPoint) {
             return exprCompiler
-                .compile(node, detachState.createExpressionDetacher(reattachPoint))
+                .compileSubExpression(node, detachState.createExpressionDetacher(reattachPoint))
                 .coerceToString();
           }
 
           @Override
           public Expression compileToNumber(ExprRootNode node, Label reattachPoint) {
             return exprCompiler
-                .compile(node, detachState.createExpressionDetacher(reattachPoint))
+                .compileSubExpression(node, detachState.createExpressionDetacher(reattachPoint))
                 .box()
                 .checkedCast(NumberData.class);
           }
