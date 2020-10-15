@@ -157,13 +157,12 @@ public class TemplateDelegateNodeBuilder extends TemplateNodeBuilder<TemplateDel
     String generatedPartialTemplateName =
         partialDeltemplateTemplateName(
             delTemplateName, soyFileHeaderInfo.getDelPackageName(), variant);
-    String generatedTemplateName = soyFileHeaderInfo.getNamespace() + generatedPartialTemplateName;
     setTemplateNames(
-        generatedTemplateName,
         Identifier.create(
             generatedPartialTemplateName,
             originalNameIdentifier.identifier(),
-            originalNameIdentifier.location()));
+            originalNameIdentifier.location()),
+        soyFileHeaderInfo.getNamespace());
   }
 
   /** Returns the inferred 'partial' name for a deltemplate. */
@@ -177,7 +176,7 @@ public class TemplateDelegateNodeBuilder extends TemplateNodeBuilder<TemplateDel
             + variant;
     delPackageTemplateAndVariantStr = delPackageTemplateAndVariantStr.replace('.', '_');
     // Generate the actual internal-use template name.
-    return ".__deltemplate_" + delPackageTemplateAndVariantStr;
+    return "__deltemplate_" + delPackageTemplateAndVariantStr;
   }
 
   @Override
