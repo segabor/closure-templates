@@ -41,6 +41,7 @@ import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.SoyValueProvider;
 import com.google.template.soy.data.SoyVisualElement;
 import com.google.template.soy.data.SoyVisualElementData;
+import com.google.template.soy.data.internal.Converters;
 import com.google.template.soy.data.restricted.IntegerData;
 import com.google.template.soy.data.restricted.StringData;
 import com.google.template.soy.jbcsrc.api.RenderResult;
@@ -83,6 +84,8 @@ public final class BytecodeUtils {
   public static final Type COMPILED_TEMPLATE_TYPE = Type.getType(CompiledTemplate.class);
   public static final Type COMPILED_TEMPLATE_FACTORY_TYPE =
       Type.getType(CompiledTemplate.Factory.class);
+  public static final Type COMPILED_TEMPLATE_FACTORY_VALUE_TYPE =
+      Type.getType(CompiledTemplate.FactoryValue.class);
   public static final Type CONTENT_KIND_TYPE = Type.getType(ContentKind.class);
   public static final Type CLOSEABLE_TYPE = Type.getType(Closeable.class);
   public static final Type DIR_TYPE = Type.getType(Dir.class);
@@ -380,7 +383,7 @@ public final class BytecodeUtils {
    * equivalent to the given {@link SanitizedContentKind}, or null.
    */
   public static Expression constantSanitizedContentKindAsContentKind(SanitizedContentKind kind) {
-    return FieldRef.enumReference(ContentKind.valueOf(kind.name())).accessor();
+    return FieldRef.enumReference(Converters.contentKindfromSanitizedContentKind(kind)).accessor();
   }
 
   /** Returns an {@link Expression} that evaluates to the given Dir, or null. */
@@ -505,7 +508,6 @@ public final class BytecodeUtils {
     thisVar.tableEntry(mg);
     mg.endMethod();
   }
-
 
   // TODO(lukes): some of these branch operators are a little too branchy.  For example, the
   // expression a == b || a == c, could be implemented by
@@ -990,7 +992,9 @@ public final class BytecodeUtils {
    */
   public static SoyExpression isNonNull(final Expression expr) {
     if (BytecodeUtils.isPrimitive(expr.resultType())) {
-      return SoyExpression.TRUE;
+      // Reference the statement so that the SoyValueProvider detaches for resolve, and
+      // TemplateAnalysis will correctly cause subsequent accesses to resolve immediately.
+      return SoyExpression.forBool(expr.toStatement().then(BytecodeUtils.constant(true)));
     }
     return SoyExpression.forBool(
         new Expression(Type.BOOLEAN_TYPE, expr.features()) {
@@ -1013,7 +1017,9 @@ public final class BytecodeUtils {
   /** Returns a {@link SoyExpression} that evaluates to true if the expression evaluated to null. */
   public static SoyExpression isNull(final Expression expr) {
     if (BytecodeUtils.isPrimitive(expr.resultType())) {
-      return SoyExpression.FALSE;
+      // Reference the statement so that the SoyValueProvider detaches for resolve, and
+      // TemplateAnalysis will correctly cause subsequent accesses to resolve immediately.
+      return SoyExpression.forBool(expr.toStatement().then(BytecodeUtils.constant(false)));
     }
     // This is what javac generates for 'someObject == null'
     return SoyExpression.forBool(

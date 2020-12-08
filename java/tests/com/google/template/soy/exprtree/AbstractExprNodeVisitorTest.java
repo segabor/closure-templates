@@ -54,10 +54,10 @@ public final class AbstractExprNodeVisitorTest {
     MinusOpNode expr = new MinusOpNode(LOC, LOC);
     expr.addChild(new IntegerNode(17, LOC));
 
-    VarRefNode dataRef = new VarRefNode("boo", LOC, null);
+    VarRefNode dataRef = new VarRefNode("$boo", LOC, null);
     expr.addChild(dataRef);
 
-    IncompleteEvalVisitor iev = new IncompleteEvalVisitor(ImmutableMap.of("boo", 13.0));
+    IncompleteEvalVisitor iev = new IncompleteEvalVisitor(ImmutableMap.of("$boo", 13.0));
     assertThat(iev.exec(expr)).isEqualTo(4.0);
 
     expr.replaceChild(0, new IntegerNode(34, LOC));
@@ -71,10 +71,10 @@ public final class AbstractExprNodeVisitorTest {
     MinusOpNode expr = new MinusOpNode(LOC, LOC);
     expr.addChild(new FloatNode(17.0, LOC));
 
-    VarRefNode dataRef = new VarRefNode("boo", LOC, null);
+    VarRefNode dataRef = new VarRefNode("$boo", LOC, null);
     expr.addChild(dataRef);
 
-    IncompleteEvalVisitor iev = new IncompleteEvalVisitor(ImmutableMap.of("boo", 13.0));
+    IncompleteEvalVisitor iev = new IncompleteEvalVisitor(ImmutableMap.of("$boo", 13.0));
 
     try {
       iev.exec(expr);

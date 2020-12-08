@@ -21,6 +21,7 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import com.google.common.base.Joiner;
 import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.common.primitives.Doubles;
 import com.google.common.primitives.Longs;
@@ -34,12 +35,15 @@ import com.google.template.soy.data.SoyValueProvider;
 import com.google.template.soy.data.internal.DictImpl;
 import com.google.template.soy.data.internal.ListImpl;
 import com.google.template.soy.data.internal.RuntimeMapTypeTracker;
+import com.google.template.soy.data.internal.SoyMapImpl;
+import com.google.template.soy.data.internal.SoyRecordImpl;
 import com.google.template.soy.data.restricted.FloatData;
 import com.google.template.soy.data.restricted.IntegerData;
 import com.google.template.soy.data.restricted.NumberData;
 import com.google.template.soy.data.restricted.StringData;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -68,6 +72,14 @@ public final class BasicFunctionsRuntime {
     return flattened.build();
   }
 
+  @SuppressWarnings("unchecked")
+  public static SoyMap concatMaps(SoyMap map, SoyMap mapTwo) {
+    LinkedHashMap<SoyValue, SoyValueProvider> mapBuilder = new LinkedHashMap<>();
+    mapBuilder.putAll((Map<SoyValue, SoyValueProvider>) map.asJavaMap());
+    mapBuilder.putAll((Map<SoyValue, SoyValueProvider>) mapTwo.asJavaMap());
+    return SoyMapImpl.forProviderMap(mapBuilder);
+  }
+
   /** Checks if list contains a value. */
   public static boolean listContains(SoyList list, SoyValue value) {
     return list.asJavaList().contains(value);
@@ -85,6 +97,30 @@ public final class BasicFunctionsRuntime {
       stringList.add(value.coerceToString());
     }
     return Joiner.on(separator).join(stringList);
+  }
+
+  public static String concatAttributeValues(SoyValue l, SoyValue r, String delimiter) {
+    if (l == null && r == null) {
+      return "";
+    }
+    if (l == null) {
+      return r.coerceToString();
+    }
+    if (r == null) {
+      return l.coerceToString();
+    }
+    String lValue = l.stringValue();
+    String rValue = r.stringValue();
+    if (lValue.isEmpty()) {
+      return rValue;
+    }
+    if (rValue.isEmpty()) {
+      return lValue;
+    }
+    if (lValue.isEmpty() && rValue.isEmpty()) {
+      return "";
+    }
+    return lValue + delimiter + rValue;
   }
 
   /**
@@ -163,6 +199,20 @@ public final class BasicFunctionsRuntime {
     return ImmutableList.copyOf(map.keys());
   }
 
+  public static ImmutableList<SoyValueProvider> mapValues(SoyMap map) {
+    return ImmutableList.copyOf(map.values());
+  }
+
+  public static ImmutableList<SoyValueProvider> mapEntries(SoyMap map) {
+    return map.entrySet().stream()
+        .map(e -> new SoyRecordImpl(ImmutableMap.of("key", e.getKey(), "value", e.getValue())))
+        .collect(toImmutableList());
+  }
+
+  public static int mapSize(SoyMap map) {
+    return map.size();
+  }
+
   public static SoyDict mapToLegacyObjectMap(SoyMap map) {
     Map<String, SoyValueProvider> keysCoercedToStrings = new HashMap<>();
     for (Map.Entry<? extends SoyValue, ? extends SoyValueProvider> entry :
@@ -234,7 +284,7 @@ public final class BasicFunctionsRuntime {
     }
   }
 
-  public static List<IntegerData> range(int start, int end, int step) {
+  public static ImmutableList<IntegerData> range(int start, int end, int step) {
     if (step == 0) {
       throw new IllegalArgumentException(String.format("step must be non-zero: %d", step));
     }
@@ -255,7 +305,7 @@ public final class BasicFunctionsRuntime {
         list.add(IntegerData.forValue(i));
       }
     }
-    return list;
+    return ImmutableList.copyOf(list);
   }
 
   public static boolean strContains(SoyValue left, String right) {

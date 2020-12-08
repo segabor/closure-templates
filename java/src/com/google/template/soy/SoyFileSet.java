@@ -30,6 +30,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.io.ByteSink;
 import com.google.common.io.ByteSource;
+import com.google.common.io.CharSink;
 import com.google.common.io.CharSource;
 import com.google.protobuf.Descriptors.GenericDescriptor;
 import com.google.template.soy.SoyFileSetParser.CompilationUnitAndKind;
@@ -66,6 +67,7 @@ import com.google.template.soy.parseinfo.passes.GenerateParseInfoVisitor;
 import com.google.template.soy.passes.CheckTemplateHeaderVarsPass;
 import com.google.template.soy.passes.ClearSoyDocStringsVisitor;
 import com.google.template.soy.passes.PassManager;
+import com.google.template.soy.passes.PassManager.AstRewrites;
 import com.google.template.soy.passes.PassManager.PassContinuationRule;
 import com.google.template.soy.passes.PluginResolver;
 import com.google.template.soy.passes.SoyConformancePass;
@@ -645,6 +647,10 @@ public final class SoyFileSet {
     return soyFileSuppliers;
   }
 
+  ImmutableList<SourceFilePath> getSourceFilePaths() {
+    return soyFileSuppliers.keySet().asList();
+  }
+
   @VisibleForTesting
   SoyTypeRegistry getTypeRegistryForTesting() {
     return typeRegistry;
@@ -777,7 +783,11 @@ public final class SoyFileSet {
   }
 
   AnnotatedLoggingConfig generateAnnotatedLoggingConfig(
-      CharSource rawLoggingConfig, String javaPackage, String jsPackage, String className) {
+      CharSource rawLoggingConfig,
+      String javaPackage,
+      String jsPackage,
+      String className,
+      String javaResourceFilename) {
     return entryPoint(
         () -> {
           try {
@@ -786,6 +796,7 @@ public final class SoyFileSet {
                     javaPackage,
                     jsPackage,
                     className,
+                    javaResourceFilename,
                     typeRegistry,
                     errorReporter)
                 .generate();
@@ -795,10 +806,16 @@ public final class SoyFileSet {
         });
   }
 
-  String generateVeMetadata(
-      VeMetadataGenerator.Mode mode, ByteSource loggingConfigBytes, String generator)
+  void generateAndWriteVeMetadata(
+      VeMetadataGenerator.Mode mode,
+      ByteSource loggingConfigBytes,
+      String generator,
+      CharSink output,
+      Optional<ByteSink> resourceOutput)
       throws IOException {
-    return new VeMetadataGenerator(mode, loggingConfigBytes, generator, typeRegistry).generate();
+    new VeMetadataGenerator(
+            mode, loggingConfigBytes, generator, typeRegistry, output, resourceOutput)
+        .generateAndWrite();
   }
 
   /**
@@ -1103,14 +1120,14 @@ public final class SoyFileSet {
    * @throws RuntimeException If there is an error in opening/reading a message file or
    *     opening/writing an output JS file.
    */
-  void compileToPySrcFiles(String outputPathFormat, SoyPySrcOptions pySrcOptions) {
-    entryPointVoid(
+  List<String> compileToPySrcFiles(SoyPySrcOptions pySrcOptions) {
+    return entryPoint(
         () -> {
           try {
             ParseResult result = parse();
             throwIfErrorsPresent();
-            new PySrcMain(scopedData.enterable())
-                .genPyFiles(result.fileSet(), pySrcOptions, outputPathFormat, errorReporter);
+            return new PySrcMain(scopedData.enterable())
+                .genPyFiles(result.fileSet(), pySrcOptions, errorReporter);
           } catch (IOException e) {
             throw new RuntimeException(e);
           }
@@ -1183,7 +1200,7 @@ public final class SoyFileSet {
   }
 
   /** Performs enough work to retrieve all possible warnings in a compile. */
-  public AnalysisResult compileForAnalysis(boolean treatErrorsAsWarnings) {
+  public AnalysisResult compileForAnalysis(boolean treatErrorsAsWarnings, AstRewrites astRewrites) {
     return entryPoint(
         () -> {
           disallowExternalCalls();
@@ -1194,7 +1211,7 @@ public final class SoyFileSet {
                       // analysis
                       // rules.
                       .optimize(false)
-                      .astRewrites(false)
+                      .astRewrites(astRewrites)
                       // skip adding extra attributes
                       .addHtmlAttributesForDebugging(false)
                       // skip the autoescaper

@@ -69,15 +69,15 @@ public final class ClassLoaderFallbackCallFactory {
           SoyRecord.class,
           SoyRecord.class);
 
-  private static final MethodType SLOWPATH_FACTORY_TYPE =
-      MethodType.methodType(CompiledTemplate.Factory.class, String.class, RenderContext.class);
+  private static final MethodType SLOWPATH_FACTORY_VALUE_TYPE =
+      MethodType.methodType(CompiledTemplate.FactoryValue.class, String.class, RenderContext.class);
 
   private static final MethodType NORMAL_CONSTRUCTOR =
       MethodType.methodType(void.class, SoyRecord.class, SoyRecord.class);
 
   private static final MethodType VE_METADATA_SLOW_PATH_TYPE =
       MethodType.methodType(
-          LoggableElementMetadata.class, String.class, String.class, RenderContext.class);
+          LoggableElementMetadata.class, String.class, RenderContext.class, long.class);
 
   private static final MethodType CREATE_VE_TYPE =
       MethodType.methodType(
@@ -98,31 +98,48 @@ public final class ClassLoaderFallbackCallFactory {
    * @param templateName A constant that is used for bootstrapping. this is the fully qualified soy
    *     template name of the template being referenced.
    */
-  public static CallSite bootstrapFactoryLookup(
+  public static CallSite bootstrapFactoryValueLookup(
       MethodHandles.Lookup lookup, String name, MethodType type, String templateName) {
     ClassLoader callerClassLoader = lookup.lookupClass().getClassLoader();
     String className = Names.javaClassNameFromSoyTemplateName(templateName);
     try {
-      Class<?> factoryClass = callerClassLoader.loadClass(className + "$Factory");
-      MethodHandle getter = lookup.findStaticGetter(factoryClass, "INSTANCE", factoryClass);
+      Class<?> targetTemplateClass = callerClassLoader.loadClass(className);
+
+      CompiledTemplate.Factory factory;
+      try {
+        // Use the lookup to find and invoke the method.  This ensures that we can access the
+        // factory using the permissions of the caller instead of the permissions of this class.
+        // This is needed because factory() methods for private templates are package private.
+        factory =
+            (CompiledTemplate.Factory)
+                lookup
+                    .findStatic(
+                        targetTemplateClass,
+                        "factory",
+                        MethodType.methodType(CompiledTemplate.Factory.class))
+                    .invokeExact();
+      } catch (Throwable t) {
+        throw new AssertionError(t);
+      }
+      CompiledTemplate.FactoryValue value =
+          CompiledTemplate.FactoryValue.create(templateName, factory);
       // the initial renderContext is ignored in this case
+      MethodHandle getter = MethodHandles.constant(CompiledTemplate.FactoryValue.class, value);
       getter = dropArguments(getter, 0, RenderContext.class);
-      // adapt the return value from the specific subtype to the generic CompiledTemplate.Factory
-      getter = getter.asType(type);
       return new ConstantCallSite(getter);
-    } catch (NoSuchFieldException | IllegalAccessException nsme) {
-      throw new AssertionError(nsme);
     } catch (ClassNotFoundException classNotFoundException) {
       // expected if this happens we need to resolve by dispatching through rendercontext
     }
     try {
       MethodHandle handle =
           lookup.findStatic(
-              ClassLoaderFallbackCallFactory.class, "slowPathFactory", SLOWPATH_FACTORY_TYPE);
+              ClassLoaderFallbackCallFactory.class,
+              "slowPathFactoryValue",
+              SLOWPATH_FACTORY_VALUE_TYPE);
       handle = insertArguments(handle, 0, templateName);
       return new ConstantCallSite(handle);
     } catch (ReflectiveOperationException roe) {
-      throw new AssertionError("impossible, can't find out slowPathFactory method", roe);
+      throw new AssertionError("impossible, can't find our slowPathFactoryValue method", roe);
     }
   }
 
@@ -181,18 +198,11 @@ public final class ClassLoaderFallbackCallFactory {
    *     method it is always (long, String, RenderContext)->SoyVisualElement.
    * @param metadataClassName A constant that is used for bootstrapping. This is the name of the
    *     class containing the VE metadata.
-   * @param metadataMethodName A constant that is used for bootstrapping. This is the name of the
-   *     method (in {@code metadataClassName}) for the VE metadata.
    */
   public static CallSite bootstrapVeWithMetadata(
-      MethodHandles.Lookup lookup,
-      String name,
-      MethodType type,
-      String metadataClassName,
-      String metadataMethodName) {
+      MethodHandles.Lookup lookup, String name, MethodType type, String metadataClassName) {
     try {
-      MethodHandle metadataGetter =
-          getMetadataGetter(lookup, metadataClassName, metadataMethodName);
+      MethodHandle metadataGetter = getMetadataGetter(lookup, metadataClassName);
       MethodHandle createVe = lookup.findStatic(SoyVisualElement.class, "create", CREATE_VE_TYPE);
       // Pass the metadata (returned from metadataGetter) to createVe.
       MethodHandle handle = collectArguments(createVe, 2, metadataGetter);
@@ -203,16 +213,15 @@ public final class ClassLoaderFallbackCallFactory {
   }
 
   private static MethodHandle getMetadataGetter(
-      MethodHandles.Lookup lookup, String metadataClassName, String metadataMethodName)
-      throws ReflectiveOperationException {
+      MethodHandles.Lookup lookup, String metadataClassName) throws ReflectiveOperationException {
     ClassLoader callerClassLoader = lookup.lookupClass().getClassLoader();
     try {
       Class<?> metadataClass = callerClassLoader.loadClass(metadataClassName);
       MethodHandle handle =
           lookup.findStatic(
               metadataClass,
-              metadataMethodName,
-              MethodType.methodType(LoggableElementMetadata.class));
+              "getMetadata",
+              MethodType.methodType(LoggableElementMetadata.class, long.class));
       // the initial renderContext is ignored in this case
       return dropArguments(handle, 0, RenderContext.class);
     } catch (ClassNotFoundException classNotFoundException) {
@@ -221,13 +230,14 @@ public final class ClassLoaderFallbackCallFactory {
     MethodHandle handle =
         lookup.findStatic(
             ClassLoaderFallbackCallFactory.class, "veMetadataSlowPath", VE_METADATA_SLOW_PATH_TYPE);
-    return insertArguments(handle, 0, metadataClassName, metadataMethodName);
+    return insertArguments(handle, 0, metadataClassName);
   }
 
-  /** The slow path for resolving a factory. */
-  public static CompiledTemplate.Factory slowPathFactory(
+  /** The slow path for resolving a factory value. */
+  public static CompiledTemplate.FactoryValue slowPathFactoryValue(
       String templateName, RenderContext context) {
-    return context.getTemplateFactory(templateName);
+    return CompiledTemplate.FactoryValue.create(
+        templateName, context.getTemplateFactory(templateName));
   }
 
   /** The slow path for resolving a call. */
@@ -238,7 +248,7 @@ public final class ClassLoaderFallbackCallFactory {
 
   /** The slow path for resolving VE metadata. */
   public static LoggableElementMetadata veMetadataSlowPath(
-      String metadataClassName, String metadataMethodName, RenderContext renderContext) {
-    return renderContext.getVeMetadata(metadataClassName, metadataMethodName);
+      String metadataClassName, RenderContext renderContext, long veId) {
+    return renderContext.getVeMetadata(metadataClassName, veId);
   }
 }

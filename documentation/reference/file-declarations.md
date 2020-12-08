@@ -1,10 +1,6 @@
 # File Declarations
 
 
-<!--#include file="commands-blurb-include.md"-->
-
-This section describes the file declaration commands.
-
 [TOC]
 
 ## namespace {#namespace}
@@ -55,6 +51,8 @@ import * as fooMagic from 'path/to/soy/file/foo.soy';
 {/call}
 ```
 
+Import statements should be sorted by path.
+
 **Note:** Always prefer imports over referencing fully qualified names or using
 aliases (both are now deprecated and will soon be banned; we are in the process
 of migrating all existing users to use imports).
@@ -80,10 +78,11 @@ The syntax for calling imported templates is:
 {call fooRender /}
 ```
 
-(with no dot (".") in the call)
-
 
 ## alias (DEPRECATED; will be deleted soon) {#alias}
+
+**Warning:** The `alias` command will be deprecated soon. Use
+[`import`](#import) instead.
 
 Syntax:
 

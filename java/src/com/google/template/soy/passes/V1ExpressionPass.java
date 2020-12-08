@@ -34,6 +34,7 @@ import java.util.regex.Pattern;
  * Rewrites {@code v1Expression('$a.b($c)')} to {@code v1Expression('$a.b($c)', $a, $c)} so that the
  * variables could be resolved.
  */
+@RunBefore(ResolveNamesPass.class)
 final class V1ExpressionPass implements CompilerFilePass {
 
   private static final SoyErrorKind INCORRECT_V1_EXPRESSION_USE =
@@ -79,11 +80,7 @@ final class V1ExpressionPass implements CompilerFilePass {
           errorReporter.report(varLocation, USING_IJ_VARIABLE);
         } else {
           // This might add the same variable more than once but who cares.
-          fn.addChild(
-              new VarRefNode(
-                  matcher.group(1),
-                  varLocation,
-                  /* defn= */ null));
+          fn.addChild(new VarRefNode("$" + matcher.group(1), varLocation, /* defn= */ null));
         }
       }
     }

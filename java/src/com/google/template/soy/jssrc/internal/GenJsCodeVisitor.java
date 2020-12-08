@@ -718,7 +718,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     }
 
     // ------ Add the @typedef of opt_data. ------
-    if (!node.getParams().isEmpty()) {
+    if (!hasOnlyImplicitParams(node)) {
       declarations.add(
           aliasExp
               .dotAccess("Params")
@@ -755,10 +755,19 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     jsCodeBuilder.append(Statement.of(declarations.build()));
   }
 
+  protected boolean hasOnlyImplicitParams(TemplateNode node) {
+    for (TemplateParam param : node.getParams()) {
+      if (!param.isImplicit()) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   protected JsDoc generateFunctionJsDoc(TemplateNode node, String alias) {
     JsDoc.Builder jsDocBuilder = JsDoc.builder();
 
-    if (node.getParams().isEmpty()) {
+    if (hasOnlyImplicitParams(node)) {
       jsDocBuilder.addParam("opt_data", "?Object<string, *>=");
     } else if (new ShouldEnsureDataIsDefinedVisitor().exec(node)) {
       // All parameters are optional or only owned by an indirect callee; caller doesn't need to
@@ -914,9 +923,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     jsCodeBuilder.append(VariableDeclaration.builder(generatedVarName).setRhs(value).build());
 
     // Add a mapping for generating future references to this local var.
-    templateTranslationContext
-        .soyToJsVariableMappings()
-        .put(node.getVarName(), id(generatedVarName));
+    templateTranslationContext.soyToJsVariableMappings().put(node.getVar(), id(generatedVarName));
   }
 
   /**
@@ -966,7 +973,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     }
 
     // Add a mapping for generating future references to this local var.
-    templateTranslationContext.soyToJsVariableMappings().put(node.getVarName(), generatedVar);
+    templateTranslationContext.soyToJsVariableMappings().put(node.getVar(), generatedVar);
   }
 
   /**
@@ -1258,12 +1265,12 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       Expression limit,
       Function<Expression, Expression> getDataItemFunction) {
     // Build some local variable names.
-    String varName = node.getVarName();
-    String varPrefix = varName + node.getForNodeId();
+    String refPrefix = node.getVarRefName();
+    String jsLetPrefix = node.getVarName() + node.getForNodeId();
 
     // TODO(b/32224284): A more consistent pattern for local variable management.
-    String loopIndexName = varPrefix + "Index";
-    String dataName = varPrefix + "Data";
+    String loopIndexName = jsLetPrefix + "Index";
+    String dataName = jsLetPrefix + "Data";
 
     Expression loopIndex = id(loopIndexName);
     VariableDeclaration data =
@@ -1272,15 +1279,15 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     // Populate the local var translations with the translations from this node.
     templateTranslationContext
         .soyToJsVariableMappings()
-        .put(varName, id(dataName))
-        .put(varName + "__isFirst", loopIndex.doubleEquals(number(0)))
-        .put(varName + "__isLast", loopIndex.doubleEquals(limit.minus(number(1))))
-        .put(varName + "__index", loopIndex);
+        .put(refPrefix, id(dataName))
+        .put(refPrefix + "__isFirst", loopIndex.doubleEquals(number(0)))
+        .put(refPrefix + "__isLast", loopIndex.doubleEquals(limit.minus(number(1))))
+        .put(refPrefix + "__index", loopIndex);
 
     if (node.getIndexVar() != null) {
       templateTranslationContext
           .soyToJsVariableMappings()
-          .put(node.getIndexVarName(), id(loopIndexName));
+          .put(node.getIndexVar(), id(loopIndexName));
     }
 
     // Generate the loop body.
@@ -1478,6 +1485,9 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     // Generate members for explicit params.
     Map<String, String> record = new LinkedHashMap<>();
     for (TemplateParam param : node.getParams()) {
+      if (param.isImplicit()) {
+        continue;
+      }
       JsType jsType = getJsTypeForParamForDeclaration(param.type());
       record.put(
           param.name(), jsType.typeExprForRecordMember(/* isOptional= */ !param.isRequired()));
@@ -1536,45 +1546,8 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       boolean declareStatic) {
     checkArgument(param.hasDefault());
 
-    Statement defaultValueAssignment;
     Expression defaultValue = translateExpr(param.defaultValue());
-    if (defaultValue.isCheap()) {
-      defaultValueAssignment = Statement.assign(paramTempVar, defaultValue);
-    } else {
-      Statement staticVar;
-      Expression staticVarRef;
-      JsDoc jsDoc =
-          JsDoc.builder()
-              .addParameterizedAnnotation(
-                  "private", defaultType.typeExprForRecordMember(/* isOptional= */ true))
-              .build();
-      if (jsSrcOptions.shouldGenerateGoogModules()) {
-        String varName = String.format("%s$defaultValue$%s", alias, param.name());
-        staticVar = VariableDeclaration.builder(varName).setJsDoc(jsDoc).build();
-        staticVarRef = id(varName);
-      } else {
-        staticVarRef =
-            dottedIdNoRequire(alias).dotAccess(String.format("defaultValue$%s_", param.name()));
-        staticVar = staticVarRef.asStatement(jsDoc);
-      }
-      if (declareStatic) {
-        staticVarDeclarations.add(staticVar);
-        defaultValueAssignment =
-            Statement.of(
-                Statement.assign(paramTempVar, staticVarRef),
-                Statement.ifStatement(
-                        paramTempVar.tripleEquals(Expression.LITERAL_UNDEFINED),
-                        Statement.assign(paramTempVar, staticVarRef.assign(defaultValue)))
-                    .build());
-      } else {
-        defaultValueAssignment =
-            Statement.assign(
-                paramTempVar,
-                JsRuntime.GOOG_ASSERTS_ASSERT.call(
-                    staticVarRef,
-                    stringLiteral("cached default value will be initialized during render")));
-      }
-    }
+    Statement defaultValueAssignment = Statement.assign(paramTempVar, defaultValue);
     return Statement.ifStatement(
             paramTempVar.tripleEquals(Expression.LITERAL_UNDEFINED), defaultValueAssignment)
         .build();
@@ -1642,7 +1615,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
           .soyToJsVariableMappings()
           // TODO(lukes): this should really be declartion.ref() but we cannot do that until
           // everything is on the code chunk api.
-          .put(paramName, id(paramAlias));
+          .put(param, id(paramAlias));
     }
     return Statement.of(declarations.build());
   }

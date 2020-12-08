@@ -16,6 +16,7 @@
 
 package com.google.template.soy.passes;
 
+import com.google.template.soy.base.internal.TemplateContentKind;
 import com.google.template.soy.basetree.AbstractNodeVisitor;
 import com.google.template.soy.basetree.Node;
 import com.google.template.soy.basetree.ParentNode;
@@ -40,6 +41,11 @@ public final class ShouldEnsureDataIsDefinedVisitor {
 
     boolean hasOptional = false;
     for (TemplateParam param : template.getParams()) {
+      if (param.isImplicit()
+          && !(template.getTemplateContentKind()
+              instanceof TemplateContentKind.ElementContentKind)) {
+        continue;
+      }
       if (param.isRequired()) {
         // If there exists a required param, then data should already be defined (no need to
         // ensure).
@@ -76,6 +82,7 @@ public final class ShouldEnsureDataIsDefinedVisitor {
           // Don't include injected params in this analysis
           if (varRefNode.isPossibleHeaderVar()
               && var.kind() != VarDefn.Kind.STATE
+              && !((TemplateParam) var).isImplicit()
               && (var.kind() != VarDefn.Kind.PARAM // a soydoc param -> not ij
                   || !((TemplateParam) var).isInjected())) { // an {@param but not {@inject
             shouldEnsureDataIsDefined = true;

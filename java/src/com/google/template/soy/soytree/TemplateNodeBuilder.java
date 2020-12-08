@@ -94,6 +94,8 @@ public abstract class TemplateNodeBuilder<T extends TemplateNodeBuilder<T>> {
   /** Base CSS namespace for package-relative CSS selectors. */
   private String cssBaseNamespace;
 
+  SourceLocation allowExtraAttributesLoc = null;
+
   /**
    * Strict mode context. This is private instead of protected to enforce use of setContentKind().
    */
@@ -151,6 +153,11 @@ public abstract class TemplateNodeBuilder<T extends TemplateNodeBuilder<T>> {
     return self();
   }
 
+  public T setAllowExtraAttributes(SourceLocation loc) {
+    this.allowExtraAttributesLoc = loc;
+    return self();
+  }
+
   /**
    * Set the parsed data from the command tag.
    *
@@ -164,21 +171,21 @@ public abstract class TemplateNodeBuilder<T extends TemplateNodeBuilder<T>> {
 
   protected void setCommonCommandValues(List<CommandTagAttribute> attrs) {
     this.attributes = attrs;
-    TemplateContentKind kind = TemplateContentKind.HTML;
+    TemplateContentKind kind = TemplateContentKind.DEFAULT;
     for (CommandTagAttribute attribute : attrs) {
       Identifier name = attribute.getName();
       switch (name.identifier()) {
         case "kind":
           Optional<TemplateContentKind> parsedKind =
               attribute.valueAsTemplateContentKind(errorReporter);
-          if (parsedKind.orElse(null) == TemplateContentKind.HTML) {
+          if (parsedKind.orElse(null) == TemplateContentKind.DEFAULT) {
             errorReporter.report(
                 attribute.getValueLocation(),
                 CommandTagAttribute.EXPLICIT_DEFAULT_ATTRIBUTE,
                 "kind",
                 "html");
           }
-          kind = parsedKind.orElse(TemplateContentKind.HTML);
+          kind = parsedKind.orElse(TemplateContentKind.DEFAULT);
           break;
         case "requirecss":
           setRequiredCssNamespaces(attribute.valueAsRequireCss(errorReporter));

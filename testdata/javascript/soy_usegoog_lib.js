@@ -1071,41 +1071,6 @@ goog.hasBadLetScoping = null;
 
 
 /**
- * @return {boolean}
- * @package Visible for testing.
- */
-goog.useSafari10Workaround = function() {
-  if (goog.hasBadLetScoping == null) {
-    var hasBadLetScoping;
-    try {
-      hasBadLetScoping = !eval(
-          '"use strict";' +
-          'let x = 1; function f() { return typeof x; };' +
-          'f() == "number";');
-    } catch (e) {
-      // Assume that ES6 syntax isn't supported.
-      hasBadLetScoping = false;
-    }
-    goog.hasBadLetScoping = hasBadLetScoping;
-  }
-  return goog.hasBadLetScoping;
-};
-
-
-/**
- * @param {string} moduleDef
- * @return {string}
- * @package Visible for testing.
- */
-goog.workaroundSafari10EvalBug = function(moduleDef) {
-  return '(function(){' + moduleDef +
-      '\n' +  // Terminate any trailing single line comment.
-      ';' +   // Terminate any trailing expression.
-      '})();\n';
-};
-
-
-/**
  * @param {function(?):?|string} moduleDef The module definition.
  */
 goog.loadModule = function(moduleDef) {
@@ -1126,10 +1091,6 @@ goog.loadModule = function(moduleDef) {
     if (typeof moduleDef === 'function') {
       exports = moduleDef.call(undefined, exports);
     } else if (typeof moduleDef === 'string') {
-      if (goog.useSafari10Workaround()) {
-        moduleDef = goog.workaroundSafari10EvalBug(moduleDef);
-      }
-
       exports = goog.loadModuleFromSource_.call(undefined, exports, moduleDef);
     } else {
       throw new Error('Invalid module definition');
@@ -1175,7 +1136,7 @@ goog.loadModuleFromSource_ =
       // NOTE: we avoid declaring parameters or local variables here to avoid
       // masking globals or leaking values into the module definition.
       'use strict';
-      eval(arguments[1]);
+      eval(goog.CLOSURE_EVAL_PREFILTER_.createScript(arguments[1]));
       return exports;
     });
 
@@ -2345,14 +2306,23 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
     });
     // ** and **= are the only new features in 'es7'
     addNewerLanguageTranspilationCheck('es7', function() {
-      return evalCheck('2 ** 2 == 4');
+      return evalCheck('2**3==8');
     });
     // async functions are the only new features in 'es8'
     addNewerLanguageTranspilationCheck('es8', function() {
-      return evalCheck('async () => 1, true');
+      return evalCheck('async()=>1,1');
     });
     addNewerLanguageTranspilationCheck('es9', function() {
-      return evalCheck('({...rest} = {}), true');
+      return evalCheck('({...rest}={}),1');
+    });
+    // optional catch binding, unescaped unicode paragraph separator in strings
+    addNewerLanguageTranspilationCheck('es_2019', function() {
+      return evalCheck('let r;try{throw 0}catch{r="\u2029"};r');
+    });
+    // optional chaining, nullish coalescing
+    // untested/unsupported: bigint, import meta
+    addNewerLanguageTranspilationCheck('es_2020', function() {
+      return evalCheck('null?.x??1');
     });
     addNewerLanguageTranspilationCheck('es_next', function() {
       return false;  // assume it always need to transpile
@@ -2553,9 +2523,7 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
   goog.DebugLoader_.prototype.load_ = function(namespace) {
     if (!this.getPathFromDeps_(namespace)) {
       var errorMessage = 'goog.require could not find: ' + namespace;
-
       goog.logToConsole_(errorMessage);
-      throw Error(errorMessage);
     } else {
       var loader = this;
 
@@ -3198,7 +3166,10 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
   goog.inherits(goog.Es6ModuleDependency, goog.Dependency);
 
 
-  /** @override */
+  /**
+   * @override
+   * @param {!goog.LoadController} controller
+   */
   goog.Es6ModuleDependency.prototype.load = function(controller) {
     if (goog.global.CLOSURE_IMPORT_SCRIPT) {
       if (goog.global.CLOSURE_IMPORT_SCRIPT(this.path)) {
@@ -3366,7 +3337,10 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
   goog.inherits(goog.TransformedDependency, goog.Dependency);
 
 
-  /** @override */
+  /**
+   * @override
+   * @param {!goog.LoadController} controller
+   */
   goog.TransformedDependency.prototype.load = function(controller) {
     var dep = this;
 
@@ -3573,7 +3547,11 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
   goog.inherits(goog.TranspiledDependency, goog.TransformedDependency);
 
 
-  /** @override */
+  /**
+   * @override
+   * @param {string} contents
+   * @return {string}
+   */
   goog.TranspiledDependency.prototype.transform = function(contents) {
     // Transpile with the pathname so that ES6 modules are domain agnostic.
     return this.transpiler.transpile(contents, this.getPathName());
@@ -3603,7 +3581,11 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
       goog.PreTranspiledEs6ModuleDependency, goog.TransformedDependency);
 
 
-  /** @override */
+  /**
+   * @override
+   * @param {string} contents
+   * @return {string}
+   */
   goog.PreTranspiledEs6ModuleDependency.prototype.transform = function(
       contents) {
     return contents;
@@ -3640,7 +3622,11 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
   goog.inherits(goog.GoogModuleDependency, goog.TransformedDependency);
 
 
-  /** @override */
+  /**
+   * @override
+   * @param {string} contents
+   * @return {string}
+   */
   goog.GoogModuleDependency.prototype.transform = function(contents) {
     if (this.needsTranspile_) {
       contents = this.transpiler_.transpile(contents, this.getPathName());
@@ -3867,6 +3853,28 @@ goog.createTrustedTypesPolicy = function(name) {
   }
   return policy;
 };
+
+if (!COMPILED) {
+  var isChrome87 = false;
+  // Cannot run check for Chrome <87 bug in case of strict CSP environments.
+  // TODO(user): Remove once Chrome <87 bug is no longer a problem.
+  try {
+    isChrome87 = eval(goog.global.trustedTypes.emptyScript) !==
+        goog.global.trustedTypes.emptyScript;
+  } catch (err) {
+  }
+
+  /**
+   * Trusted Types for running dev servers.
+   *
+   * @private @const
+   */
+  goog.CLOSURE_EVAL_PREFILTER_ =
+      // Detect Chrome <87 bug with TT and eval.
+      goog.global.trustedTypes && isChrome87 &&
+          goog.createTrustedTypesPolicy('goog#base#devonly#eval') ||
+      {createScript: goog.identity_};
+}
 
 //third_party/javascript/closure/debug/error.js
 goog.loadModule(function(exports) {'use strict';/**
@@ -14184,13 +14192,28 @@ goog.functions.TRUE = function() {
 
 
 /**
- * Always returns NULL.
+ * Always returns `null`.
  * @type {function(...): null}
  */
 goog.functions.NULL = function() {
   'use strict';
   return null;
 };
+
+
+/**
+ * Always returns `undefined`.
+ * @type {function(...): undefined}
+ */
+goog.functions.UNDEFINED = function() {
+  return undefined;
+};
+
+/**
+ * Always returns `undefined` (loosely-typed version).
+ * @type {!Function}
+ */
+goog.functions.EMPTY = /** @type {?} */ (goog.functions.UNDEFINED);
 
 
 /**
@@ -15474,8 +15497,15 @@ goog.dom.safe.openInWindow = function(
   var name = opt_name instanceof goog.string.Const ?
       goog.string.Const.unwrap(opt_name) :
       opt_name || '';
-  return win.open(
-      goog.html.SafeUrl.unwrap(safeUrl), name, opt_specs, opt_replace);
+  // Do not pass opt_specs and opt_replace to window.open unless they were
+  // provided by the caller. IE11 will use it as a signal to open a new window
+  // rather than a new tab (even if they're undefined).
+  if (opt_specs !== undefined || opt_replace !== undefined) {
+    return win.open(
+        goog.html.SafeUrl.unwrap(safeUrl), name, opt_specs, opt_replace);
+  } else {
+    return win.open(goog.html.SafeUrl.unwrap(safeUrl), name);
+  }
 };
 
 
@@ -15538,6 +15568,19 @@ goog.dom.safe.createImageFromBlob = function(blob) {
           .safeUrlFromStringKnownToSatisfyTypeContract(
               goog.string.Const.from('Image blob URL.'), objectUrl));
   return image;
+};
+
+/**
+ * Creates a DocumentFragment by parsing html in the context of a Range.
+ * @param {!Range} range The Range object starting from the context node to
+ * create a fragment in.
+ * @param {!goog.html.SafeHtml} html HTML to create a fragment from.
+ * @return {?DocumentFragment}
+ */
+goog.dom.safe.createContextualFragment = function(range, html) {
+  'use strict';
+  return range.createContextualFragment(
+      goog.html.SafeHtml.unwrapTrustedHTML(html));
 };
 
 //third_party/javascript/closure/string/string.js
@@ -19738,6 +19781,13 @@ goog.structs.every = function(col, f, opt_obj) {
 /**
  * @fileoverview Simple utilities for dealing with URI strings.
  *
+ * This package is deprecated in favour of the Closure URL package (goog.url)
+ * when manipulating URIs for use by a browser. This package uses regular
+ * expressions to parse a potential URI which can fall out of sync with how a
+ * browser will actually interpret the URI. See
+ * `goog.uri.utils.setUrlPackageSupportLoggingHandler` for one way to identify
+ * URIs that should instead be parsed using the URL package.
+ *
  * This is intended to be a lightweight alternative to constructing goog.Uri
  * objects.  Whereas goog.Uri adds several kilobytes to the binary regardless
  * of how much of its functionality you use, this is designed to be a set of
@@ -20900,6 +20950,13 @@ goog.uri.utils.makeUnique = function(uri) {
 
 /**
  * @fileoverview Class for parsing and formatting URIs.
+ *
+ * This package is deprecated in favour of the Closure URL package (goog.url)
+ * when manipulating URIs for use by a browser. This package uses regular
+ * expressions to parse a potential URI which can fall out of sync with how a
+ * browser will actually interpret the URI. See
+ * `goog.uri.utils.setUrlPackageSupportLoggingHandler` for one way to identify
+ * URIs that should instead be parsed using the URL package.
  *
  * Use goog.Uri(string) to parse a URI string.  Use goog.Uri.create(...) to
  * create a new instance of the goog.Uri object from Uri parts.
@@ -23119,7 +23176,7 @@ soy.checks.isURI = function(value) {
 /**
  * @fileoverview Compact number formatting symbols.
  *
- * File generated from CLDR ver. 37
+ * File generated from CLDR ver. 38
  *
  * To reduce the file size (which may cause issues in some JS
  * developing environments), this file will only contain locales
@@ -23129,7 +23186,7 @@ soy.checks.isURI = function(value) {
  * "compactnumberformatsymbolsext.js", which will be generated at
  * the same time together with this file.
  *
- * @suppress {const}
+ * @suppress {const,useOfGoogProvide}
  */
 
 // clang-format off
@@ -23346,13 +23403,13 @@ goog.i18n.CompactNumberFormatSymbols_am = {
       'other': '000 ሺ'
     },
     '1000000': {
-      'other': '0 ሜትር'
+      'other': '0 ሚ'
     },
     '10000000': {
-      'other': '00 ሜትር'
+      'other': '00 ሚ'
     },
     '100000000': {
-      'other': '000ሜ'
+      'other': '000 ሚ'
     },
     '1000000000': {
       'other': '0 ቢ'
@@ -23788,7 +23845,7 @@ goog.i18n.CompactNumberFormatSymbols_bn = {
       'other': '00শত কো'
     },
     '100000000000': {
-      'other': '00000 কো'
+      'other': '000কো'
     },
     '1000000000000': {
       'other': '0 লা.কো.'
@@ -25023,13 +25080,13 @@ goog.i18n.CompactNumberFormatSymbols_et = {
 goog.i18n.CompactNumberFormatSymbols_eu = {
   COMPACT_DECIMAL_SHORT_PATTERN: {
     '1000': {
-      'other': '0000'
+      'other': '0'
     },
     '10000': {
-      'other': '00000'
+      'other': '0'
     },
     '100000': {
-      'other': '000000'
+      'other': '0'
     },
     '1000000': {
       'other': '0 M'
@@ -25061,13 +25118,13 @@ goog.i18n.CompactNumberFormatSymbols_eu = {
   },
   COMPACT_DECIMAL_LONG_PATTERN: {
     '1000': {
-      'other': '0000'
+      'other': '0'
     },
     '10000': {
-      'other': '00000'
+      'other': '0'
     },
     '100000': {
-      'other': '000000'
+      'other': '0'
     },
     '1000000': {
       'other': '0 milioi'
@@ -25130,7 +25187,7 @@ goog.i18n.CompactNumberFormatSymbols_fa = {
       'other': '00 م'
     },
     '100000000000': {
-      'other': '000 میلیارد'
+      'other': '000B'
     },
     '1000000000000': {
       'other': '0 تریلیون'
@@ -25577,13 +25634,13 @@ goog.i18n.CompactNumberFormatSymbols_gl = {
       'other': '000 M'
     },
     '1000000000': {
-      'other': '0'
+      'other': '0000 M'
     },
     '10000000000': {
-      'other': '0'
+      'other': '00000 M'
     },
     '100000000000': {
-      'other': '0'
+      'other': '000000 M'
     },
     '1000000000000': {
       'other': '0 B'
@@ -25615,13 +25672,13 @@ goog.i18n.CompactNumberFormatSymbols_gl = {
       'other': '000 millóns'
     },
     '1000000000': {
-      'other': '0'
+      'other': '0000 millóns'
     },
     '10000000000': {
-      'other': '0'
+      'other': '00000 millóns'
     },
     '100000000000': {
-      'other': '0'
+      'other': '000000 millóns'
     },
     '1000000000000': {
       'other': '0 billóns'
@@ -31870,7 +31927,7 @@ goog.i18n.currency.CurrencyInfoTier2 = {
 /**
  * @fileoverview Number formatting symbols.
  *
- * File generated from CLDR ver. 37
+ * File generated from CLDR ver. 38
  *
  * To reduce the file size (which may cause issues in some JS
  * developing environments), this file will only contain locales
@@ -31880,7 +31937,7 @@ goog.i18n.currency.CurrencyInfoTier2 = {
  * "numberformatsymbolsext.js", which will be generated at
  * the same time together with this file.
  *
- * @suppress {const}
+ * @suppress {const,useOfGoogProvide}
  */
 
 // clang-format off
@@ -33000,7 +33057,7 @@ goog.i18n.NumberFormatSymbols_ga = {
   EXP_SYMBOL: 'E',
   PERMILL: '‰',
   INFINITY: '∞',
-  NAN: 'NaN',
+  NAN: 'Nuimh',
   DECIMAL_PATTERN: '#,##0.###',
   SCIENTIFIC_PATTERN: '#E0',
   PERCENT_PATTERN: '#,##0%',
@@ -33157,7 +33214,7 @@ goog.i18n.NumberFormatSymbols_hr = {
   PERCENT: '%',
   ZERO_DIGIT: '0',
   PLUS_SIGN: '+',
-  MINUS_SIGN: '-',
+  MINUS_SIGN: '−',
   EXP_SYMBOL: 'E',
   PERMILL: '‰',
   INFINITY: '∞',
@@ -37016,11 +37073,62 @@ function $$isSoyMap(map) {
       typeof map.entries === 'function';
 }
 
+
+/**
+ * @param {!Map<?, ?>} mapOne
+ * @param {!Map<?, ?>} mapTwo
+ * @return {!Map<?,?>}
+ */
+function $$concatMaps(mapOne, mapTwo) {
+  return new Map([...mapOne, ...mapTwo]);
+}
+
+
+/**
+ * Gets the values in a map as an array. There are no guarantees on the order.
+ * @param {!Map<?, ?>} map The map to get the values of.
+ * @return {!Array<?>} The array of values in the given map.
+ */
+function $$getMapValues(map) {
+  const values = Array.from(map.values());
+  if (goog.DEBUG) {
+    shuffle(values);
+  }
+  return values;
+}
+
+
+/**
+ * Gets the values in a map as an array. There are no guarantees on the order.
+ * @param {!Map<?, ?>} map The map to get the values of.
+ * @return {!Array<?>} The array of values in the given map.
+ */
+function $$getMapEntries(map) {
+  const entries = [];
+  map.forEach((v, k) => entries.push({"key": k, "value": v}));
+  return entries;
+}
+
+
+/**
+ * Gets the size of a map.
+ * @param {!Map<?, ?>} map The map to get the values of.
+ * @return {number} The number of keys in the map.
+ */
+function $$getMapLength(map) {
+  return map.size;
+}
+
+
 exports = {
   $$mapToLegacyObjectMap,
   $$populateMap,
   $$getMapKeys,
   $$isSoyMap,
+  $$getMapValues,
+  $$getMapEntries,
+  $$getMapLength,
+  $$concatMaps,
   // This is declared as SoyMap instead of Map to avoid shadowing ES6 Map, which
   // is used by $$legacyObjectMapToMap. But the external name can still be Map.
   Map: SoyMap,
@@ -40014,7 +40122,8 @@ goog.format.stringToNumericValue_ = function(stringValue, conversion) {
   'use strict';
   var match = stringValue.match(goog.format.SCALED_NUMERIC_RE_);
   if (!match) {
-    return NaN;
+    // Parse signed `Infinity`, `NaN`, or scientific notation.
+    return Number(stringValue);
   }
   var val = Number(match[1]) * conversion[match[2]];
   return val;
@@ -40037,13 +40146,14 @@ goog.format.numericValueToString_ = function(
     val, conversion, opt_decimals, opt_suffix, opt_useSeparator) {
   'use strict';
   var prefixes = goog.format.NUMERIC_SCALE_PREFIXES_;
-  var orig_val = val;
+  var origVal = val;
   var symbol = '';
   var separator = '';
   var scale = 1;
   if (val < 0) {
     val = -val;
   }
+  if (val === Infinity) return (Infinity * Math.sign(origVal)).toString();
   for (var i = 0; i < prefixes.length; i++) {
     var unit = prefixes[i];
     scale = conversion[unit];
@@ -40065,7 +40175,7 @@ goog.format.numericValueToString_ = function(
     }
   }
   var ex = Math.pow(10, opt_decimals !== undefined ? opt_decimals : 2);
-  return Math.round(orig_val / scale * ex) / ex + separator + symbol;
+  return Math.round(origVal / scale * ex) / ex + separator + symbol;
 };
 
 
@@ -40082,8 +40192,7 @@ goog.format.numericValueToString_ = function(
  * @type {RegExp}
  * @private
  */
-goog.format.SCALED_NUMERIC_RE_ =
-    /^([-]?\d+\.?\d*)([K,M,G,T,P,E,Z,Y,k,m,u,n]?)[B]?$/;
+goog.format.SCALED_NUMERIC_RE_ = /^(-?\d+\.?\d*)([KMGTPEZYkmun]?)B?$/;
 
 
 /**
@@ -40371,10 +40480,10 @@ goog.format.IS_IE8_OR_ABOVE_ =
  * use &lt;wbr&gt;.
  * @type {string}
  */
-goog.format.WORD_BREAK_HTML =
-    goog.userAgent.WEBKIT ? '<wbr></wbr>' : goog.userAgent.OPERA ?
-                            '&shy;' :
-                            goog.format.IS_IE8_OR_ABOVE_ ? '&#8203;' : '<wbr>';
+goog.format.WORD_BREAK_HTML = goog.userAgent.WEBKIT ? '<wbr></wbr>' :
+    goog.userAgent.OPERA                            ? '&shy;' :
+    goog.format.IS_IE8_OR_ABOVE_                    ? '&#8203;' :
+                                                      '<wbr>';
 
 
 /**
@@ -42670,6 +42779,25 @@ soy.$$insertWordBreaks = function(value, maxCharsBetweenWordBreaks) {
   return result;
 };
 
+/**
+ * Conditionally concatenates two attribute values with a delimiter if they are
+ * both non-empty.
+ *
+ * @param {string} l
+ * @param {string} r
+ * @param {string} delimiter
+ * @return {string}
+ */
+soy.$$concatAttributeValues = function(l, r, delimiter) {
+  if (!l) {
+    return r;
+  }
+  if (!r) {
+    return l;
+  }
+  return l + delimiter + r;
+};
+
 
 /**
  * Truncates a string to a given max length (if it's currently longer),
@@ -43506,7 +43634,7 @@ soy.esc.$$FILTER_FOR_FILTER_HTML_ATTRIBUTES_ = /^(?!on|src|(?:action|archive|bac
  * A pattern that vets values produced by the named directives.
  * @private {!RegExp}
  */
-soy.esc.$$FILTER_FOR_FILTER_HTML_ELEMENT_NAME_ = /^(?!base|iframe|link|no|script|style|textarea|title|xmp)[a-z0-9_$:-]*$/i;
+soy.esc.$$FILTER_FOR_FILTER_HTML_ELEMENT_NAME_ = /^(?!base|iframe|link|no|object|script|style|textarea|title|xmp)[a-z0-9_$:-]*$/i;
 
 /**
  * A pattern that vets values produced by the named directives.
@@ -46897,8 +47025,8 @@ goog.dom.getAncestorByClass = function(element, className, opt_maxSearchSteps) {
  * Walks up the DOM hierarchy returning the first ancestor that passes the
  * matcher function.
  * @param {Node} element The DOM node to start with.
- * @param {function(Node) : boolean} matcher A function that returns true if the
- *     passed node matches the desired criteria.
+ * @param {function(!Node) : boolean} matcher A function that returns true if
+ *     the passed node matches the desired criteria.
  * @param {boolean=} opt_includeNode If true, the node itself is included in
  *     the search (the first call to the matcher will pass startElement as
  *     the node to test).
@@ -47956,7 +48084,8 @@ goog.soy.TextTemplate;
  * hand-written code, so that it will be easier to audit the code for cross-site
  * scripting vulnerabilities.
  *
- * @param {?Element} element The element whose content we are rendering into.
+ * @param {?Element|?ShadowRoot} element The element whose content we are
+ *     rendering into.
  * @param {!goog.soy.data.SanitizedContent} templateResult The processed
  *     template of kind HTML or TEXT (which will be escaped).
  * @template ARG_TYPES
@@ -47975,7 +48104,8 @@ goog.soy.renderHtml = function(element, templateResult) {
  * instead of directly setting innerHTML in your hand-written code, so that it
  * will be easier to audit the code for cross-site scripting vulnerabilities.
  *
- * @param {Element} element The element whose content we are rendering into.
+ * @param {?Element|?ShadowRoot} element The element whose content we are
+ *     rendering into.
  * @param {function(ARG_TYPES, ?goog.soy.CompatibleIj_=): *} template The Soy
  *     template defining the element's content.
  * @param {ARG_TYPES=} opt_templateData The data for the template.

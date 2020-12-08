@@ -22,6 +22,7 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Maps;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.BaseUtils;
@@ -35,6 +36,7 @@ import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.soytree.CommandTagAttribute.CommandTagAttributesHolder;
 import com.google.template.soy.soytree.SoyNode.ExprHolderNode;
 import com.google.template.soy.soytree.SoyNode.RenderUnitNode;
+import com.google.template.soy.soytree.defn.AttrParam;
 import com.google.template.soy.soytree.defn.TemplateHeaderVarDefn;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.soytree.defn.TemplateStateVar;
@@ -300,6 +302,11 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
   /** Used for formatting */
   private final List<CommandTagAttribute> attributes;
 
+  // The presence of this means that we have annotated the template with {@attribute *}.
+  private final SourceLocation allowExtraAttributesLoc;
+
+  private ImmutableSet<String> reservedAttributes;
+
   /**
    * Main constructor. This is package-private because Template*Node instances should be built using
    * the Template*NodeBuilder classes.
@@ -333,6 +340,8 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
     this.commandText = nodeBuilder.getCmdText().trim();
     this.openTagLocation = nodeBuilder.openTagLocation;
     this.attributes = nodeBuilder.getAttributes();
+    this.allowExtraAttributesLoc = nodeBuilder.allowExtraAttributesLoc;
+    this.reservedAttributes = ImmutableSet.of();
   }
 
   /**
@@ -359,6 +368,8 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
     this.templateMetadata = orig.templateMetadata;
     this.attributes =
         orig.attributes.stream().map(c -> c.copy(copyState)).collect(toImmutableList());
+    this.allowExtraAttributesLoc = orig.allowExtraAttributesLoc;
+    this.reservedAttributes = orig.reservedAttributes;
   }
 
   private static ImmutableList<TemplateHeaderVarDefn> copyParams(
@@ -385,6 +396,22 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
   @Override
   public List<CommandTagAttribute> getAttributes() {
     return attributes;
+  }
+
+  public boolean getAllowExtraAttributes() {
+    return allowExtraAttributesLoc != null;
+  }
+
+  public SourceLocation getAllowExtraAttributesLoc() {
+    return allowExtraAttributesLoc;
+  }
+
+  public ImmutableSet<String> getReservedAttributes() {
+    return reservedAttributes;
+  }
+
+  public void setReservedAttributes(ImmutableSet<String> reservedAttributes) {
+    this.reservedAttributes = reservedAttributes;
   }
 
   /** Returns a template name suitable for display in user msgs. */
@@ -441,6 +468,8 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
   private String getDeclName(TemplateHeaderVarDefn headerVar) {
     if (headerVar instanceof TemplateStateVar) {
       return "@state";
+    } else if (headerVar instanceof AttrParam) {
+      return "@attribute";
     } else if (headerVar.isInjected()) {
       return "@inject";
     } else {
@@ -580,12 +609,17 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
         exprs.add(defaultValue);
       }
     }
+    for (CommandTagAttribute attribute : attributes) {
+      if (attribute.hasExprValue()) {
+        exprs.addAll(attribute.valueAsExprList());
+      }
+    }
     return exprs.build();
   }
 
-  public void addCspNonceParam(TemplateParam cspNonce) {
+  public void addParam(TemplateParam param) {
     headerParams =
-        ImmutableList.<TemplateHeaderVarDefn>builder().addAll(headerParams).add(cspNonce).build();
+        ImmutableList.<TemplateHeaderVarDefn>builder().addAll(headerParams).add(param).build();
   }
 
   public ImmutableList<TemplateHeaderVarDefn> getHeaderParams() {

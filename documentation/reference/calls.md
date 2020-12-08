@@ -1,8 +1,5 @@
 # Calls
 
-<!--#include file="commands-blurb-include.md"-->
-
-This chapter describes the call commands.
 
 [TOC]
 
@@ -55,7 +52,10 @@ We'll use this callee template for the following examples:
 {/template}
 ```
 
-#### Pass values using `param` commands (recommended)
+For information about passing templates as parameters, see
+[Passing Templates as Parameters](template-types.md#how-do-you-pass-in-a-template).
+
+#### Pass values using `param` commands (recommended) {#param}
 
 To pass values to the callee, use `param` commands inside the `call` function
 with names that match the callee's parameters.
@@ -77,7 +77,6 @@ passing makes code more readable and easier to debug.
 
 #### Pass values using the `data` attribute
 
-
 You can also pass data to the callee with the `call` command's `data` attribute.
 This accepts a variable of type [record](types.md#record). The `call` command
 sets the values of any parameters in the callee whose names match fields in the
@@ -94,17 +93,19 @@ previous section.
 {/template}
 ```
 
-**WARNING**: When passing data in this way much of the call-site type checking
+**Warning:**: When passing data in this way much of the call-site type checking
 that Soy normally performs is *disabled*. So it can be easy to make simple
 mistakes like forgetting to pass a required parameter or passing a parameter of
-the wrong type.
+the wrong type. See b/168852179
 
 If the record contains fields whose names do not match any parameter names,
 these are ignored by the callee. Similarly, if there are any parameters whose
 names do not match any field names, these are not set; whether this causes an
 error depends on [whether the parameter is required](templates.md#param).
 
-#### Pass all of the caller's `data`
+#### Pass all of the caller's `data` (discouraged) {#data-all}
+
+**Warning:** This technique is discouraged.
 
 A template's *data* is a record that contains:
 
@@ -292,11 +293,8 @@ record, the value from the `param` command is used. In subsequent calls that use
 
 ### Calling a template in a different file
 
-All of the above examples demonstrate calling a template in the same file, hence
-the partial template name (beginning with a dot) used in the `call` command
-text.
-
-To call a template in a different file, you must
+All of the above examples demonstrate calling a template in the same file. To
+call a template in a different file, you must
 [import the template](file-declarations.md#import), and then you can call it
 using the usual syntax:
 
@@ -311,9 +309,6 @@ import {button, dialog} from 'path/to/soy/file/foo.soy'
 {/template}
 ```
 
-Note that there is no "." dot in the call, since the imported template symbol is
-not relative to the current namespace.
-
 In case of naming collisions, or if the imported template name is unclear from a
 readability perspective (e.g. "content"), you can alias the imported template:
 
@@ -324,8 +319,3 @@ import {content as hotelReviewContent} from 'path/to/soy/file/bar.soy'
   {call hotelReviewContent /}
 {/template}
 ```
-
-### Aliasing
-
-Check out how to shorten calls with [alias
-declarations](file-declarations.md#alias).

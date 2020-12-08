@@ -169,17 +169,33 @@ public final class PassManager {
     ImmutableList<Class<? extends CompilerPass>> shouldNotHaveAlreadyRun = pass.runBefore();
     if (!Collections.disjoint(executed, shouldNotHaveAlreadyRun)) {
       throw new IllegalStateException(
-          "Attempted to executed pass "
+          "Attempted to execute pass "
               + pass.name()
               + " but it should always run before ("
-              + shouldHaveAlreadyRun.stream()
+              + shouldNotHaveAlreadyRun.stream()
                   .filter(dep -> !executed.contains(dep))
                   .map(Class::getSimpleName)
                   .collect(joining(", "))
-              + ") haven't run yet.\n Passes executed so far: "
+              + ").\n Passes executed so far: "
               + executed.stream().map(Class::getSimpleName).collect(joining(", ")));
     }
     executed.add(getPassClass(pass));
+  }
+
+  /** @see Builder#astRewrites */
+  public enum AstRewrites {
+    /** No AST rewrites whatsoever. */
+    NONE,
+    /** Enough AST rewrites for Kythe analysis to work. */
+    KYTHE,
+    /** Enough AST rewrites for Tricorder analysis to work. */
+    TRICORDER,
+    /** All the AST rewrites. */
+    ALL;
+
+    boolean atLeast(AstRewrites v) {
+      return this.ordinal() >= v.ordinal();
+    }
   }
 
   /** A builder for configuring the pass manager. */
@@ -201,7 +217,7 @@ public final class PassManager {
     private ValidatedLoggingConfig loggingConfig = ValidatedLoggingConfig.EMPTY;
     private boolean insertEscapingDirectives = true;
     private boolean addHtmlAttributesForDebugging = true;
-    private boolean astRewrites = true;
+    private AstRewrites astRewrites = AstRewrites.ALL;
     private final Map<Class<? extends CompilerPass>, PassContinuationRule>
         passContinuationRegistry = Maps.newHashMap();
     private boolean building;
@@ -273,7 +289,7 @@ public final class PassManager {
      * Determines whether passes that modify the AST run. Typically analysis tools set this to false
      * since the resulting AST will not match the original source file.
      */
-    public Builder astRewrites(boolean astRewrites) {
+    public Builder astRewrites(AstRewrites astRewrites) {
       this.astRewrites = astRewrites;
       return this;
     }
@@ -363,13 +379,21 @@ public final class PassManager {
       // imports.
       ImmutableList.Builder<CompilerFileSetPass> partialTemplateRegistryPassesBuilder =
           ImmutableList.builder();
+      if (astRewrites.atLeast(AstRewrites.ALL)) {
+        addPass(
+            new ContentSecurityPolicyNonceInjectionPass(errorReporter),
+            partialTemplateRegistryPassesBuilder);
+        // Needs to come after ContentSecurityPolicyNonceInjectionPass.
+        addPass(
+            new CheckEscapingSanityFilePass(errorReporter), partialTemplateRegistryPassesBuilder);
+      }
       addPass(
           new ResolveProtoImportsPass(registry, options, errorReporter, disableAllTypeChecking),
           partialTemplateRegistryPassesBuilder);
       addPass(
           new ResolveTemplateImportsPass(options, errorReporter),
           partialTemplateRegistryPassesBuilder);
-      if (astRewrites) {
+      if (astRewrites.atLeast(AstRewrites.KYTHE)) {
         addPass(new ResolveTemplateFunctionsPass(), partialTemplateRegistryPassesBuilder);
       }
       addPass(new ResolveTemplateNamesPass(), partialTemplateRegistryPassesBuilder);
@@ -383,7 +407,7 @@ public final class PassManager {
       addPass(new ResolvePluginsPass(pluginResolver), partialTemplateRegistryPassesBuilder);
 
       // Must come after ResolvePluginsPass.
-      if (astRewrites) {
+      if (astRewrites.atLeast(AstRewrites.ALL)) {
         addPass(
             new RewriteDirectivesCallableAsFunctionsPass(errorReporter),
             partialTemplateRegistryPassesBuilder);
@@ -401,9 +425,7 @@ public final class PassManager {
       addPass(
           new RewriteGlobalsPass(options.getCompileTimeGlobals(), errorReporter),
           partialTemplateRegistryPassesBuilder);
-      // needs to happen after rewrite globals
       addPass(new XidPass(errorReporter), partialTemplateRegistryPassesBuilder);
-      // Needs to be before ResolveNamesPass.
       addPass(
           new V1ExpressionPass(allowV1Expression, errorReporter),
           partialTemplateRegistryPassesBuilder);
@@ -412,12 +434,20 @@ public final class PassManager {
           partialTemplateRegistryPassesBuilder);
       addPass(new ResolveNamesPass(errorReporter), partialTemplateRegistryPassesBuilder);
       // needs to be after ResolveNames and MsgsPass
-      if (astRewrites) {
+      if (astRewrites.atLeast(AstRewrites.ALL)) {
         addPass(new MsgWithIdFunctionPass(errorReporter), partialTemplateRegistryPassesBuilder);
       }
 
       // The StrictHtmlValidatorPass needs to run after ResolveNames.
       addPass(new StrictHtmlValidationPass(errorReporter), partialTemplateRegistryPassesBuilder);
+
+      addPass(new SoyElementPass(errorReporter), partialTemplateRegistryPassesBuilder);
+      if (astRewrites.atLeast(AstRewrites.ALL)) {
+        addPass(
+            new ElementAttributePass(errorReporter, pluginResolver),
+            partialTemplateRegistryPassesBuilder);
+      }
+
       if (addHtmlAttributesForDebugging) {
         // needs to run after MsgsPass (so we don't mess up the auto placeholder naming algorithm)
         // and before ResolveExpressionTypesPass (since we insert expressions).
@@ -467,8 +497,6 @@ public final class PassManager {
           partialTemplateRegistryPassesBuilder);
       addPass(new ValidateSkipNodesPass(errorReporter), partialTemplateRegistryPassesBuilder);
 
-      // Needs to run after StrictHtmlValidationPass (for single root validation).
-      addPass(new SoyElementPass(errorReporter), partialTemplateRegistryPassesBuilder);
       if (!disableAllTypeChecking) {
         addPass(
             new VeLogValidationPass(errorReporter, registry), partialTemplateRegistryPassesBuilder);
@@ -488,16 +516,21 @@ public final class PassManager {
         // Upgrade the "named template" placeholder types to proper template types, now that their
         // signatures are known.
         addPass(
-            new ResolveExpressionTypesCrossTemplatePass(registry, errorReporter, astRewrites),
+            new ResolveExpressionTypesCrossTemplatePass(
+                registry, errorReporter, astRewrites.atLeast(AstRewrites.ALL)),
             crossTemplateCheckingPassesBuilder);
         // Needs to come after types have been set.
         addPass(
             new EnforceExperimentalFeaturesPass(options.getExperimentalFeatures(), errorReporter),
             crossTemplateCheckingPassesBuilder);
         addPass(new CheckTemplateCallsPass(errorReporter), crossTemplateCheckingPassesBuilder);
-        if (astRewrites
-            && options.getExperimentalFeatures().contains("enableTemplateElementKind")) {
-          addPass(new SoyElementCompositionPass(errorReporter), crossTemplateCheckingPassesBuilder);
+        if (options.getExperimentalFeatures().contains("enableTemplateElementKind")) {
+          addPass(
+              new ElementCheckCrossTemplatePass(errorReporter), crossTemplateCheckingPassesBuilder);
+          if (astRewrites.atLeast(AstRewrites.ALL)) {
+            addPass(
+                new SoyElementCompositionPass(errorReporter), crossTemplateCheckingPassesBuilder);
+          }
         }
       }
       addPass(new CallAnnotationPass(), crossTemplateCheckingPassesBuilder);
@@ -600,10 +633,8 @@ public final class PassManager {
   private static ImmutableList<CompilerFilePass> createParsePasses(ErrorReporter reporter) {
     return ImmutableList.of(
         new DesugarGroupNodesPass(),
-        new ContentSecurityPolicyNonceInjectionPass(reporter),
         new BasicHtmlValidationPass(reporter),
-        new InsertMsgPlaceholderNodesPass(reporter),
-        new CheckEscapingSanityFilePass(reporter));
+        new InsertMsgPlaceholderNodesPass(reporter));
   }
 
   private static Class<? extends CompilerPass> getPassClass(CompilerPass pass) {

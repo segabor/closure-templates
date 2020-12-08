@@ -22,12 +22,13 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.SoyFileKind;
-import com.google.template.soy.base.internal.TemplateContentKind;
 import com.google.template.soy.soytree.SoyNode.Kind;
+import com.google.template.soy.soytree.defn.AttrParam;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.types.TemplateType;
 import com.google.template.soy.types.TemplateType.DataAllCallSituation;
 import com.google.template.soy.types.TemplateType.Parameter;
+import com.google.template.soy.types.TemplateType.ParameterKind;
 import com.google.template.soy.types.UnknownType;
 import javax.annotation.Nullable;
 
@@ -60,8 +61,9 @@ public abstract class TemplateMetadata {
             .setTemplateType(
                 TemplateType.builder()
                     .setTemplateKind(convertKind(template.getKind()))
-                    .setContentKind(
-                        TemplateContentKind.fromSanitizedContentKind(template.getContentKind()))
+                    .setAllowExtraAttributes(template.getAllowExtraAttributes())
+                    .setReservedAttributes(template.getReservedAttributes())
+                    .setContentKind(template.getTemplateContentKind())
                     .setStrictHtml(template.isStrictHtml())
                     .setParameters(directParametersFromTemplate(template))
                     .setDataAllCallSituations(dataAllCallSituationFromTemplate(template))
@@ -76,9 +78,9 @@ public abstract class TemplateMetadata {
     }
 
     if (template.getKind() == Kind.TEMPLATE_DELEGATE_NODE) {
-        TemplateDelegateNode deltemplate = (TemplateDelegateNode) template;
-        builder.setDelTemplateName(deltemplate.getDelTemplateName());
-        builder.setDelTemplateVariant(deltemplate.getDelTemplateVariant());
+      TemplateDelegateNode deltemplate = (TemplateDelegateNode) template;
+      builder.setDelTemplateName(deltemplate.getDelTemplateName());
+      builder.setDelTemplateVariant(deltemplate.getDelTemplateVariant());
     }
     return builder.build();
   }
@@ -98,9 +100,11 @@ public abstract class TemplateMetadata {
   public static Parameter parameterFromTemplateParam(TemplateParam param) {
     return Parameter.builder()
         .setName(param.name())
+        .setKind(param instanceof AttrParam ? ParameterKind.ATTRIBUTE : ParameterKind.PARAM)
         // Proto imports when compiler is not given proto descriptors will cause type to be unset.
         .setType(param.hasType() ? param.type() : UnknownType.getInstance())
         .setRequired(param.isRequired())
+        .setImplicit(param.isImplicit())
         .setDescription(param.desc())
         .build();
   }

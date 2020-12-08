@@ -21,6 +21,7 @@ import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
 
 import com.google.common.base.Function;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.HashMultimap;
 import com.google.common.collect.HashMultiset;
 import com.google.common.collect.ImmutableList;
@@ -28,10 +29,10 @@ import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Multiset;
 import com.google.common.collect.SetMultimap;
+import com.google.errorprone.annotations.Immutable;
 import com.google.protobuf.ExtensionLite;
 import com.google.protobuf.GeneratedMessage.ExtendableMessage;
 import com.google.template.soy.data.AbstractLoggingAdvisingAppendable;
-import com.google.template.soy.data.ForwardingLoggingAdvisingAppendable;
 import com.google.template.soy.data.LogStatement;
 import com.google.template.soy.data.LoggingAdvisingAppendable;
 import com.google.template.soy.data.LoggingFunctionInvocation;
@@ -48,6 +49,7 @@ import com.google.template.soy.data.SoyValueProvider;
 import com.google.template.soy.data.SoyVisualElementData;
 import com.google.template.soy.data.UnsafeSanitizedContentOrdainer;
 import com.google.template.soy.data.internal.LazyProtoToSoyValueList;
+import com.google.template.soy.data.internal.ParamStore;
 import com.google.template.soy.data.internal.SoyLegacyObjectMapImpl;
 import com.google.template.soy.data.internal.SoyMapImpl;
 import com.google.template.soy.data.internal.SoyRecordImpl;
@@ -70,7 +72,6 @@ import com.google.template.soy.msgs.restricted.SoyMsgSelectPart;
 import com.google.template.soy.shared.internal.ShortCircuitables;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.ibm.icu.util.ULocale;
-import java.io.Closeable;
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.List;
@@ -164,6 +165,15 @@ public final class JbcSrcRuntime {
     return value;
   }
 
+  public static SoyValue getField(SoyRecord record, String field) {
+    Preconditions.checkNotNull(record, "Attempted to access field '%s' of null", field);
+    return handleTofuNull(record.getField(field));
+  }
+
+  public static ParamStore setField(ParamStore store, String field, SoyValueProvider provider) {
+    return store.setField(field, provider == null ? NullData.INSTANCE : provider);
+  }
+
   /**
    * Helper function to make SoyRecord.getFieldProvider a non-nullable function by returning {@link
    * #NULL_PROVIDER} for missing fields.
@@ -239,7 +249,11 @@ public final class JbcSrcRuntime {
     return new EscapedCompiledTemplate(delegate, directives, kind);
   }
 
-  public static SoyValueProvider getSoyListItem(List<SoyValueProvider> list, long index) {
+  public static SoyValue getSoyListItem(List<SoyValueProvider> list, long index) {
+    return resolveSoyValueProvider(getSoyListItemProvider(list, index));
+  }
+
+  public static SoyValueProvider getSoyListItemProvider(List<SoyValueProvider> list, long index) {
     if (list == null) {
       throw new NullPointerException("Attempted to access list item '" + index + "' of null");
     }
@@ -275,10 +289,13 @@ public final class JbcSrcRuntime {
     return RenderResult.done();
   }
 
-  public static SoyValueProvider getSoyMapItem(SoyMap soyMap, SoyValue key) {
-    if (soyMap == null) {
-      throw new NullPointerException("Attempted to access map item '" + key + "' of null");
-    }
+  public static SoyValue getSoyMapItem(SoyMap soyMap, SoyValue key) {
+    Preconditions.checkNotNull(soyMap, "Attempted to access map item '%s' of null", key);
+    return soyMap.get(key);
+  }
+
+  public static SoyValueProvider getSoyMapItemProvider(SoyMap soyMap, SoyValue key) {
+    Preconditions.checkNotNull(soyMap, "Attempted to access map item '%s' of null", key);
     if (key == null) {
       key = NullData.INSTANCE;
     }
@@ -286,7 +303,13 @@ public final class JbcSrcRuntime {
     return soyValueProvider == null ? NULL_PROVIDER : soyValueProvider;
   }
 
-  public static SoyValueProvider getSoyLegacyObjectMapItem(
+  public static SoyValue getSoyLegacyObjectMapItem(
+      SoyLegacyObjectMap legacyObjectMap, SoyValue key) {
+    Preconditions.checkNotNull(legacyObjectMap, "Attempted to access map item '%s' of null", key);
+    return legacyObjectMap.getItem(key);
+  }
+
+  public static SoyValueProvider getSoyLegacyObjectMapItemProvider(
       SoyLegacyObjectMap legacyObjectMap, SoyValue key) {
     if (legacyObjectMap == null) {
       throw new NullPointerException("Attempted to access map item '" + key + "' of null");
@@ -305,7 +328,7 @@ public final class JbcSrcRuntime {
     final ULocale locale;
     private int partIndex;
     private SoyValueProvider pendingRender;
-    final Map<String, Object> placeholders;
+    final Map<String, SoyValueProvider> placeholders;
 
     // Some placeholders have ordering constraints.  This is necessary for the velog to function
     // correctly in the face of translators reordering things.
@@ -337,11 +360,9 @@ public final class JbcSrcRuntime {
      * Sets a placeholder value.
      *
      * @param placeholderName The placeholder name
-     * @param placeholderValue The placeholder value. For a normal placeholder this will be a
-     *     SoyValueProvider but for plurals this will be an IntegerData and for selects this will be
-     *     a string.
+     * @param placeholderValue The placeholder value.
      */
-    public void setPlaceholder(String placeholderName, Object placeholderValue) {
+    public MsgRenderer setPlaceholder(String placeholderName, SoyValueProvider placeholderValue) {
       Object prev = placeholders.put(placeholderName, placeholderValue);
       if (prev != null) {
         throw new IllegalArgumentException(
@@ -352,6 +373,7 @@ public final class JbcSrcRuntime {
                 + " for key "
                 + placeholderName);
       }
+      return this;
     }
 
     public static String escapeHtml(String s) {
@@ -366,12 +388,11 @@ public final class JbcSrcRuntime {
      *
      * @param placeholderName The placeholder name
      * @param placeholderValue The placeholder value. For a normal placeholder this will be a
-     *     SoyValueProvider but for plurals this will be an IntegerData and for selects this will be
-     *     a string.
+     *     SoyValueProvider
      * @param endPlaceholder The name of another placeholder that _must_ come _after_ this one.
      */
-    public void setPlaceholderAndOrdering(
-        String placeholderName, Object placeholderValue, String endPlaceholder) {
+    public MsgRenderer setPlaceholderAndOrdering(
+        String placeholderName, SoyValueProvider placeholderValue, String endPlaceholder) {
       if (endPlaceholderToStartPlaceholder == null) {
         startPlaceholders = new HashSet<>();
         endPlaceholderToStartPlaceholder = HashMultimap.create();
@@ -409,6 +430,7 @@ public final class JbcSrcRuntime {
       setPlaceholder(placeholderName, placeholderValue);
       endPlaceholderToStartPlaceholder.put(endPlaceholder, placeholderName);
       startPlaceholders.add(placeholderName);
+      return this;
     }
 
     /**
@@ -463,7 +485,7 @@ public final class JbcSrcRuntime {
               }
             }
           }
-          SoyValueProvider placeholderValue = (SoyValueProvider) placeholders.get(placeholderName);
+          SoyValueProvider placeholderValue = placeholders.get(placeholderName);
           if (placeholderValue == null) {
             throw new IllegalStateException(
                 "No value provided for placeholder: '"
@@ -472,6 +494,8 @@ public final class JbcSrcRuntime {
                     + placeholders.keySet());
           }
           try {
+            // TODO(lukes): we could set the isLast flag by scanning forward in msgParts for more
+            // occurrences of this placeholder
             RenderResult result = placeholderValue.renderAndResolve(out, /* isLast= */ false);
             if (!result.isDone()) {
               // store partIndex as i + 1 so that after the placeholder is done we proceed to the
@@ -531,25 +555,40 @@ public final class JbcSrcRuntime {
         // loop 3 times.  We do know statically what the first iteration will be, but it is not
         // possible to know anything beyond that.
         ImmutableList<SoyMsgPart> parts = this.msgParts;
+        RenderResult caseSelectionResult = RenderResult.done();
         while (!parts.isEmpty()) {
           SoyMsgPart first = parts.get(0);
           if (first instanceof SoyMsgSelectPart) {
             SoyMsgSelectPart selectPart = (SoyMsgSelectPart) first;
-            String selectCase = getSelectCase(selectPart.getSelectVarName());
-            parts = selectPart.lookupCase(selectCase);
+            SoyValueProvider selectPlaceholder = placeholders.get(selectPart.getSelectVarName());
+            caseSelectionResult = selectPlaceholder.status();
+            if (caseSelectionResult.isDone()) {
+              // Handle null results by coercing to 'null' for compatibility with javascript
+              parts = selectPart.lookupCase(coerceToString(selectPlaceholder.resolve()));
+            } else {
+              break;
+            }
           } else if (first instanceof SoyMsgPluralPart) {
             SoyMsgPluralPart pluralPart = (SoyMsgPluralPart) first;
-            double pluralValue = getPlural(pluralPart.getPluralVarName());
-            parts = pluralPart.lookupCase(pluralValue, locale);
-            // precalculate and store the remainder.
-            remainder = pluralValue - pluralPart.getOffset();
+            SoyValueProvider pluralPlaceholder = placeholders.get(pluralPart.getPluralVarName());
+            caseSelectionResult = pluralPlaceholder.status();
+            if (caseSelectionResult.isDone()) {
+              double pluralValue = pluralPlaceholder.resolve().numberValue();
+              parts = pluralPart.lookupCase(pluralValue, locale);
+              // precalculate and store the remainder.
+              remainder = pluralValue - pluralPart.getOffset();
+            } else {
+              break;
+            }
           } else {
             break;
           }
         }
-        // now that the final case has been selected, stash those parts in our parent so it can run
-        // a simple non-recursive loop.
+        // Store any progress we have made in calculating sub-parts.
         this.msgParts = parts;
+        if (!caseSelectionResult.isDone()) {
+          return caseSelectionResult;
+        }
         resolvedCases = true;
       }
       // render the cases.
@@ -559,32 +598,6 @@ public final class JbcSrcRuntime {
     @Override
     double getPluralRemainder() {
       return remainder;
-    }
-
-    /** Returns the select case variable value. */
-    private String getSelectCase(String selectVarName) {
-      String selectCase = (String) placeholders.get(selectVarName);
-      if (selectCase == null) {
-        throw new IllegalArgumentException(
-            "No value provided for select: '"
-                + selectVarName
-                + "', expected one of "
-                + placeholders.keySet());
-      }
-      return selectCase;
-    }
-
-    /** Returns the plural case variable value. */
-    private double getPlural(String pluralVarName) {
-      NumberData pluralValue = (NumberData) placeholders.get(pluralVarName);
-      if (pluralValue == null) {
-        throw new IllegalArgumentException(
-            "No value provided for plural: '"
-                + pluralVarName
-                + "', expected one of "
-                + placeholders.keySet());
-      }
-      return pluralValue.numberValue();
     }
   }
 
@@ -625,6 +638,11 @@ public final class JbcSrcRuntime {
             val = directive.apply(val);
           }
           System.out.append(val);
+        }
+
+        @Override
+        public void flushBuffers(int depth) {
+          throw new AssertionError("should not be called");
         }
       };
 
@@ -715,47 +733,6 @@ public final class JbcSrcRuntime {
     }
   }
 
-  /**
-   * Returns a {@link LoggingAdvisingAppendable} that:
-   *
-   * <ul>
-   *   <li>Forwards all {@link LoggingAdvisingAppendable} methods to {@code delegate}
-   *   <li>Implements {@link Closeable} and forwards all {@link Closeable#close} calls to the given
-   *       closeables in order.
-   * </ul>
-   *
-   * <p>This strategy allows us to make certain directives closeable without requiring them all to
-   * be since this wrapper can propagate the close signals in the rare case that a closeable
-   * directive is wrapped with a non closeable one (or multiple closeable wrappers are composed)
-   */
-  public static ClosePropagatingAppendable propagateClose(
-      LoggingAdvisingAppendable delegate, ImmutableList<Closeable> closeables) {
-    return new ClosePropagatingAppendable(delegate, closeables);
-  }
-
-  private static final class ClosePropagatingAppendable extends ForwardingLoggingAdvisingAppendable
-      implements Closeable {
-    final ImmutableList<Closeable> closeables;
-
-    ClosePropagatingAppendable(
-        LoggingAdvisingAppendable delegate, ImmutableList<Closeable> closeables) {
-      super(delegate);
-      this.closeables = closeables;
-    }
-
-    @Override
-    public void close() throws IOException {
-      // This looks buggy since we don't catch IOExceptions and then propagate close to the
-      // remaining closeables, but that is fine given our usecase since all these closeables are
-      // really wrapping each other and the close command is only to flush a buffer, so if any
-      // throw we just abort anyway and if any of them throw it doesn't really matter if some data
-      // is stuck in a buffer since the whole render is going to fail.
-      for (Closeable c : closeables) {
-        c.close();
-      }
-    }
-  }
-
   public static LogStatement createLogStatement(boolean logOnly, SoyVisualElementData veData) {
     return LogStatement.create(veData.ve().id(), veData.data(), logOnly);
   }
@@ -824,7 +801,8 @@ public final class JbcSrcRuntime {
       Map<String, ?> javaMap) {
     return javaMap.entrySet().stream()
         .collect(
-            toImmutableMap(e -> e.getKey(), e -> SoyValueConverter.INSTANCE.convert(e.getValue())));
+            toImmutableMap(
+                Map.Entry::getKey, e -> SoyValueConverter.INSTANCE.convert(e.getValue())));
   }
 
   /** For repeated extensions, returns all of the extensions values as a list. */
@@ -840,14 +818,35 @@ public final class JbcSrcRuntime {
     return LazyProtoToSoyValueList.forList(list.build(), protoFieldInterpreter);
   }
 
-  public static CompiledTemplate.Factory bindTemplateParams(
-      CompiledTemplate.Factory template, SoyRecord boundParams) {
-    return new CompiledTemplate.Factory() {
-      @Override
-      public CompiledTemplate create(SoyRecord params, SoyRecord ij) {
-        return template.create(SoyRecords.merge(boundParams, params), ij);
+  public static CompiledTemplate.FactoryValue bindTemplateParams(
+      CompiledTemplate.FactoryValue template, SoyRecord boundParams) {
+    return CompiledTemplate.FactoryValue.create(
+        template.getTemplateName(), new PartiallyBoundTemplate(boundParams, template.getFactory()));
+  }
+
+  @Immutable
+  private static final class PartiallyBoundTemplate implements CompiledTemplate.Factory {
+    @SuppressWarnings("Immutable") // this is never mutated
+    private final SoyRecord boundParams;
+
+    private final CompiledTemplate.Factory delegate;
+
+    PartiallyBoundTemplate(SoyRecord boundParams, CompiledTemplate.Factory delegate) {
+      if (delegate instanceof PartiallyBoundTemplate) {
+        PartiallyBoundTemplate partiallyBoundTemplate = (PartiallyBoundTemplate) delegate;
+        boundParams = SoyRecords.merge(partiallyBoundTemplate.boundParams, boundParams);
+        delegate = partiallyBoundTemplate.delegate;
       }
-    };
+      this.delegate = delegate;
+      this.boundParams = boundParams;
+    }
+
+    @Override
+    public CompiledTemplate create(SoyRecord params, SoyRecord ij) {
+      // Internally SoyRecords.merge uses an AugmentedParamStore.  This is probably not the best
+      // choice.
+      return delegate.create(SoyRecords.merge(boundParams, params), ij);
+    }
   }
 
   private JbcSrcRuntime() {}

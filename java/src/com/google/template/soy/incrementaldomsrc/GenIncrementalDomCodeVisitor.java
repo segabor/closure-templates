@@ -54,9 +54,14 @@ import static com.google.template.soy.incrementaldomsrc.IncrementalDomRuntime.SO
 import static com.google.template.soy.incrementaldomsrc.IncrementalDomRuntime.STATE_PREFIX;
 import static com.google.template.soy.jssrc.dsl.Expression.EMPTY_OBJECT_LITERAL;
 import static com.google.template.soy.jssrc.dsl.Expression.LITERAL_EMPTY_STRING;
+import static com.google.template.soy.jssrc.dsl.Expression.LITERAL_TRUE;
+import static com.google.template.soy.jssrc.dsl.Expression.dottedIdNoRequire;
 import static com.google.template.soy.jssrc.dsl.Expression.id;
 import static com.google.template.soy.jssrc.dsl.Expression.stringLiteral;
+import static com.google.template.soy.jssrc.dsl.Statement.assign;
+import static com.google.template.soy.jssrc.dsl.Statement.ifStatement;
 import static com.google.template.soy.jssrc.dsl.Statement.returnValue;
+import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_DEBUG;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_SOY_ALIAS;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_STRING_UNESCAPE_ENTITIES;
 import static com.google.template.soy.jssrc.internal.JsRuntime.SOY_ESCAPE_HTML;
@@ -306,6 +311,17 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
       getJsCodeBuilder().append(generateClassForSoyElement(elementName, elementAccessor, element));
       getJsCodeBuilder().append(generateExportsForSoyElement(elementName));
     }
+
+    // Flag the function as iDom, for use in debug code.
+    getJsCodeBuilder()
+        .append(
+            ifStatement(
+                    GOOG_DEBUG,
+                    assign(
+                        dottedIdNoRequire(alias).dotAccess("isIdom"),
+                        LITERAL_TRUE,
+                        JsDoc.builder().addParameterizedAnnotation("type", "boolean").build()))
+                .build());
   }
 
   @Override
@@ -320,7 +336,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
     // This is true if there are any calls with data="all" (which implicitly add optional parameters
     // from those template) or if all parameters are optional (but there are some parameters).
     boolean noRequiredParams = new ShouldEnsureDataIsDefinedVisitor().exec(node);
-    if (node.getParams().isEmpty()) {
+    if (hasOnlyImplicitParams(node)) {
       // If there are indirect parameters, allow an arbitrary object.
       // Either way, allow null, since the caller may not pass parameters.
       jsDocBuilder.addParam("opt_data", noRequiredParams ? "?Object<string, *>=" : "null=");
@@ -443,7 +459,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
   private VariableDeclaration generateClassForSoyElement(
       String soyElementClassName, String soyElementAccessorName, TemplateElementNode node) {
 
-    String paramsType = node.getParams().isEmpty() ? "null" : "!" + alias + ".Params";
+    String paramsType = hasOnlyImplicitParams(node) ? "null" : "!" + alias + ".Params";
 
     ImmutableList.Builder<MethodDeclaration> stateMethods = ImmutableList.builder();
     for (TemplateStateVar stateVar : node.getStateVars()) {
@@ -452,6 +468,9 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
     }
     ImmutableList.Builder<MethodDeclaration> parameterMethods = ImmutableList.builder();
     for (TemplateParam param : node.getParams()) {
+      if (param.isImplicit()) {
+        continue;
+      }
       parameterMethods.add(
           this.generateGetParamMethodForSoyElementClass(
               param, /* isAbstract= */ false, /* isInjected= */ false));
@@ -546,6 +565,9 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
       String className, TemplateElementNode node) {
     ImmutableList.Builder<MethodDeclaration> parameterMethods = ImmutableList.builder();
     for (TemplateParam param : node.getParams()) {
+      if (param.isImplicit()) {
+        continue;
+      }
       parameterMethods.add(
           this.generateGetParamMethodForSoyElementClass(
               param, /* isAbstract= */ true, /* isInjected= */ false));
@@ -753,9 +775,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
   protected void visitLetContentNode(LetContentNode node) {
     String generatedVarName = node.getUniqueVarName();
     visitLetParamContentNode(node, generatedVarName);
-    templateTranslationContext
-        .soyToJsVariableMappings()
-        .put(node.getVarName(), id(generatedVarName));
+    templateTranslationContext.soyToJsVariableMappings().put(node.getVar(), id(generatedVarName));
   }
 
   @Override

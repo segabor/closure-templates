@@ -16,9 +16,9 @@
 
 package com.google.template.soy.soytree.defn;
 
-import com.google.common.base.CaseFormat;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.basetree.CopyState;
+import com.google.template.soy.types.TemplateType.Parameter;
 import com.google.template.soy.types.ast.TypeNode;
 import javax.annotation.Nullable;
 
@@ -28,6 +28,7 @@ import javax.annotation.Nullable;
  * <p>Important: Do not use outside of Soy code (treat as superpackage-private).
  */
 public final class AttrParam extends TemplateParam implements TemplateHeaderVarDefn {
+
   private final String originalAttributeName;
 
   public AttrParam(
@@ -38,10 +39,11 @@ public final class AttrParam extends TemplateParam implements TemplateHeaderVarD
       @Nullable SourceLocation nameLocation,
       SourceLocation sourceLocation) {
     super(
-        CaseFormat.LOWER_HYPHEN.to(CaseFormat.LOWER_CAMEL, name),
+        Parameter.attrToParamName(name),
         nameLocation,
         sourceLocation,
         typeNode,
+        false,
         false,
         optional,
         desc,
@@ -52,6 +54,10 @@ public final class AttrParam extends TemplateParam implements TemplateHeaderVarD
   private AttrParam(AttrParam old) {
     super(old);
     this.originalAttributeName = old.originalAttributeName;
+  }
+
+  public String getAttrName() {
+    return originalAttributeName;
   }
 
   @Override

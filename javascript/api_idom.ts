@@ -4,11 +4,12 @@
  * Functions necessary to interact with the Soy-Idom runtime.
  */
 
-import * as googSoy from 'goog:goog.soy';  // from //javascript/closure/soy
 import Message from 'goog:jspb.Message'; // from //javascript/apps/jspb:message_lib
 import * as soy from 'goog:soy';  // from //javascript/template/soy:soy_usegoog_js
 import {$$VisualElementData, ElementMetadata, Logger} from 'goog:soy.velog';  // from //javascript/template/soy:soyutils_velog
 import * as incrementaldom from 'incrementaldom';  // from //third_party/javascript/incremental_dom:incrementaldom
+
+export {IdomTemplate as Template} from './templates';
 
 declare global {
   interface Node {
@@ -33,17 +34,11 @@ export const patchOuter = incrementaldom.createPatchOuter(patchConfig);
 /** PatchInner using Soy-IDOM semantics. */
 export const patch = patchInner;
 
-/** Type for HTML templates */
-export type Template<T> =
-    // tslint:disable-next-line:no-any
-    (renderer: IncrementalDomRenderer, args: T, ijData?: googSoy.IjData|null) =>
-        void;
-
 interface IdomRendererApi {
   open(nameOrCtor: string, key?: string): void|HTMLElement;
   openSSR(nameOrCtor: string, key?: string, data?: unknown): boolean;
   visit(el: void|HTMLElement): void;
-  maybeSkip(renderer: IncrementalDomRenderer, val: unknown): boolean;
+  maybeSkip(renderer: IdomRendererApi, val: unknown): boolean;
   pushManualKey(key: incrementaldom.Key): void;
   popManualKey(): void;
   pushKey(key: string): string;

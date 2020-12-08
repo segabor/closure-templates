@@ -95,7 +95,7 @@ public final class TemplateBindingUtil {
         reportedErrors = true;
         continue;
       }
-      if (!base.getParameterMap().get(member.name()).isAssignableFromStrict(member.type())) {
+      if (!base.getParameterMap().get(member.name()).isAssignableFromLoose(member.type())) {
         errorReporter.report(
             PARAMETER_TYPE_MISMATCH,
             member.name(),
@@ -115,7 +115,7 @@ public final class TemplateBindingUtil {
             .filter((parameter) -> unboundParameters.contains(parameter.getName()))
             .collect(toImmutableList());
     builder.setIdentifierForDebugging(
-        TemplateType.stringRepresentation(newParameters, base.getContentKind()));
+        TemplateType.stringRepresentation(newParameters, base.getContentKind(), ImmutableSet.of()));
     builder.setParameters(newParameters);
     return typeRegistry.internTemplateType(builder.build());
   }

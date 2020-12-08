@@ -111,7 +111,7 @@ public final class ContentSecurityPolicyNonceInjectionPass implements CompilerFi
         if (isTagNonceable(openTag)) {
           if (defn == null) {
             defn = createDefn();
-            template.addCspNonceParam(defn);
+            template.addParam(defn);
           }
           // this should point to the character immediately before the '>' or '/>' at the end of the
           // open tag
@@ -136,6 +136,7 @@ public final class ContentSecurityPolicyNonceInjectionPass implements CompilerFi
         // goog.soy.data.UnsanitizedText.
         NamedTypeNode.create(SourceLocation.UNKNOWN, "any"),
         /* isInjected= */ true,
+        /* isImplicit = */ false,
         /* optional= */ true,
         /* desc= */ "Created by ContentSecurityPolicyNonceInjectionPass.",
         /* defaultValue= */ null);
@@ -240,6 +241,6 @@ public final class ContentSecurityPolicyNonceInjectionPass implements CompilerFi
 
   private static VarRefNode referenceCspNonce(
       SourceLocation insertionLocation, TemplateParam defn) {
-    return new VarRefNode(CSP_NONCE_VARIABLE_NAME, insertionLocation, defn);
+    return new VarRefNode("$" + CSP_NONCE_VARIABLE_NAME, insertionLocation, defn);
   }
 }

@@ -49,6 +49,12 @@ public class TemplateParam extends AbstractVarDefn implements TemplateHeaderVarD
   /** Whether the param is an injected param. */
   private final boolean isInjected;
 
+  /**
+   * Whether the param is implicitly added by the Soy framework. These are omitted from the Java
+   * invocation builders and the template JsDoc declarations.
+   */
+  private final boolean isImplicit;
+
   private final boolean isExplicitlyOptional;
 
   @Nullable private final ExprRootNode defaultValue;
@@ -59,12 +65,14 @@ public class TemplateParam extends AbstractVarDefn implements TemplateHeaderVarD
       SourceLocation sourceLocation,
       @Nullable TypeNode typeNode,
       boolean isInjected,
+      boolean isImplicit,
       boolean optional,
       @Nullable String desc,
       @Nullable ExprNode defaultValue) {
     super(name, nameLocation, /* type= */ null);
     this.originalTypeNode = typeNode;
     this.isInjected = isInjected;
+    this.isImplicit = isImplicit;
     this.desc = desc;
     this.defaultValue = defaultValue == null ? null : new ExprRootNode(defaultValue);
     this.sourceLocation = sourceLocation;
@@ -105,12 +113,18 @@ public class TemplateParam extends AbstractVarDefn implements TemplateHeaderVarD
     this.typeNode = param.typeNode == null ? null : param.typeNode.copy();
     this.isRequired = param.isRequired;
     this.isInjected = param.isInjected;
+    this.isImplicit = param.isImplicit;
     this.sourceLocation = param.sourceLocation;
     this.desc = param.desc;
     this.isExplicitlyOptional = param.isExplicitlyOptional;
     this.defaultValue =
         param.defaultValue == null ? null : param.defaultValue.copy(new CopyState());
     this.originalTypeNode = param.originalTypeNode == null ? null : param.originalTypeNode.copy();
+  }
+
+  @Override
+  public String refName() {
+    return "$" + name();
   }
 
   @Override
@@ -150,6 +164,11 @@ public class TemplateParam extends AbstractVarDefn implements TemplateHeaderVarD
     return isInjected;
   }
 
+  /** Returns whether the param is implicit */
+  public boolean isImplicit() {
+    return this.isImplicit;
+  }
+
   @Override
   public boolean isRequired() {
     return isRequired;
@@ -161,7 +180,8 @@ public class TemplateParam extends AbstractVarDefn implements TemplateHeaderVarD
   }
 
   @Override
-  public @Nullable String desc() {
+  @Nullable
+  public String desc() {
     return desc;
   }
 

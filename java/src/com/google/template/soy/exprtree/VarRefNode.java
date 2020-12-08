@@ -29,7 +29,7 @@ import javax.annotation.Nullable;
 public final class VarRefNode extends AbstractExprNode {
 
   public static VarRefNode error(SourceLocation location) {
-    return new VarRefNode("error", location, null);
+    return new VarRefNode("$error", location, null);
   }
 
   /** The name of the variable, without the preceding dollar sign. */
@@ -49,12 +49,9 @@ public final class VarRefNode extends AbstractExprNode {
    * @param sourceLocation The node's source location.
    * @param defn (optional) The variable declaration for this variable.
    */
-  public VarRefNode(
-      String name,
-      SourceLocation sourceLocation,
-      @Nullable VarDefn defn) {
+  public VarRefNode(String name, SourceLocation sourceLocation, @Nullable VarDefn defn) {
     super(sourceLocation);
-    this.name = Preconditions.checkNotNull(name);
+    this.name = name;
     this.defn = defn;
   }
 
@@ -66,14 +63,7 @@ public final class VarRefNode extends AbstractExprNode {
     // listener so that if the defn is replaced we will get updated also.
     this.defn = orig.defn;
     if (orig.defn != null) {
-      copyState.registerRefListener(
-          orig.defn,
-          new CopyState.Listener<VarDefn>() {
-            @Override
-            public void newVersion(VarDefn newObject) {
-              setDefn(newObject);
-            }
-          });
+      copyState.registerRefListener(orig.defn, this::setDefn);
     }
   }
 
@@ -89,9 +79,13 @@ public final class VarRefNode extends AbstractExprNode {
     return subtituteType != null ? subtituteType : defn.type();
   }
 
-  /** Returns the name of the variable. */
+  /** Returns the source of the variable reference, possibly with leading "$". */
   public String getName() {
     return name;
+  }
+
+  public String getNameWithoutLeadingDollar() {
+    return name.startsWith("$") ? name.substring(1) : name;
   }
 
   /** Returns Whether this is an injected parameter reference. */
@@ -139,7 +133,7 @@ public final class VarRefNode extends AbstractExprNode {
 
   @Override
   public String toSourceString() {
-    return "$" + name;
+    return name;
   }
 
   @Override

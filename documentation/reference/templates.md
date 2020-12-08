@@ -1,10 +1,6 @@
 # Templates
 
 
-<!--#include file="commands-blurb-include.md"-->
-
-This chapter describes the template commands.
-
 [TOC]
 
 ## template {#template}
@@ -25,12 +21,14 @@ With all optional attributes:
 {/template}
 ```
 
-The template name must be a dot followed by an identifier because it is a
-partial name relative to the file's namespace. For example, if the file's
-namespace is `ui.settings.login` and the template's partial name is
-`.newPassword`, then the full template name is `ui.settings.login.newPassword`.
+**Note:** Earlier versions of Soy required template names to start with a dot
+(`.`). This is no longer required and any existing dots are ignored by the Soy
+compiler. In particular, `{template foo}` and `{template .foo}` both define the
+same template, and `{call foo}` and `{call .foo}` both call the same template.
+{@paragraph #leading-dot}
 
 These are the `template` tag's attributes:
+{@paragraph #leading-dot}
 
 *   `visibility`: Optional. Default `public`. Set this to `private` if you want
     this to be a private template. A private template can be called by other

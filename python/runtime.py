@@ -169,6 +169,24 @@ def get_delegate_fn(template_id, variant, allow_empty_default):
     raise RuntimeError(msg % (template_id, ':' + variant if variant else ''))
 
 
+def concat_attribute_values(l, r, delimiter):
+  """Merge two attribute values with a delimiter or use one or the other.
+
+  Args:
+    l: The string which is prefixed in the return value
+    r: The string which is suffixed in the return value
+    delimiter: The delimiter between the two sides
+
+  Returns:
+    The combined string separated by the delimiter.
+  """
+  if not l:
+    return r
+  if not r:
+    return l
+  return l + delimiter + r
+
+
 def merge_into_dict(original, secondary):
   """Merge two dictionaries into the first and return it.
 
@@ -382,6 +400,18 @@ def list_indexof(l, item):
     if type_safe_eq(l[i], item):
       return i
   return -1
+
+
+def concat_maps(d1, d2):
+  """Merges two maps together."""
+  d3 = dict(d1)
+  d3.update(d2)
+  return d3
+
+
+def map_entries(m):
+  """Return map entries."""
+  return [{'key': k, 'value': m[k]} for k in m]
 
 
 def list_slice(l, start, stop):

@@ -36,6 +36,7 @@ import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
 import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory.RuntimeNamespace;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
+import com.google.template.soy.shared.restricted.SoyMethodSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
 import java.lang.reflect.Method;
 import java.util.List;
@@ -53,7 +54,11 @@ import java.util.List;
 @SoyFunctionSignature(
     name = "mapKeys",
     // Note: the return type is overridden in ResolveTypeExpressionsPass
-    value = @Signature(parameterTypes = "map<?, any>", returnType = "list<?>"))
+    value = @Signature(parameterTypes = "map<any, any>", returnType = "list<any>"))
+@SoyMethodSignature(
+    name = "keys",
+    baseType = "map<any, any>",
+    value = @Signature(returnType = "list<any>"))
 @SoyPureFunction
 public final class MapKeysFunction
     implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {

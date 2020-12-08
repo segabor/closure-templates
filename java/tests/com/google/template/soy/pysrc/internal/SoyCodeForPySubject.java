@@ -25,6 +25,7 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.truth.FailureMetadata;
 import com.google.common.truth.Subject;
+import com.google.template.soy.base.SourceFilePath;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
 import com.google.template.soy.pysrc.SoyPySrcOptions;
@@ -32,7 +33,10 @@ import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.testing.SharedTestUtils;
 import com.google.template.soy.testing.SoyFileSetParserBuilder;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Truth assertion which compiles the provided soy code and asserts that the generated Python code
@@ -50,7 +54,11 @@ public final class SoyCodeForPySubject extends Subject {
 
   private String translationClass = "";
 
+  ImmutableMap<SourceFilePath, Path> inputToOutputFilePaths = ImmutableMap.of();
+
   private ImmutableMap<String, String> namespaceManifest = ImmutableMap.of();
+
+  private final Optional<Path> genfilesOutputDir = Optional.of(Paths.get("blaze-out/bin/"));
 
   private boolean isFile;
 
@@ -80,6 +88,12 @@ public final class SoyCodeForPySubject extends Subject {
 
   public SoyCodeForPySubject withTranslationClass(String translationClass) {
     this.translationClass = translationClass;
+    return this;
+  }
+
+  public SoyCodeForPySubject withOutputFilePaths(
+      ImmutableMap<SourceFilePath, Path> inputToOutputFilePaths) {
+    this.inputToOutputFilePaths = inputToOutputFilePaths;
     return this;
   }
 
@@ -199,6 +213,8 @@ public final class SoyCodeForPySubject extends Subject {
         bidiIsRtlFn,
         translationClass,
         namespaceManifest,
+        inputToOutputFilePaths,
+        genfilesOutputDir,
         null);
   }
   // -----------------------------------------------------------------------------------------------

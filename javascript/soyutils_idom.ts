@@ -15,12 +15,12 @@
  * limitations under the License.
  */
 
-import SafeHtml from 'goog:goog.html.SafeHtml'; // from //javascript/closure/html:safehtml
-import * as googSoy from 'goog:goog.soy';  // from //javascript/closure/soy
-import SanitizedContent from 'goog:goog.soy.data.SanitizedContent'; // from //javascript/closure/soy:data
-import SanitizedContentKind from 'goog:goog.soy.data.SanitizedContentKind'; // from //javascript/closure/soy:data
-import SanitizedHtml from 'goog:goog.soy.data.SanitizedHtml'; // from //javascript/closure/soy:data
-import SanitizedHtmlAttribute from 'goog:goog.soy.data.SanitizedHtmlAttribute'; // from //javascript/closure/soy:data
+import SafeHtml from 'goog:goog.html.SafeHtml'; // from //third_party/javascript/closure/html:safehtml
+import * as googSoy from 'goog:goog.soy';  // from //third_party/javascript/closure/soy
+import SanitizedContent from 'goog:goog.soy.data.SanitizedContent'; // from //third_party/javascript/closure/soy:data
+import SanitizedContentKind from 'goog:goog.soy.data.SanitizedContentKind'; // from //third_party/javascript/closure/soy:data
+import SanitizedHtml from 'goog:goog.soy.data.SanitizedHtml'; // from //third_party/javascript/closure/soy:data
+import SanitizedHtmlAttribute from 'goog:goog.soy.data.SanitizedHtmlAttribute'; // from //third_party/javascript/closure/soy:data
 import * as soy from 'goog:soy';  // from //javascript/template/soy:soy_usegoog_js
 import {isAttribute} from 'goog:soy.checks';  // from //javascript/template/soy:checks
 import {ordainSanitizedHtml} from 'goog:soydata.VERY_UNSAFE';  // from //javascript/template/soy:soy_usegoog_js
@@ -30,6 +30,7 @@ import {FalsinessRenderer, IncrementalDomRenderer, isMatchingKey, patch, patchOu
 import {splitAttributes} from './attributes';
 import {IdomFunction, PatchFunction, SoyElement} from './element_lib_idom';
 import {getSoyUntyped} from './global';
+import {IdomTemplate, IjData, SoyTemplate, Template} from './templates';
 
 // Declare properties that need to be applied not as attributes but as
 // actual DOM properties.
@@ -37,11 +38,7 @@ const {attributes, currentContext} = incrementaldom;
 
 const defaultIdomRenderer = new IncrementalDomRenderer();
 
-type IdomTemplate<A, B> =
-    (idom: IncrementalDomRenderer, params: A, ijData: B) => void;
-type SoyTemplate<A, B> = (params: A, ijData: B) => string|SanitizedContent;
 type LetFunction = (idom: IncrementalDomRenderer) => void;
-type Template<A, B> = IdomTemplate<A, B>|SoyTemplate<A, B>;
 
 // tslint:disable-next-line:no-any
 attributes['checked'] = (el: Element, name: string, value: any) => {
@@ -216,14 +213,13 @@ function renderDynamicContent(
 /**
  * Calls an expression in case of a function or outputs it as text content.
  */
-function callDynamicAttributes<A, B>(
-    incrementaldom: IncrementalDomRenderer,
-    // tslint:disable-next-line:no-any
-    expr: Template<A, B>, data: A, ij: B) {
+function callDynamicAttributes<TParams>(
+    incrementaldom: IncrementalDomRenderer, expr: Template<TParams>,
+    data: TParams, ij: IjData) {
   // tslint:disable-next-line:no-any Attaching arbitrary attributes to function.
   const type = (expr as any as IdomFunction).contentKind;
   if (type === SanitizedContentKind.ATTRIBUTES) {
-    (expr as IdomTemplate<A, B>)(incrementaldom, data, ij);
+    (expr as IdomTemplate<TParams>)(incrementaldom, data, ij);
   } else {
     let val: string|SanitizedHtmlAttribute;
     if (type === SanitizedContentKind.HTML) {
@@ -231,10 +227,10 @@ function callDynamicAttributes<A, B>(
       // This can be removed if Soy decides to treat attribute printing
       // and attribute names differently.
       val = soy.$$filterHtmlAttributes(htmlToString(() => {
-        (expr as IdomTemplate<A, B>)(defaultIdomRenderer, data, ij);
+        (expr as IdomTemplate<TParams>)(defaultIdomRenderer, data, ij);
       }));
     } else {
-      val = (expr as SoyTemplate<A, B>)(data, ij) as SanitizedHtmlAttribute;
+      val = (expr as SoyTemplate<TParams>)(data, ij) as SanitizedHtmlAttribute;
     }
     printDynamicAttr(incrementaldom, val);
   }
@@ -252,7 +248,6 @@ function printDynamicAttr(
     expr: SanitizedHtmlAttribute|string|boolean|IdomFunction) {
   if ((expr as IdomFunction).isInvokableFn &&
       (expr as IdomFunction).contentKind === SanitizedContentKind.ATTRIBUTES) {
-    // tslint:disable-next-line:no-any
     (expr as IdomFunction).invoke(incrementaldom);
     return;
   }
@@ -272,37 +267,35 @@ function printDynamicAttr(
 /**
  * Calls an expression in case of a function or outputs it as text content.
  */
-function callDynamicHTML<A, B>(
-    incrementaldom: IncrementalDomRenderer, expr: Template<A, B>, data: A,
-    ij: B) {
+function callDynamicHTML<TParams>(
+    incrementaldom: IncrementalDomRenderer, expr: Template<TParams>,
+    data: TParams, ij: IjData) {
   // tslint:disable-next-line:no-any Attaching arbitrary attributes to function.
   const type = (expr as any as IdomFunction).contentKind;
   if (type === SanitizedContentKind.HTML) {
-    (expr as IdomTemplate<A, B>)(incrementaldom, data, ij);
+    (expr as IdomTemplate<TParams>)(incrementaldom, data, ij);
   } else if (type === SanitizedContentKind.ATTRIBUTES) {
     const val = attributesToString(() => {
-      (expr as IdomTemplate<A, B>)(defaultIdomRenderer, data, ij);
+      (expr as IdomTemplate<TParams>)(defaultIdomRenderer, data, ij);
     });
     incrementaldom.text(val);
   } else {
-    const val = (expr as SoyTemplate<A, B>)(data, ij);
+    const val = (expr as SoyTemplate<TParams>)(data, ij);
     incrementaldom.text(String(val));
   }
 }
 
-function callDynamicCss<A, B>(
-    // tslint:disable-next-line:no-any Attaching  attributes to function.
-    incrementaldom: IncrementalDomRenderer, expr: (a: A, b: B) => any, data: A,
-    ij: B) {
-  const val = callDynamicText<A, B>(expr, data, ij, soy.$$filterCssValue);
+function callDynamicCss<TParams>(
+    incrementaldom: IncrementalDomRenderer, expr: Template<TParams>,
+    data: TParams, ij: IjData) {
+  const val = callDynamicText<TParams>(expr, data, ij, soy.$$filterCssValue);
   incrementaldom.text(String(val));
 }
 
-function callDynamicJs<A, B>(
-    // tslint:disable-next-line:no-any Attaching attributes to function.
-    incrementaldom: IncrementalDomRenderer, expr: (a: A, b: B) => any, data: A,
-    ij: B) {
-  const val = callDynamicText<A, B>(expr, data, ij, soy.$$escapeJsValue);
+function callDynamicJs<TParams>(
+    incrementaldom: IncrementalDomRenderer, expr: Template<TParams>,
+    data: TParams, ij: IjData) {
+  const val = callDynamicText<TParams>(expr, data, ij, soy.$$escapeJsValue);
   incrementaldom.text(String(val));
 }
 
@@ -310,23 +303,23 @@ function callDynamicJs<A, B>(
  * Calls an expression and coerces it to a string for cases where an IDOM
  * function needs to be concatted to a string.
  */
-function callDynamicText<A, B>(
-    // tslint:disable-next-line:no-any
-    expr: Template<A, B>, data: A, ij: B, escFn?: (i: string) => string) {
+function callDynamicText<TParams>(
+    expr: Template<TParams>, data: TParams, ij: IjData,
+    escFn?: (i: string) => string) {
   const transformFn = escFn ? escFn : (a: string) => a;
   // tslint:disable-next-line:no-any Attaching arbitrary attributes to function.
   const type = (expr as any as IdomFunction).contentKind;
   let val: string|SanitizedContent;
   if (type === SanitizedContentKind.HTML) {
     val = transformFn(htmlToString(() => {
-      (expr as IdomTemplate<A, B>)(defaultIdomRenderer, data, ij);
+      (expr as IdomTemplate<TParams>)(defaultIdomRenderer, data, ij);
     }));
   } else if (type === SanitizedContentKind.ATTRIBUTES) {
     val = transformFn(attributesToString(() => {
-      (expr as IdomTemplate<A, B>)(defaultIdomRenderer, data, ij);
+      (expr as IdomTemplate<TParams>)(defaultIdomRenderer, data, ij);
     }));
   } else {
-    val = (expr as SoyTemplate<A, B>)(data, ij);
+    val = (expr as SoyTemplate<TParams>)(data, ij);
   }
   return val;
 }

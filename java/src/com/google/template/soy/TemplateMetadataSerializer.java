@@ -27,12 +27,12 @@ import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.SanitizedContentKind;
 import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.base.internal.TemplateContentKind;
+import com.google.template.soy.base.internal.TemplateContentKind.ElementContentKind;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.soytree.CompilationUnit;
 import com.google.template.soy.soytree.DataAllCallSituationP;
 import com.google.template.soy.soytree.ParameterP;
-import com.google.template.soy.soytree.SanitizedContentKindP;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileP;
 import com.google.template.soy.soytree.SoyFileSetNode;
@@ -55,7 +55,6 @@ import com.google.template.soy.types.NullType;
 import com.google.template.soy.types.RecordType;
 import com.google.template.soy.types.SanitizedType;
 import com.google.template.soy.types.SanitizedType.AttributesType;
-import com.google.template.soy.types.SanitizedType.ElementType;
 import com.google.template.soy.types.SanitizedType.HtmlType;
 import com.google.template.soy.types.SanitizedType.JsType;
 import com.google.template.soy.types.SanitizedType.StyleType;
@@ -69,6 +68,7 @@ import com.google.template.soy.types.StringType;
 import com.google.template.soy.types.TemplateType;
 import com.google.template.soy.types.TemplateType.DataAllCallSituation;
 import com.google.template.soy.types.TemplateType.Parameter;
+import com.google.template.soy.types.TemplateType.ParameterKind;
 import com.google.template.soy.types.UnknownType;
 import com.google.template.soy.types.VeDataType;
 import java.util.ArrayList;
@@ -91,9 +91,6 @@ public final class TemplateMetadataSerializer {
       createEnumConverter(VisibilityP.class, Visibility.class);
   private static final Converter<TemplateKindP, TemplateType.TemplateKind> TEMPLATE_KIND_CONVERTER =
       createEnumConverter(TemplateKindP.class, TemplateType.TemplateKind.class);
-  private static final Converter<SanitizedContentKindP, SanitizedContentKind>
-      CONTENT_KIND_CONVERTER =
-          createEnumConverter(SanitizedContentKindP.class, SanitizedContentKind.class);
 
   private TemplateMetadataSerializer() {}
 
@@ -150,27 +147,11 @@ public final class TemplateMetadataSerializer {
             .setTemplateKind(
                 TEMPLATE_KIND_CONVERTER.reverse().convert(templateType.getTemplateKind()))
             .setVisibility(VISIBILITY_CONVERTER.reverse().convert(meta.getVisibility()))
-            // TODO(b/168821294): Stop setting this field once a new Kythe is deployed.
-            .setContentKind(
-                templateType.getContentKind() == null
-                    ? SanitizedContentKindP.NONE
-                    : CONTENT_KIND_CONVERTER
-                        .reverse()
-                        .convert(templateType.getContentKind().getSanitizedContentKind()))
-            .setTemplateType(
-                SoyTypeP.TemplateTypeP.newBuilder()
-                    .setReturnType(
-                        SanitizedType.getTypeForContentKind(
-                                templateType.getContentKind().getSanitizedContentKind())
-                            .toProto())
-                    .addAllParameter(protosFromParameters(templateType.getParameters()))
-                    .build())
+            .setTemplateType(templateType.toProto().getTemplate())
             .setDelTemplateVariant(Strings.nullToEmpty(meta.getDelTemplateVariant()))
             .setStrictHtml(templateType.isStrictHtml())
             .addAllDataAllCallSituation(
-                protosFromCallSitatuations(templateType.getDataAllCallSituations(), fileNode))
-            // TODO(b/168821294): Stop setting this field once a new Kythe is deployed.
-            .addAllParameter(protosFromParameters(templateType.getParameters()));
+                protosFromCallSitatuations(templateType.getDataAllCallSituations(), fileNode));
     // This may be null because some flows such as conformance tests do not run the SoyElementPass.
     if (meta.getHtmlElement() != null && meta.getSoyElement() != null) {
       builder = builder.setHtmlElement(meta.getHtmlElement()).setSoyElement(meta.getSoyElement());
@@ -211,9 +192,16 @@ public final class TemplateMetadataSerializer {
         throw new AssertionError();
     }
 
-    SoyType returnType =
-        fromProto(
-            templateProto.getTemplateType().getReturnType(), typeRegistry, filePath, errorReporter);
+    SoyTypeP returnTypeP = templateProto.getTemplateType().getReturnType();
+    SoyType returnType = fromProto(returnTypeP, typeRegistry, filePath, errorReporter);
+
+    TemplateContentKind templateContentKind =
+        returnTypeP.getHtml().getIsElement()
+            ? ElementContentKind.valueOf(returnTypeP.getHtml().getTagName())
+            : TemplateContentKind.fromSanitizedContentKind(
+                returnType instanceof StringType
+                    ? SanitizedContentKind.TEXT
+                    : ((SanitizedType) returnType).getContentKind());
 
     return builder
         .setTemplateName(templateName)
@@ -224,12 +212,11 @@ public final class TemplateMetadataSerializer {
         .setTemplateType(
             TemplateType.builder()
                 .setTemplateKind(templateKind)
-                .setContentKind(
-                    TemplateContentKind.fromSanitizedContentKind(
-                        returnType instanceof StringType
-                            ? SanitizedContentKind.TEXT
-                            : ((SanitizedType) returnType).getContentKind()))
+                .setContentKind(templateContentKind)
                 .setStrictHtml(templateProto.getStrictHtml())
+                .setAllowExtraAttributes(returnTypeP.getHtml().getAllowExtraAttributes())
+                .setReservedAttributes(
+                    ImmutableSet.copyOf(returnTypeP.getHtml().getReservedAttributesList()))
                 .setDataAllCallSituations(
                     callSituationsFromProto(templateProto.getDataAllCallSituationList(), fileProto))
                 .setParameters(
@@ -257,7 +244,9 @@ public final class TemplateMetadataSerializer {
       builder.add(
           Parameter.builder()
               .setName(parameter.getName())
+              .setKind(ParameterKind.fromProto(parameter.getKind()))
               .setRequired(parameter.getRequired())
+              .setImplicit(parameter.getImplicit())
               .setTypeLazily(
                   new SoyTypeSupplier(parameter.getType(), typeRegistry, filePath, errorReporter))
               .build());
@@ -336,7 +325,7 @@ public final class TemplateMetadataSerializer {
         throw new AssertionError("Unknown primitive: " + proto.getPrimitive());
       case HTML:
         if (proto.getHtml().getIsElement()) {
-          return ElementType.getInstance();
+          return typeRegistry.getOrCreateElementType(proto.getHtml().getTagName());
         } else {
           return HtmlType.getInstance();
         }
@@ -420,8 +409,10 @@ public final class TemplateMetadataSerializer {
             parameters.add(
                 Parameter.builder()
                     .setName(parameter.getName())
+                    .setKind(ParameterKind.fromProto(parameter.getKind()))
                     .setType(fromProto(parameter.getType(), typeRegistry, filePath, errorReporter))
                     .setRequired(parameter.getRequired())
+                    .setImplicit(parameter.getImplicit())
                     .build());
           }
           return typeRegistry.internTemplateType(
@@ -453,8 +444,10 @@ public final class TemplateMetadataSerializer {
       builder.add(
           ParameterP.newBuilder()
               .setName(parameter.getName())
+              .setKind(parameter.getKind().toProto())
               .setType(parameter.getType().toProto())
               .setRequired(parameter.isRequired())
+              .setImplicit(parameter.isImplicit())
               .build());
     }
     return builder.build();

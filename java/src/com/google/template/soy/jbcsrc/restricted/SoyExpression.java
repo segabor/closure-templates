@@ -25,6 +25,7 @@ import static com.google.template.soy.jbcsrc.restricted.BytecodeUtils.logicalNot
 
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.data.SanitizedContent.ContentKind;
+import com.google.template.soy.data.SoyProtoValue;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.SoyValueProvider;
 import com.google.template.soy.data.internal.RuntimeMapTypeTracker;
@@ -400,7 +401,11 @@ public final class SoyExpression extends Expression {
   /** Coerce this expression to a string value. */
   public SoyExpression coerceToString() {
     if (soyRuntimeType.isKnownString() && !isBoxed()) {
-      return this;
+      if (isNonNullable()) {
+        return this;
+      } else {
+        return forString(MethodRef.STRING_VALUE_OF.invoke(delegate));
+      }
     }
     if (BytecodeUtils.isPrimitive(resultType())) {
       if (resultType().equals(Type.BOOLEAN_TYPE)) {
@@ -588,15 +593,16 @@ public final class SoyExpression extends Expression {
     if (soyRuntimeType.asNonNullable().isKnownProtoOrUnionOfProtos() && !isBoxed()) {
       return this;
     }
+    Expression protoDelegate = delegate.checkedCast(SoyProtoValue.class);
     if (delegate.isNonNullable()) {
-      return delegate.invoke(MethodRef.SOY_PROTO_VALUE_GET_PROTO);
+      return protoDelegate.invoke(MethodRef.SOY_PROTO_VALUE_GET_PROTO);
     }
 
     return new Expression(BytecodeUtils.MESSAGE_TYPE, features()) {
       @Override
       protected void doGen(CodeBuilder adapter) {
         Label end = new Label();
-        delegate.gen(adapter);
+        protoDelegate.gen(adapter);
         BytecodeUtils.nullCoalesce(adapter, end);
         MethodRef.SOY_PROTO_VALUE_GET_PROTO.invokeUnchecked(adapter);
         adapter.mark(end);

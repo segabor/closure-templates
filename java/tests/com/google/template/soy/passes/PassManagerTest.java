@@ -24,6 +24,7 @@ import static org.junit.Assert.fail;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Streams;
 import com.google.template.soy.error.ErrorReporter;
+import com.google.template.soy.passes.PassManager.AstRewrites;
 import com.google.template.soy.passes.PassManager.PassContinuationRule;
 import com.google.template.soy.shared.SoyGeneralOptions;
 import com.google.template.soy.types.SoyTypeRegistryBuilder;
@@ -77,6 +78,8 @@ public final class PassManagerTest {
 
     assertThat(names(manager.partialTemplateRegistryPasses))
         .containsExactly(
+            "ContentSecurityPolicyNonceInjection",
+            "CheckEscapingSanityFile",
             "ResolveProtoImports",
             "ResolveTemplateImports",
             "ResolveTemplateFunctions",
@@ -97,6 +100,8 @@ public final class PassManagerTest {
 
     assertThat(names(manager.partialTemplateRegistryPasses))
         .containsExactly(
+            "ContentSecurityPolicyNonceInjection",
+            "CheckEscapingSanityFile",
             "ResolveProtoImports",
             "ResolveTemplateImports",
             "ResolveTemplateFunctions",
@@ -161,13 +166,11 @@ public final class PassManagerTest {
             SimplifyAssertNonNullPass.class,
             StrictDepsPass.class,
             UnknownJsGlobalPass.class,
-            V1ExpressionPass.class,
             ValidateAliasesPass.class,
             ValidateSkipNodesPass.class,
             VeLogRewritePass.class,
             VeLogValidationPass.class,
-            VeRewritePass.class,
-            XidPass.class);
+            VeRewritePass.class);
     assertWithMessage("Passes with annotations should be removed from the allowlist")
         .that(passesWithoutAnnotations)
         .containsAtLeastElementsIn(unannotatedAllowList);
@@ -186,11 +189,9 @@ public final class PassManagerTest {
                 for (boolean optimize : bools()) {
                   for (boolean insertEscapingDirectives : bools()) {
                     for (boolean addHtmlAttributesForDebugging : bools()) {
-                      for (boolean rewritePlugins : bools()) {
+                      for (AstRewrites astRewrite : AstRewrites.values()) {
                         PassManager.Builder builder =
-                            builder()
-                                .setGeneralOptions(soyGeneralOptions)
-                                .astRewrites(rewritePlugins);
+                            builder().setGeneralOptions(soyGeneralOptions).astRewrites(astRewrite);
                         if (allowUnknownGlobals) {
                           builder.allowUnknownGlobals();
                         }

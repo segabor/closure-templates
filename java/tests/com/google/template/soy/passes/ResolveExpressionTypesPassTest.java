@@ -526,7 +526,7 @@ public final class ResolveExpressionTypesPassTest {
         .parse()
         .fileSet();
     assertThat(Iterables.getOnlyElement(reporter.getErrors()).message())
-        .isEqualTo("Duplicate record key 'a'.");
+        .isEqualTo("Duplicate argument 'a'.");
   }
 
   @Test
@@ -826,6 +826,25 @@ public final class ResolveExpressionTypesPassTest {
                     "{assertType('list<int>', concatLists(true ? [] : [1], [2]))}",
                     "{assertType('list<null>', concatLists([], []))}",
                     "{assertType('list<int|string>', concatLists([1], [\"2\"]))}"))
+            .addSoyFunction(ASSERT_TYPE_FUNCTION)
+            .parse()
+            .fileSet();
+    assertTypes(soyTree);
+  }
+
+  @Test
+  public void testConcatMaps() {
+    SoyFileSetNode soyTree =
+        SoyFileSetParserBuilder.forFileContents(
+                constructTemplateSource(
+                    "{assertType('map<string,string>', map('1' : '2').concat(map('3':'4')))}",
+                    "{assertType('map<int,int>', map(1: 2).concat(map(3: 4)))}",
+                    "{assertType('map<int,int>', map(1: 2).concat(map()))}",
+                    "{assertType('map<int,int>', map().concat(map(3: 4)))}",
+                    "{assertType('map<int,int>', map().concat(true ? map() : map(3: 4)))}",
+                    "{assertType('map<int,int>', (true ? map() : map(1:2)).concat(map()))}",
+                    "{assertType('map<?,?>', map().concat(map()))}",
+                    "{assertType('map<int,int|string>', map(1: '2').concat(map(3: 4)))}"))
             .addSoyFunction(ASSERT_TYPE_FUNCTION)
             .parse()
             .fileSet();

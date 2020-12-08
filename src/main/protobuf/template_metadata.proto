@@ -57,7 +57,9 @@ message SoyTypeP {
   }
   message HtmlTypeP {
     bool is_element = 1;
-    // TODO(user): Add tag name.
+    string tag_name = 4;
+    bool allow_extra_attributes = 2;
+    repeated string reserved_attributes = 3;
   }
   message RecordTypeP {
     map<string, SoyTypeP> field = 1;
@@ -74,12 +76,10 @@ message SoyTypeP {
     repeated SoyTypeP member = 1;
   }
   message TemplateTypeP {
-    // TODO(b/168821294): Remove this field once a new Kythe is deployed.
-    map<string, SoyTypeP> parameter_old = 1;
-    // TODO(b/168821294): Remove this field once a new Kythe is deployed.
-    PrimitiveTypeP return_type_old = 2;
     repeated ParameterP parameter = 3;
     SoyTypeP return_type = 4;
+
+    reserved 1, 2;
   }
   // discriminated union of the different type categories
   oneof TypeKind {
@@ -100,12 +100,21 @@ message SoyTypeP {
 
 // A single declared template parameter
 message ParameterP {
+  enum KindP {
+    DEFAULT = 0;
+    PARAM = 1;
+    ATTRIBUTE = 2;
+  }
   // The parameter name
   string name = 1;
   // The type of the parameter.
   SoyTypeP type = 2;
   // Whether or not the parameter is required.
   bool required = 3;
+  // How this parameter is declared.
+  KindP kind = 4;
+  // Whether or not the parameter is implicitly added by the Soy framework.
+  bool implicit = 5;
 }
 
 // Represents a call within a template.
@@ -119,21 +128,6 @@ message DataAllCallSituationP {
   bool del_call = 2;
   // The names of the explicitly passed parameters.
   repeated string explicitly_passed_parameters = 3;
-}
-
-// A duplicate of SanitizedContentKind
-// TODO(b/168821294): Remove this enum once a new Kythe is deployed.
-enum SanitizedContentKindP {
-  UNKNOWN_SANITIZED_CONTENT_KIND = 0;
-  HTML = 1;
-  JS = 2;
-  URI = 3;
-  TRUSTED_RESOURCE_URI = 4;
-  ATTRIBUTES = 5;
-  CSS = 6;
-  TEXT = 7;
-  NONE = 8;
-  HTML_ELEMENT = 9;
 }
 
 // The kind of the template.
@@ -167,6 +161,15 @@ message HtmlElementMetadataP {
   string tag = 3;
   // Whether or not a template contains an element with {skip} directive.
   bool is_skip = 4;
+
+  oneof delegate {
+    // If this element delegates to another element (element call syntax) then
+    // this is its FQN.
+    string delegate_element = 5;
+    // If this element delegates to another template (call syntax) then this is
+    // its FQN.
+    string delegate_callee = 6;
+  }
 }
 
 // Metadata around whether the template is a Soy element or not.
@@ -185,17 +188,13 @@ message TemplateMetadataP {
   // The variant string.  Will be empty for basic templates or deltemplates with
   // no variant.
   string del_template_variant = 3;
-  // TODO(b/168821294): Remove this field once a new Kythe is deployed.
-  SanitizedContentKindP content_kind = 4;
   bool strict_html = 5;
   VisibilityP visibility = 6;
-  // TODO(b/168821294): Remove this field once a new Kythe is deployed.
-  repeated ParameterP parameter = 7;
   repeated DataAllCallSituationP data_all_call_situation = 8;
 
   HtmlElementMetadataP html_element = 11;
   SoyElementMetadataP soy_element = 12;
   SoyTypeP.TemplateTypeP template_type = 13;
 
-  reserved 9, 10;
+  reserved 4, 7, 9, 10;
 }

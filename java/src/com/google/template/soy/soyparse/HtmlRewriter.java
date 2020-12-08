@@ -450,10 +450,9 @@ final class HtmlRewriter {
     /**
      * Spec: http://www.w3.org/TR/html5/syntax.html#tag-name-state -- however, unlike the spec,
      * which appears to allow arbitrary Unicode chars after the first char, we only parse ASCII
-     * identifier tag names. Note: @slot is allowed as a child of dynamic template calls.
+     * identifier tag names.
      */
-    static final Pattern TAG_NAME =
-        Pattern.compile("([a-z][a-z0-9:-]*)|(@slot)", Pattern.CASE_INSENSITIVE);
+    static final Pattern TAG_NAME = Pattern.compile("[a-z][a-z0-9:-]*", Pattern.CASE_INSENSITIVE);
     /**
      * Regex for allowed attribute names. Intentionally more restrictive than spec:
      * https://html.spec.whatwg.org/multipage/syntax.html#attribute-name-state Allows {@code
@@ -465,7 +464,7 @@ final class HtmlRewriter {
      * numeric, underscore color and dash, ending in alpha, numeric, question or dollar characters.
      */
     static final Pattern ATTRIBUTE_NAME =
-        Pattern.compile("[a-z_$](?:[a-z0-9_:?$\\\\-]*[a-z0-9?$_])?", Pattern.CASE_INSENSITIVE);
+        Pattern.compile("[a-z_$_@](?:[a-z0-9_:?$\\\\-]*[a-z0-9?$_])?", Pattern.CASE_INSENSITIVE);
 
     /**
      * Matches raw text in a tag that isn't a special character or whitespace.

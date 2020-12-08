@@ -32,6 +32,7 @@ import com.google.common.truth.Truth;
 import com.google.template.soy.base.internal.SanitizedContentKind;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.testing.SoyFileSetParserBuilder;
+import com.google.template.soy.types.SanitizedType.ElementType;
 import com.google.template.soy.types.SanitizedType.HtmlType;
 import com.google.template.soy.types.SanitizedType.UriType;
 import com.google.template.soy.types.SoyType.Kind;
@@ -286,6 +287,16 @@ public class SoyTypesTest {
   }
 
   @Test
+  public void testElementTypeAssignability() {
+    assertThat(ElementType.getInstance("").isAssignableFromStrict(ElementType.getInstance("")))
+        .isTrue();
+    assertThat(ElementType.getInstance("").isAssignableFromStrict(ElementType.getInstance("div")))
+        .isTrue();
+    assertThat(ElementType.getInstance("div").isAssignableFromStrict(ElementType.getInstance("")))
+        .isFalse();
+  }
+
+  @Test
   public void testLegacyObjectMapTypeEquality() {
     assertThatSoyType("legacy_object_map<any, any>").isEqualTo("legacy_object_map<any, any>");
     assertThatSoyType("legacy_object_map<any, any>").isNotEqualTo("legacy_object_map<string, any>");
@@ -329,10 +340,15 @@ public class SoyTypesTest {
     Set<SoyType> types = Sets.newIdentityHashSet();
     for (SanitizedContentKind kind : SanitizedContentKind.values()) {
       SoyType typeForContentKind = SanitizedType.getTypeForContentKind(kind);
-      if (kind == SanitizedContentKind.TEXT) {
-        assertThat(typeForContentKind).isEqualTo(STRING_TYPE);
-      } else {
-        assertThat(((SanitizedType) typeForContentKind).getContentKind()).isEqualTo(kind);
+      switch (kind) {
+        case TEXT:
+          assertThat(typeForContentKind).isEqualTo(STRING_TYPE);
+          break;
+        case HTML_ELEMENT:
+          assertThat(typeForContentKind instanceof ElementType).isTrue();
+          break;
+        default:
+          assertThat(((SanitizedType) typeForContentKind).getContentKind()).isEqualTo(kind);
       }
       // ensure there is a unique SoyType for every ContentKind
       assertThat(types.add(typeForContentKind)).isTrue();

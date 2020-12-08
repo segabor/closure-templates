@@ -36,11 +36,10 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Ints;
 import com.google.template.soy.base.internal.FixedIdGenerator;
 import com.google.template.soy.base.internal.SanitizedContentKind;
-import com.google.template.soy.data.SanitizedContent.ContentKind;
 import com.google.template.soy.data.SoyRecord;
 import com.google.template.soy.data.SoyValueProvider;
+import com.google.template.soy.data.internal.Converters;
 import com.google.template.soy.data.internal.ParamStore;
-import com.google.template.soy.data.restricted.NumberData;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.ExprRootNode;
@@ -61,7 +60,6 @@ import com.google.template.soy.jbcsrc.restricted.Expression.Feature;
 import com.google.template.soy.jbcsrc.restricted.FieldRef;
 import com.google.template.soy.jbcsrc.restricted.MethodRef;
 import com.google.template.soy.jbcsrc.restricted.SoyExpression;
-import com.google.template.soy.jbcsrc.restricted.SoyJbcSrcPrintDirective.Streamable.AppendableAndOptions;
 import com.google.template.soy.jbcsrc.restricted.SoyRuntimeType;
 import com.google.template.soy.jbcsrc.restricted.Statement;
 import com.google.template.soy.jbcsrc.runtime.JbcSrcRuntime;
@@ -141,6 +139,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
    * @param parameterLookup The variable lookup table for reading locals.
    */
   static SoyNodeCompiler create(
+      TemplateAnalysis analysis,
       CompiledTemplateRegistry registry,
       InnerClasses innerClasses,
       Expression thisVar,
@@ -154,11 +153,12 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     DetachState detachState = new DetachState(variables, thisVar, fields);
     ExpressionCompiler expressionCompiler =
         ExpressionCompiler.create(
-            parameterLookup, variables, fields, reporter, typeRegistry, registry);
+            analysis, parameterLookup, variables, fields, reporter, typeRegistry, registry);
     ExpressionToSoyValueProviderCompiler soyValueProviderCompiler =
         ExpressionToSoyValueProviderCompiler.create(
-            variables, expressionCompiler, parameterLookup, detachState);
+            analysis, variables, expressionCompiler, parameterLookup);
     return new SoyNodeCompiler(
+        analysis,
         thisVar,
         registry,
         detachState,
@@ -169,6 +169,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
         expressionCompiler,
         soyValueProviderCompiler,
         new LazyClosureCompiler(
+            analysis,
             registry,
             innerClasses,
             parameterLookup,
@@ -179,6 +180,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
             typeRegistry));
   }
 
+  private final TemplateAnalysis analysis;
   private final Expression thisVar;
   private final CompiledTemplateRegistry registry;
   private final DetachState detachState;
@@ -192,6 +194,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
   private Scope currentScope;
 
   SoyNodeCompiler(
+      TemplateAnalysis analysis,
       Expression thisVar,
       CompiledTemplateRegistry registry,
       DetachState detachState,
@@ -202,6 +205,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
       ExpressionCompiler exprCompiler,
       ExpressionToSoyValueProviderCompiler expressionToSoyValueProviderCompiler,
       LazyClosureCompiler lazyClosureCompiler) {
+    this.analysis = checkNotNull(analysis);
     this.thisVar = checkNotNull(thisVar);
     this.registry = checkNotNull(registry);
     this.detachState = checkNotNull(detachState);
@@ -237,7 +241,8 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
         appendableExpression
             .setSanitizedContentKind(node.getContentKind())
             .setSanitizedContentDirectionality(
-                ContentKind.valueOf(node.getContentKind().name()).getDefaultDir())
+                Converters.contentKindfromSanitizedContentKind(node.getContentKind())
+                    .getDefaultDir())
             .toStatement());
     statements.add(prefix.compile(exprCompiler, appendableExpression, detachState));
     statements.add(visitChildrenInNewScope(node));
@@ -594,7 +599,8 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
       Label reattachPoint = new Label();
       ExprRootNode expr = node.getExpr();
       Optional<Expression> asSoyValueProvider =
-          expressionToSoyValueProviderCompiler.compileAvoidingBoxing(expr, reattachPoint);
+          expressionToSoyValueProviderCompiler.compileToSoyValueProviderIfUsefulToPreserveStreaming(
+              expr, detachState.createExpressionDetacher(reattachPoint));
       if (asSoyValueProvider.isPresent()) {
         return renderIncrementally(asSoyValueProvider.get(), node.getChildren(), reattachPoint);
       }
@@ -720,33 +726,28 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     Expression appendable = appendableExpression;
     if (!directives.isEmpty()) {
       Label printDirectiveArgumentReattachPoint = new Label();
-      AppendableAndOptions wrappedAppendable =
+      PrintDirectives.AppendableAndFlushBuffersDepth wrappedAppendable =
           applyStreamingPrintDirectives(
               directives,
               appendable,
               exprCompiler.asBasicCompiler(
                   detachState.createExpressionDetacher(printDirectiveArgumentReattachPoint)),
-              parameterLookup.getPluginContext(),
-              variables);
+              parameterLookup.getPluginContext());
       FieldRef currentAppendableField = fields.getCurrentAppendable();
       initAppendable =
           currentAppendableField
               .putInstanceField(thisVar, wrappedAppendable.appendable())
               .labelStart(printDirectiveArgumentReattachPoint);
-      appendable = currentAppendableField.accessor(thisVar);
+      appendable = currentAppendableField.accessor(thisVar).asNonNullable();
       clearAppendable =
           currentAppendableField.putInstanceField(
               thisVar, constantNull(LOGGING_ADVISING_APPENDABLE_TYPE));
-      if (wrappedAppendable.closeable()) {
+      if (wrappedAppendable.flushBuffersDepth() >= 0) {
         // make sure to call close before clearing
         clearAppendable =
             Statement.concat(
-                // We need to cast because the static type of the field is just plain old
-                // LoggingAdvisingAppendable
-                currentAppendableField
-                    .accessor(thisVar)
-                    .checkedCast(BytecodeUtils.CLOSEABLE_TYPE)
-                    .invokeVoid(MethodRef.CLOSEABLE_CLOSE),
+                AppendableExpression.forExpression(appendable)
+                    .flushBuffers(wrappedAppendable.flushBuffersDepth()),
                 clearAppendable);
       }
     }
@@ -950,10 +951,8 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     if (node.isStaticCall()) {
       CompiledTemplateMetadata callee =
           registry.getBasicTemplateInfoByTemplateName(node.getCalleeName());
-      // If possible, use the constructor to instantiate the template, otherwise go through the
-      // classloader. We do this for templates that are declared as sources in the same fileset.
-      // These are guaranteed to be bundled in the same jar, thus loaded atomically with the same
-      // classloader.
+      // Use invokedynamic to bind to the constructor.  This allows applications using complex
+      // classloader setups to have {call} commands cross classloader boundaries.
       Expression renderContext = parameterLookup.getRenderContext();
       calleeExpression =
           new Expression(callee.typeInfo().type()) {
@@ -974,7 +973,8 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
           exprCompiler
               .compileSubExpression(
                   node.getCalleeExpr(), detachState.createExpressionDetacher(reattachPoint))
-              .invoke(MethodRef.COMPILED_TEMPLATE_FACTORY_CREATE, params, ijRecord);
+              .checkedCast(BytecodeUtils.COMPILED_TEMPLATE_FACTORY_VALUE_TYPE)
+              .invoke(MethodRef.COMPILED_TEMPLATE_FACTORY_VALUE_CREATE_TEMPLATE, params, ijRecord);
     }
     return renderCallNode(reattachPoint, node, calleeExpression);
   }
@@ -1094,29 +1094,22 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
               calleeExpression, getEscapingDirectivesList(node));
     } else {
       if (!node.getEscapingDirectives().isEmpty()) {
-        AppendableAndOptions wrappedAppendable =
+        PrintDirectives.AppendableAndFlushBuffersDepth wrappedAppendable =
             applyStreamingEscapingDirectives(
-                node.getEscapingDirectives(),
-                appendable,
-                parameterLookup.getRenderContext(),
-                variables);
+                node.getEscapingDirectives(), appendable, parameterLookup.getPluginContext());
         FieldRef currentAppendableField = fields.getCurrentAppendable();
         initAppendable =
             currentAppendableField.putInstanceField(thisVar, wrappedAppendable.appendable());
-        appendable = currentAppendableField.accessor(thisVar);
+        appendable = currentAppendableField.accessor(thisVar).asNonNullable();
         clearAppendable =
             currentAppendableField.putInstanceField(
                 thisVar, constantNull(LOGGING_ADVISING_APPENDABLE_TYPE));
-        if (wrappedAppendable.closeable()) {
+        if (wrappedAppendable.flushBuffersDepth() >= 0) {
           // make sure to call close before clearing
           clearAppendable =
               Statement.concat(
-                  // We need to cast because the static type of the field is just plain old
-                  // LoggingAdvisingAppendable
-                  currentAppendableField
-                      .accessor(thisVar)
-                      .checkedCast(BytecodeUtils.CLOSEABLE_TYPE)
-                      .invokeVoid(MethodRef.CLOSEABLE_CLOSE),
+                  AppendableExpression.forExpression(appendable)
+                      .flushBuffers(wrappedAppendable.flushBuffersDepth()),
                   clearAppendable);
         }
       }
@@ -1129,7 +1122,8 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
         currentCalleeField
             .accessor(thisVar)
             .invoke(
-                MethodRef.COMPILED_TEMPLATE_RENDER, appendable, parameterLookup.getRenderContext());
+                MethodRef.COMPILED_TEMPLATE_RENDER, appendable, parameterLookup.getRenderContext())
+            .withSourceLocation(node.getSourceLocation());
     Statement callCallee = detachState.detachForCall(callRender);
     Statement clearCallee =
         currentCalleeField.putInstanceField(
@@ -1285,24 +1279,14 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     return new MsgCompiler(
         thisVar,
         detachState,
-        variables,
         parameterLookup,
         fields,
         appendableExpression,
         new PlaceholderCompiler() {
           @Override
-          public Expression compileToString(ExprRootNode node, Label reattachPoint) {
-            return exprCompiler
-                .compileSubExpression(node, detachState.createExpressionDetacher(reattachPoint))
-                .coerceToString();
-          }
-
-          @Override
-          public Expression compileToNumber(ExprRootNode node, Label reattachPoint) {
-            return exprCompiler
-                .compileSubExpression(node, detachState.createExpressionDetacher(reattachPoint))
-                .box()
-                .checkedCast(NumberData.class);
+          public Expression compileToSoyValueProvider(
+              ExprRootNode node, ExpressionDetacher expressionDetatcher) {
+            return expressionToSoyValueProviderCompiler.compile(node, expressionDetatcher);
           }
 
           @Override
@@ -1331,6 +1315,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
   /** Returns a {@link SoyNodeCompiler} identical to this one but with an alternate appendable. */
   private SoyNodeCompiler compilerWithNewAppendable(AppendableExpression appendable) {
     return new SoyNodeCompiler(
+        analysis,
         thisVar,
         registry,
         detachState,
