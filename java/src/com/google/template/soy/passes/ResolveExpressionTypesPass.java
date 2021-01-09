@@ -18,6 +18,7 @@ package com.google.template.soy.passes;
 
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static com.google.common.collect.ImmutableSortedSet.toImmutableSortedSet;
 import static com.google.template.soy.passes.CheckTemplateCallsPass.ARGUMENT_TYPE_MISMATCH;
 import static com.google.template.soy.types.SoyTypes.SAFE_PROTO_TO_SANITIZED_TYPE;
@@ -58,6 +59,8 @@ import com.google.template.soy.error.SoyErrors;
 import com.google.template.soy.exprtree.AbstractExprNodeVisitor;
 import com.google.template.soy.exprtree.AbstractOperatorNode;
 import com.google.template.soy.exprtree.AbstractParentExprNode;
+import com.google.template.soy.exprtree.AbstractVarDefn;
+import com.google.template.soy.exprtree.CallableExprBuilder;
 import com.google.template.soy.exprtree.DataAccessNode;
 import com.google.template.soy.exprtree.ExprEquivalence;
 import com.google.template.soy.exprtree.ExprNode;
@@ -130,6 +133,7 @@ import com.google.template.soy.soytree.SwitchCaseNode;
 import com.google.template.soy.soytree.SwitchDefaultNode;
 import com.google.template.soy.soytree.SwitchNode;
 import com.google.template.soy.soytree.TemplateNode;
+import com.google.template.soy.soytree.defn.ImportedVar;
 import com.google.template.soy.soytree.defn.LocalVar;
 import com.google.template.soy.soytree.defn.TemplateHeaderVarDefn;
 import com.google.template.soy.soytree.defn.TemplateStateVar;
@@ -141,6 +145,7 @@ import com.google.template.soy.types.LegacyObjectMapType;
 import com.google.template.soy.types.ListType;
 import com.google.template.soy.types.MapType;
 import com.google.template.soy.types.NullType;
+import com.google.template.soy.types.ProtoImportType;
 import com.google.template.soy.types.RecordType;
 import com.google.template.soy.types.SanitizedType;
 import com.google.template.soy.types.SoyProtoType;
@@ -149,7 +154,6 @@ import com.google.template.soy.types.SoyType.Kind;
 import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.SoyTypes;
 import com.google.template.soy.types.StringType;
-import com.google.template.soy.types.TypeRegistries;
 import com.google.template.soy.types.UnionType;
 import com.google.template.soy.types.UnknownType;
 import com.google.template.soy.types.VeDataType;
@@ -165,6 +169,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 import javax.annotation.Nullable;
 
 /**
@@ -221,8 +226,6 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       SoyErrorKind.of("Missing Soy type for node {0}.");
   private static final SoyErrorKind NOT_PROTO_INIT =
       SoyErrorKind.of("Expected a protocol buffer for the second argument.");
-  private static final SoyErrorKind NOT_A_PROTO_TYPE =
-      SoyErrorKind.of("''{0}'' is a ''{1}'', expected a protocol buffer.");
   private static final SoyErrorKind OR_OPERATOR_HAS_CONSTANT_OPERAND =
       SoyErrorKind.of(
           "Constant operand ''{0}'' used with ''or'' operator. "
@@ -238,8 +241,6 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
   private static final SoyErrorKind UNDEFINED_FIELD_FOR_RECORD_TYPE =
       SoyErrorKind.of(
           "Undefined field ''{0}'' for record type {1}.{2}", StyleAllowance.NO_PUNCTUATION);
-  private static final SoyErrorKind UNKNOWN_PROTO_TYPE =
-      SoyErrorKind.of("Unknown proto type ''{0}''.");
   private static final SoyErrorKind PROTO_FIELD_DOES_NOT_EXIST =
       SoyErrorKind.of(
           "Proto field ''{0}'' does not exist on {1}.{2}", StyleAllowance.NO_PUNCTUATION);
@@ -262,6 +263,8 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       SoyErrorKind.of("Using arithmetic operators on the Soy type ''{0}'' is illegal.");
   private static final SoyErrorKind INCORRECT_ARG_TYPE =
       SoyErrorKind.of("Function ''{0}'' called with incorrect arg type {1} (expected {2}).");
+  private static final SoyErrorKind INCORRECT_ARG_STYLE =
+      SoyErrorKind.of("Function called with incorrect arg style (positional or named).");
   private static final SoyErrorKind LOOP_VARIABLE_NOT_IN_SCOPE =
       SoyErrorKind.of("Function ''{0}'' must have a loop variable as its argument.");
   private static final SoyErrorKind STRING_LITERAL_REQUIRED =
@@ -291,6 +294,8 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       SoyErrorKind.of(
           "Could not find logging configuration for this element.{0}",
           StyleAllowance.NO_PUNCTUATION);
+  private static final SoyErrorKind VE_CONFLICTS_WITH_TYPE =
+      SoyErrorKind.of("VE name conflicts with import on line {0}.");
   private static final SoyErrorKind TEMPLATE_TYPE_PARAMETERS_CANNOT_USE_INFERRED_TYPES =
       SoyErrorKind.of(
           "Template type parameters cannot be inferred. Instead, explicitly declare the type.");
@@ -298,6 +303,8 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       SoyErrorKind.of(
           "Extensions fields in proto init functions must be imported symbols. Fully qualified"
               + " names are not allowed.");
+  private static final SoyErrorKind NOT_PROTO_MESSAGE =
+      SoyErrorKind.of("Only proto messages may be instantiated.");
 
   private final ErrorReporter errorReporter;
 
@@ -313,6 +320,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
   private SoyTypeRegistry typeRegistry;
   private TypeNodeConverter pluginTypeConverter;
   private final PluginResolver.Mode pluginResolutionMode;
+  private ImmutableMap<String, ImportedVar> importIndex;
 
   ResolveExpressionTypesPass(
       ErrorReporter errorReporter,
@@ -334,6 +342,10 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
     substitutions = null; // make sure substitutions don't leak across files
     exprEquivalence = new ExprEquivalence();
     typeRegistry = file.getSoyTypeRegistry();
+    importIndex =
+        file.getImports().stream()
+            .flatMap(i -> i.getIdentifiers().stream())
+            .collect(toImmutableMap(AbstractVarDefn::name, Function.identity(), (e1, e2) -> e1));
     pluginTypeConverter =
         TypeNodeConverter.builder(errorReporter)
             .setTypeRegistry(typeRegistry)
@@ -1006,8 +1018,6 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
     }
 
     private void finishMethodCallNode(MethodCallNode node, boolean nullSafe) {
-      boolean firstTime = !node.isMethodResolved();
-
       for (ExprNode child : node.getParams()) {
         visit(child);
       }
@@ -1021,21 +1031,6 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       }
 
       node.setSoyMethod(method);
-
-      if (firstTime
-          && method == BuiltinMethod.GET_EXTENSION
-          && node.getParams().size() == 1
-          && node.getParams().get(0).getKind() == ExprNode.Kind.GLOBAL_NODE) {
-        GlobalNode param = (GlobalNode) node.getParams().get(0);
-        Identifier resolvedName = typeRegistry.resolve(param.getIdentifier());
-        if (resolvedName != null) {
-          if (!resolvedName.equals(param.getIdentifier())) {
-            param.setName(resolvedName.identifier());
-          }
-        } else {
-          errorReporter.report(param.getSourceLocation(), PROTO_EXT_FQN);
-        }
-      }
 
       if (method instanceof BuiltinMethod) {
         node.setType(((BuiltinMethod) method).getReturnType(node, typeRegistry, errorReporter));
@@ -1439,6 +1434,10 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         node.setType(UnknownType.getInstance());
         return;
       }
+      if (node.getParamsStyle() == ParamsStyle.NAMED) {
+        errorReporter.report(node.getFunctionNameLocation(), INCORRECT_ARG_STYLE);
+        return;
+      }
       for (int i = 0; i < node.numChildren(); ++i) {
         checkArgType(node.getChild(i), matchedSignature.parameterTypes().get(i), node);
       }
@@ -1514,33 +1513,28 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
     }
 
     private void visitProtoInitFunction(FunctionNode node) {
-      String protoName = node.getFunctionName();
-      SoyType type =
-          TypeRegistries.getTypeOrProtoFqn(typeRegistry, errorReporter, node.getIdentifier());
-
-      if (type == null) {
-        errorReporter.report(node.getSourceLocation(), UNKNOWN_PROTO_TYPE, protoName);
+      SoyType soyType = node.getNameExpr().getType();
+      if (soyType.getKind() != Kind.PROTO_TYPE) {
+        errorReporter.report(node.getNameExpr().getSourceLocation(), NOT_PROTO_MESSAGE);
         node.setType(UnknownType.getInstance());
         return;
       }
-      if (type.getKind() != SoyType.Kind.PROTO) {
-        errorReporter.report(node.getSourceLocation(), NOT_A_PROTO_TYPE, protoName, type);
-        node.setType(UnknownType.getInstance());
-        return;
-      }
-      if (SAFE_PROTO_TO_SANITIZED_TYPE.containsKey(type.toString())) {
+      ProtoImportType type = (ProtoImportType) node.getNameExpr().getType();
+      String protoFqn = type.toString();
+      if (SAFE_PROTO_TO_SANITIZED_TYPE.containsKey(protoFqn)) {
         errorReporter.report(
             node.getSourceLocation(),
             TypeNodeConverter.SAFE_PROTO_TYPE,
-            SAFE_PROTO_TO_SANITIZED_TYPE.get(protoName),
-            protoName);
+            SAFE_PROTO_TO_SANITIZED_TYPE.get(protoFqn),
+            protoFqn);
         node.setType(UnknownType.getInstance());
         return;
       }
 
-      node.setType(type);
+      SoyProtoType protoType =
+          (SoyProtoType) typeRegistry.getProtoRegistry().getProtoType(protoFqn);
+      node.setType(protoType);
 
-      SoyProtoType protoType = (SoyProtoType) type;
       // TODO(user): Consider writing a soyProtoTypeImpl.getRequiredFields()
       Set<String> givenParams = new HashSet<>();
       ImmutableSet<String> fields = protoType.getFieldNames();
@@ -1584,11 +1578,9 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       // Replace the proto init node to have a list of the resolved param names.
       if (hasAliasedParams) {
         FunctionNode resolvedNode =
-            FunctionNode.newNamed(
-                node.getIdentifier(), resolvedIdentifiers, node.getSourceLocation());
+            CallableExprBuilder.builder(node).setParamNames(resolvedIdentifiers).buildFunction();
         resolvedNode.setSoyFunction(node.getSoyFunction());
         resolvedNode.setType(node.getType());
-        resolvedNode.addChildren(node.getChildren());
         node.getParent().replaceChild(node, resolvedNode);
         node = resolvedNode;
       }
@@ -1667,6 +1659,13 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
                 loggingConfig.allKnownIdentifiers(), node.getName().identifier()));
         type = UnknownType.getInstance();
       } else {
+        if (importIndex.containsKey(node.getName().identifier())) {
+          errorReporter.report(
+              node.getName().location(),
+              VE_CONFLICTS_WITH_TYPE,
+              importIndex.get(node.getName().identifier()).nameLocation().getBeginLine());
+        }
+
         if (config.getProtoName().isPresent()) {
           type = typeRegistry.getOrCreateVeType(config.getProtoName().get());
         } else {
@@ -1868,8 +1867,16 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         case VE:
         case VE_DATA:
         case MESSAGE:
+        case TEMPLATE_TYPE:
+        case TEMPLATE_MODULE:
           errorReporter.report(sourceLocation, DOT_ACCESS_NOT_SUPPORTED, baseType);
           return UnknownType.getInstance();
+        case PROTO_TYPE:
+          // May not be erased if other errors are present.
+          return UnknownType.getInstance();
+        case PROTO_EXTENSION:
+        case PROTO_MODULE:
+        case PROTO_ENUM_TYPE:
       }
       throw new AssertionError("unhandled kind: " + baseType.getKind());
     }
@@ -1972,6 +1979,12 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         case VE:
         case VE_DATA:
         case MESSAGE:
+        case PROTO_TYPE:
+        case PROTO_ENUM_TYPE:
+        case PROTO_EXTENSION:
+        case PROTO_MODULE:
+        case TEMPLATE_TYPE:
+        case TEMPLATE_MODULE:
           errorReporter.report(baseLocation, BRACKET_ACCESS_NOT_SUPPORTED, baseType);
           return UnknownType.getInstance();
       }
@@ -2047,6 +2060,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
           checkArgIsStringLiteral(node, 0, builtinFunction);
           node.setType(UnknownType.getInstance());
           break;
+        case IS_PARAM_SET:
         case DEBUG_SOY_TEMPLATE_INFO:
           node.setType(BoolType.getInstance());
           break;
@@ -2074,6 +2088,11 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
           break;
         case PROTO_INIT:
           visitProtoInitFunction(node);
+          break;
+        case TEMPLATE:
+          // Any TEMPLATE that reaches here without having been rewritten to TemplateLiteralNode has
+          // had some error reported already.
+          node.setType(UnknownType.getInstance());
           break;
       }
     }
@@ -2201,7 +2220,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
           && ((LocalVar) ((VarRefNode) loopVariable).getDefnDecl()).declaringNode()
               instanceof ForNonemptyNode)) {
         errorReporter.report(
-            fn.getSourceLocation(), LOOP_VARIABLE_NOT_IN_SCOPE, fn.getFunctionName());
+            fn.getSourceLocation(), LOOP_VARIABLE_NOT_IN_SCOPE, fn.getStaticFunctionName());
       }
     }
 
@@ -2218,7 +2237,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         errorReporter.report(
             arg.getSourceLocation(),
             INCORRECT_ARG_TYPE,
-            node.getFunctionName(),
+            node.getStaticFunctionName(),
             arg.getType(),
             expectedType);
         return false;
@@ -2385,12 +2404,12 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       // Handle 'isNull(<expr>)' and 'isNonnull(<expr>)'.
       if (node.numChildren() != 1) {
         return;
-      } else if (node.getFunctionName().equals("isNonnull")) {
+      } else if ("isNonnull".equals(node.getFunctionName())) {
         ExprEquivalence.Wrapper wrappedExpr = exprEquivalence.wrap(node.getChild(0));
         positiveTypeConstraints.put(
             wrappedExpr, SoyTypes.tryRemoveNull(wrappedExpr.get().getType()));
         negativeTypeConstraints.put(wrappedExpr, NullType.getInstance());
-      } else if (node.getFunctionName().equals("isNull")) {
+      } else if ("isNull".equals(node.getFunctionName())) {
         ExprEquivalence.Wrapper wrappedExpr = exprEquivalence.wrap(node.getChild(0));
         positiveTypeConstraints.put(wrappedExpr, NullType.getInstance());
         negativeTypeConstraints.put(

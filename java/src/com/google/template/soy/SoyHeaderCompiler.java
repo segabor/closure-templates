@@ -22,7 +22,6 @@ import static java.util.stream.Collectors.toList;
 import com.google.common.collect.Iterables;
 import com.google.template.soy.css.CssMetadata;
 import com.google.template.soy.css.CssRegistry;
-import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.soytree.CallBasicNode;
@@ -115,7 +114,6 @@ final class SoyHeaderCompiler extends AbstractSoyCompiler {
     // We need to remove duplicates and preserve order, so collect into maps first
     Set<String> requiredCssNames = new LinkedHashSet<>();
     Set<String> requiredCssPaths = new LinkedHashSet<>();
-    Set<String> cssClassNames = new LinkedHashSet<>();
     for (SoyFileNode file : fileSet.getChildren()) {
       requiredCssNames.addAll(file.getRequiredCssNamespaces());
       for (SoyFileNode.CssPath cssPath : file.getRequiredCssPaths()) {
@@ -125,13 +123,12 @@ final class SoyHeaderCompiler extends AbstractSoyCompiler {
       }
       for (TemplateNode template : file.getTemplates()) {
         requiredCssNames.addAll(template.getRequiredCssNamespaces());
-        for (FunctionNode fn :
-            SoyTreeUtils.getAllFunctionInvocations(fileSet, BuiltinFunction.CSS)) {
-          cssClassNames.add(((StringNode) Iterables.getLast(fn.getChildren())).getValue());
-        }
       }
     }
-
+    Set<String> cssClassNames = new LinkedHashSet<>();
+    SoyTreeUtils.allFunctionInvocations(fileSet, BuiltinFunction.CSS)
+        .forEach(
+            fn -> cssClassNames.add(((StringNode) Iterables.getLast(fn.getChildren())).getValue()));
     return CssMetadata.newBuilder()
         .addAllRequireCssNames(requiredCssNames)
         .addAllRequireCssPaths(requiredCssPaths)

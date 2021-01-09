@@ -269,13 +269,17 @@ HTML templates, strict HTML is required for templates used in expressions.
 Parameters may be bound to template-type expressions using the
 [`.bind()`](functions.md#bind) method.
 
-Template types may be invoked using the normal `{call}` syntax, with any unset
-parameters passed as parameters.
+Templates passed as parameters may be invoked using the normal `{call}` syntax
+or element composition syntax, with any unset parameters passed as parameters.
 
 Template type declarations consist of a list of named parameters, their
 corresponding types, and the return type of the template.
 
 For example:
+
+<section class="polyglot">
+
+###### Call Command {.pg-tab}
 
 ```soy
 {template .foo}
@@ -287,6 +291,17 @@ For example:
   {/call}
 {/template}
 ```
+
+###### Element Composition {.pg-tab}
+
+```soy
+{template .foo}
+  {@param tpl: (count: int, greeting: string) => html<?>}
+
+  <{$tpl.bind(record(count:5, greeting: 'Hello'))} />
+```
+
+</section>
 
 For more information, see
 [Passing Templates as Parameters](template-types.md#how-do-you-pass-in-a-template)

@@ -69,8 +69,9 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
         return visitListComprehensionVar(node, (ComprehensionVarDefn) defn);
       case IMPORT_VAR:
         throw new IllegalStateException("import vars are not implemented yet");
+      case TEMPLATE:
       case UNDECLARED:
-        throw new RuntimeException("undeclared params are not supported by jbcsrc");
+        throw new RuntimeException(defn.kind() + " are not supported by jbcsrc");
     }
     throw new AssertionError(defn.kind());
   }
@@ -82,6 +83,8 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
     if (function instanceof BuiltinFunction) {
       BuiltinFunction builtinFn = (BuiltinFunction) function;
       switch (builtinFn) {
+        case IS_PARAM_SET:
+          return visitIsSetFunction(node);
         case IS_FIRST:
           return visitIsFirstFunction(node);
         case IS_LAST:
@@ -112,6 +115,7 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
         case UNKNOWN_JS_GLOBAL:
         case LEGACY_DYNAMIC_TAG:
         case V1_EXPRESSION:
+        case TEMPLATE:
           // V1 expressions and unknownJsGlobals should not exist in jbcsrc
           throw new AssertionError();
       }
@@ -137,6 +141,10 @@ abstract class EnhancedAbstractExprNodeVisitor<T> extends AbstractReturningExprN
   }
 
   T visitIsFirstFunction(FunctionNode node) {
+    return visitExprNode(node);
+  }
+
+  T visitIsSetFunction(FunctionNode node) {
     return visitExprNode(node);
   }
 

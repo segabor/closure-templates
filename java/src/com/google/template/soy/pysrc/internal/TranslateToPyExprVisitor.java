@@ -565,7 +565,7 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
     } else if (soyFunction instanceof SoyPythonSourceFunction) {
       return pluginValueFactory.applyFunction(
           node.getSourceLocation(),
-          node.getFunctionName(),
+          node.getStaticFunctionName(),
           (SoyPythonSourceFunction) soyFunction,
           visitChildren(node));
     } else if (soyFunction instanceof SoyPySrcFunction) {
@@ -576,13 +576,15 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
       return new PyStringExpr("'" + ((LoggingFunction) soyFunction).getPlaceholder() + "'");
     } else {
       errorReporter.report(
-          node.getSourceLocation(), SOY_PY_SRC_FUNCTION_NOT_FOUND, node.getFunctionName());
+          node.getSourceLocation(), SOY_PY_SRC_FUNCTION_NOT_FOUND, node.getStaticFunctionName());
       return ERROR;
     }
   }
 
   private PyExpr visitNonPluginFunction(FunctionNode node, BuiltinFunction nonpluginFn) {
     switch (nonpluginFn) {
+      case IS_PARAM_SET:
+        return visitIsSetFunction(node);
       case IS_FIRST:
         return visitForEachFunction(node, "__isFirst");
       case IS_LAST:
@@ -617,6 +619,7 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
         return NONE;
       case MSG_WITH_ID:
       case REMAINDER:
+      case TEMPLATE:
         // should have been removed earlier in the compiler
         throw new AssertionError();
       case PROTO_INIT:
@@ -629,6 +632,11 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
   private PyExpr visitForEachFunction(FunctionNode node, String suffix) {
     String varName = ((VarRefNode) node.getChild(0)).getNameWithoutLeadingDollar();
     return localVarExprs.getVariableExpression(varName + suffix);
+  }
+
+  private PyExpr visitIsSetFunction(FunctionNode node) {
+    String varName = ((VarRefNode) node.getChild(0)).getNameWithoutLeadingDollar();
+    return new PyFunctionExprBuilder("runtime.is_set").addArg(varName).addArg(DATA).asPyExpr();
   }
 
   private PyExpr assertNotNull(ExprNode node) {

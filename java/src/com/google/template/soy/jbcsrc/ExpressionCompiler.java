@@ -76,6 +76,7 @@ import com.google.template.soy.exprtree.OperatorNodes.NullCoalescingOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.OrOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.PlusOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.TimesOpNode;
+import com.google.template.soy.exprtree.ProtoEnumValueNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.TemplateLiteralNode;
@@ -348,13 +349,21 @@ final class ExpressionCompiler {
     return exec.withSource(exec.labelStart(reattachPoint));
   }
 
+  static boolean requiresDetach(TemplateAnalysis analysis, ExprNode node) {
+    return new RequiresDetachVisitor(analysis).exec(node);
+  }
+
+  boolean requiresDetach(ExprNode node) {
+    return requiresDetach(analysis, node);
+  }
+
   /**
    * Compiles the given expression tree to a sequence of bytecode if it can be done without
    * generating any detach operations.
    */
   Optional<SoyExpression> compileWithNoDetaches(ExprNode node) {
     checkNotNull(node);
-    if (new RequiresDetachVisitor(analysis).exec(node)) {
+    if (requiresDetach(node)) {
       return Optional.empty();
     }
     return Optional.of(
@@ -443,6 +452,11 @@ final class ExpressionCompiler {
     @Override
     protected final SoyExpression visitStringNode(StringNode node) {
       return SoyExpression.forString(constant(node.getValue(), fields));
+    }
+
+    @Override
+    protected SoyExpression visitProtoEnumValueNode(ProtoEnumValueNode node) {
+      return SoyExpression.forInt(BytecodeUtils.constant(node.getValue()));
     }
 
     @Override
@@ -810,11 +824,20 @@ final class ExpressionCompiler {
 
     @Override
     protected final SoyExpression visitModOpNode(ModOpNode node) {
-      // If the underlying expression is not an int, then this will throw a SoyDataExpression at
-      // runtime.  This is how the current tofu works.
-      // If the expression is known not to be an int, then this will throw an exception at compile
-      // time.  This should generally be handled by the type checker. See b/19833234
-      return applyBinaryIntOperator(Opcodes.LREM, visit(node.getChild(0)), visit(node.getChild(1)));
+      SoyExpression left = visit(node.getChild(0));
+      SoyExpression right = visit(node.getChild(1));
+      // They are both definitely numbers
+      if (left.assignableToNullableNumber() && right.assignableToNullableNumber()) {
+        if (left.assignableToNullableInt() && right.assignableToNullableInt()) {
+          return applyBinaryIntOperator(Opcodes.LREM, left, right);
+        }
+        // if either is definitely a float, then we are definitely coercing so just do it now
+        if (left.assignableToNullableFloat() || right.assignableToNullableFloat()) {
+          return applyBinaryFloatOperator(Opcodes.DREM, left, right);
+        }
+      }
+      return SoyExpression.forSoyValue(
+          SoyTypes.NUMBER_TYPE, MethodRef.RUNTIME_MOD.invoke(left.box(), right.box()));
     }
 
     private static SoyExpression applyBinaryIntOperator(
@@ -971,7 +994,8 @@ final class ExpressionCompiler {
           ternary(
               condition,
               trueBranch.box().checkedCast(boxedRuntimeType),
-              falseBranch.box().checkedCast(boxedRuntimeType)));
+              falseBranch.box().checkedCast(boxedRuntimeType),
+              boxedRuntimeType));
     }
 
     @Override
@@ -1363,6 +1387,15 @@ final class ExpressionCompiler {
     }
 
     @Override
+    SoyExpression visitIsSetFunction(FunctionNode node) {
+      VarRefNode varRef = (VarRefNode) node.getChild(0);
+      return SoyExpression.forBool(
+          parameters
+              .getParamsRecord()
+              .invoke(MethodRef.RUNTIME_HAS_FIELD, constant(varRef.getNameWithoutLeadingDollar())));
+    }
+
+    @Override
     SoyExpression visitIsLastFunction(FunctionNode node) {
       VarRefNode varRef = (VarRefNode) node.getChild(0);
       LocalVarNode foreach = ((LocalVar) varRef.getDefnDecl()).declaringNode();
@@ -1521,7 +1554,7 @@ final class ExpressionCompiler {
       Expression legacyFunctionRuntimeExpr =
           parameters
               .getRenderContext()
-              .getPluginInstance(node.getFunctionName())
+              .getPluginInstance(node.getStaticFunctionName())
               .checkedCast(LegacyFunctionAdapter.class);
       Expression list = SoyExpression.asBoxedList(args);
       // Most soy functions don't have return types, but if they do we should enforce it
@@ -1688,6 +1721,7 @@ final class ExpressionCompiler {
           return false;
         case UNDECLARED:
         case IMPORT_VAR:
+        case TEMPLATE:
           break;
       }
       throw new AssertionError();

@@ -41,6 +41,7 @@ import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.VarDefn;
 import com.google.template.soy.exprtree.VarRefNode;
+import com.google.template.soy.logging.LoggingFunction;
 import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.shared.internal.BuiltinMethod;
 import com.google.template.soy.sharedpasses.render.RenderException;
@@ -234,13 +235,12 @@ public final class SimplifyVisitor {
      */
     private List<RefAndHolder> getAllRefs(TemplateNode template) {
       List<RefAndHolder> refs = new ArrayList<>();
-      for (ExprHolderNode holder : SoyTreeUtils.getAllNodesOfType(template, ExprHolderNode.class)) {
-        for (ExprRootNode root : holder.getExprList()) {
-          for (VarRefNode ref : SoyTreeUtils.getAllNodesOfType(root, VarRefNode.class)) {
-            refs.add(new RefAndHolder(ref, holder));
-          }
-        }
-      }
+      SoyTreeUtils.allNodesOfType(template, ExprHolderNode.class)
+          .forEach(
+              holder ->
+                  holder.getExprList().stream()
+                      .flatMap(root -> SoyTreeUtils.allNodesOfType(root, VarRefNode.class))
+                      .forEach(ref -> refs.add(new RefAndHolder(ref, holder))));
       return refs;
     }
 
@@ -542,9 +542,19 @@ public final class SimplifyVisitor {
       }
     }
 
+    private boolean containsLoggingFunction(RenderUnitNode node) {
+      return SoyTreeUtils.allNodesOfType(node, FunctionNode.class)
+          .anyMatch(n -> n.getSoyFunction() instanceof LoggingFunction);
+    }
+
     @Nullable
     private ExprNode rewriteContentNodeAsExpression(RenderUnitNode renderUnitNode) {
       if (renderUnitNode.getContentKind() != SanitizedContentKind.TEXT) {
+        return null;
+      }
+      // Logging functions don't work properly unless they are a direct child of a PrintNode. So,
+      // any content node containing a logging function cannot be rewritten to an expression.
+      if (containsLoggingFunction(renderUnitNode)) {
         return null;
       }
       // collect as list and then concat at the end.  Adding a node as a child of the PlusOpNode

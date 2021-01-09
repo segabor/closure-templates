@@ -27,9 +27,7 @@ import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.testing.KvPair;
-import com.google.template.soy.testing.SharedTestUtils;
 import com.google.template.soy.testing.SoyFileSetParserBuilder;
-import com.google.template.soy.types.SoyTypeRegistry;
 import java.util.Set;
 import org.junit.Test;
 import org.junit.runner.RunWith;
@@ -81,6 +79,11 @@ public final class ExprEquivalenceTest {
         "  KvPair(key: 'a', value: 'b'),",
         "  KvPair(value: 'b', key: 'a')",
         ")}");
+    runTest(
+        "{assertNotEquals(",
+        "  KvPair(key: 'a', value: 'b'),",
+        "  KvPair(key: 'b', value: 'b')",
+        ")}");
     // TODO(b/78775420): randomInt isn't a pure function so it shouldn't ever be equivalent :/
     // fixing this behavior requires a cleanup.
     runTest("{assertEquals(randomInt(10), randomInt(10))}");
@@ -100,22 +103,33 @@ public final class ExprEquivalenceTest {
     runTest("{@param rec: [a: string, b: [a: string]]}", "{assertNotEquals($rec.a, $rec?.a)}");
   }
 
-  private static final SoyTypeRegistry TYPE_REGISTRY =
-      SharedTestUtils.importing(KvPair.getDescriptor());
-
   public void runTest(String... templateSourceLines) {
+    runTestForNormal(templateSourceLines);
+    runTestForXmbGen(templateSourceLines);
+  }
+
+  public void runTestForNormal(String... templateSourceLines) {
+    runTestInternal(/* disableAllTypeChecking= */ false, templateSourceLines);
+  }
+
+  public void runTestForXmbGen(String... templateSourceLines) {
+    // XMB generation runs with disableAllTypeChecking but depends heavily on ExprEquivalence.
+    runTestInternal(/* disableAllTypeChecking= */ true, templateSourceLines);
+  }
+
+  public void runTestInternal(boolean disableAllTypeChecking, String... templateSourceLines) {
     SoyFileSetNode soyTree =
-        SoyFileSetParserBuilder.forFileContents(
-                "{namespace ns}\n"
-                    + "{template .aaa}\n"
+        SoyFileSetParserBuilder.forTemplateAndImports(
+                "{template .aaa}\n"
                     + "  "
                     + Joiner.on("\n   ").join(templateSourceLines)
                     + "\n"
-                    + "{/template}\n")
+                    + "{/template}\n",
+                KvPair.getDescriptor())
             .addSoyFunction(ASSERT_REFLEXIVE_FUNCTION)
             .addSoyFunction(ASSERT_EQUALS_FUNCTION)
             .addSoyFunction(ASSERT_NOT_EQUALS_FUNCTION)
-            .typeRegistry(TYPE_REGISTRY)
+            .disableAllTypeChecking(disableAllTypeChecking)
             .parse()
             .fileSet();
     for (FunctionNode fn : SoyTreeUtils.getAllNodesOfType(soyTree, FunctionNode.class)) {

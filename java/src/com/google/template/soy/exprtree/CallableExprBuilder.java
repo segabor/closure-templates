@@ -24,7 +24,12 @@ import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.exprtree.ExprNode.CallableExpr.ParamsStyle;
 import java.util.List;
 
-/** Builds {@link MethodCallNode} and {@link FunctionNode} and converts between the two. */
+/**
+ * Builds {@link MethodCallNode} and {@link FunctionNode} and converts between the two.
+ *
+ * <p>Note that calling {@link #buildFunction()} or {@link #buildMethod()} will mutate the nodes
+ * passed to {@link #builder(FunctionNode)} or {@link #builder(MethodCallNode)}.
+ */
 public final class CallableExprBuilder {
 
   private Identifier identifier;
@@ -34,6 +39,7 @@ public final class CallableExprBuilder {
   private List<Point> commaLocations;
   private boolean isNullSafe;
   private ExprNode target;
+  private ExprNode functionExpr;
 
   public static CallableExprBuilder builder() {
     return new CallableExprBuilder();
@@ -44,12 +50,17 @@ public final class CallableExprBuilder {
   }
 
   public static CallableExprBuilder builder(FunctionNode from) {
-    return new CallableExprBuilder().fillFrom(from);
+    CallableExprBuilder builder = new CallableExprBuilder().fillFrom(from);
+    if (!from.hasStaticName()) {
+      builder.setFunctionExpr(from.getNameExpr());
+    }
+    return builder;
   }
 
   private CallableExprBuilder() {}
 
   private CallableExprBuilder fillFrom(ExprNode.CallableExpr from) {
+    setSourceLocation(from.getSourceLocation());
     setIdentifier(from.getIdentifier());
     setParamValues(from.getParams());
     setCommaLocations(from.getCommaLocations().orElse(null));
@@ -64,6 +75,11 @@ public final class CallableExprBuilder {
 
   public CallableExprBuilder setIdentifier(Identifier identifier) {
     this.identifier = identifier;
+    return this;
+  }
+
+  public CallableExprBuilder setFunctionExpr(ExprNode functionExpr) {
+    this.functionExpr = functionExpr;
     return this;
   }
 
@@ -133,6 +149,7 @@ public final class CallableExprBuilder {
         new FunctionNode(
             sourceLocation,
             identifier,
+            functionExpr,
             buildParamsStyle(),
             paramNames != null ? ImmutableList.copyOf(paramNames) : ImmutableList.of(),
             commaLocations != null ? ImmutableList.copyOf(commaLocations) : null);

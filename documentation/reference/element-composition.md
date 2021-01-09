@@ -1,4 +1,4 @@
-# HTML-tag templates
+# Element Composition
 
 
 [TOC]
@@ -19,7 +19,7 @@ The following are valid HTML-tag templates:
 {/template}
 
 {template example2 kind="html<div>"}
-  <{example3()></> // Element composition call
+  <{example3()}></> // Element composition call
 {/template}
 ```
 
@@ -140,7 +140,7 @@ parameters must be provided with the
 {/template}
 ```
 
-#### Pass `html` parameters as <parameter>. {#param}
+#### Pass `html` parameters as `<parameter>`. {#param}
 
 Parameters of type `html` can be passed in as a `<parameter>` node.
 
@@ -268,6 +268,44 @@ except `class`.
 
 ```soy
 {template caller kind="html<div>"}
-  <{caller()} data-foo="3"></div>
+  <{example()} data-foo="3"></>
 {/template}
+```
+
+#### Incremental DOM {#incrementaldom}
+
+Element composition shares many of the properties that `calls` do.
+
+Keys can be represented using the `key` command.
+
+```soy
+{template a}
+  <{foo()} {key 0}></>
+{/template}
+```
+
+`{skip}` does not work on element composition calls.
+
+```soy {.bad}
+{template a}
+  <{foo()} {skip}></> // not allowed
+{/template}
+```
+
+In a Soy element, you can use element composition to call a Soy template. You
+cannot use element composition to call another Soy element.
+
+```soy
+
+{template base kind="html<?>"}
+  <div></div>
+{/template}
+
+{element a kind="html<?>"}
+  <{base()} /> // This is allowed
+{/element}
+
+{element b}
+  <{a()} /> // This is not
+{/element}
 ```

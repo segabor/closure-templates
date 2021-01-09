@@ -83,6 +83,7 @@ import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import java.io.IOException;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -271,8 +272,7 @@ public class BytecodeCompilerTest {
                 .create(ParamStore.EMPTY_INSTANCE, ParamStore.EMPTY_INSTANCE)
                 .render(builder, context))
         .isEqualTo(RenderResult.done());
-    String string = builder.toString();
-    return string;
+    return builder.toString();
   }
 
   @Test
@@ -453,6 +453,55 @@ public class BytecodeCompilerTest {
 
     assertThat(render(templates, ParamStore.EMPTY_INSTANCE, "ns.msg")).isEqualTo("foobar");
   }
+
+  // Regression test for a bug where we would generate extra detach states in message placeholders
+  // because a node copy caused our TemplateAnalysis queries to fail.
+  @Test
+  public void testMsgPlaceholdersUsesTemplateAnalysisOnPlaceholders() throws Exception {
+    CompiledTemplates templates =
+        TemplateTester.compileFile(
+            "{namespace ns}",
+            "",
+            "{template .msg kind='text'}",
+            "  {@param name:string}",
+            "  {msg desc='...'}",
+            "    <a href='/'>Hello {$name + '' phname='FOO'}</a>",
+            "  {/msg}",
+            "{/template}");
+    Class<? extends CompiledTemplate> templateClass =
+        templates.getTemplateData("ns.msg").templateClass();
+    Class<?> innerClass =
+        Iterables.getOnlyElement(Arrays.asList(templateClass.getDeclaredClasses()));
+    assertThat(innerClass.getSimpleName()).isEqualTo("ph_FOO");
+    assertThat(innerClass.getDeclaredFields()).hasLength(2);
+    // The placeholder inner class requires a `$state` field because `$name` may not be resolved
+    // yet.
+    assertThat(innerClass.getDeclaredField("$state").getType()).isEqualTo(int.class);
+    assertThat(innerClass.getDeclaredField("$template").getType())
+        .isAssignableTo(CompiledTemplate.class);
+    templates =
+        TemplateTester.compileFile(
+            "{namespace ns}",
+            "",
+            "{template .msg  kind='text'}",
+            "  {@param name:string}",
+            "  {if $name}",
+            "    {msg desc='...'}",
+            "      <a href='/'>Hello {$name + '' phname='FOO'}</a>",
+            "    {/msg}",
+            "  {/if}",
+            "{/template}");
+    templateClass = templates.getTemplateData("ns.msg").templateClass();
+    innerClass = Iterables.getOnlyElement(Arrays.asList(templateClass.getDeclaredClasses()));
+    assertThat(innerClass.getSimpleName()).isEqualTo("ph_FOO");
+    // The placeholder inner class doesn't require a `$state` field because `$name` is definetely
+    // already resolved.
+    assertThat(innerClass.getDeclaredFields()).hasLength(1);
+    assertThat(innerClass.getDeclaredField("$template").getType())
+        .isAssignableTo(CompiledTemplate.class);
+  }
+
+
 
   private static TemplateMetadata getTemplateMetadata(CompiledTemplates templates, String name) {
     return templates.getTemplateData(name).templateClass().getAnnotation(TemplateMetadata.class);
@@ -929,7 +978,6 @@ public class BytecodeCompilerTest {
 
     TemplateMetadata templateMetadata = templateClass.getAnnotation(TemplateMetadata.class);
     assertThat(templateMetadata.contentKind()).isEqualTo(ContentKind.HTML);
-    assertThat(templateInstance.kind()).isEqualTo(ContentKind.HTML);
     assertThat(templateMetadata.injectedParams()).isEmpty();
     assertThat(templateMetadata.callees()).isEmpty();
     assertThat(templateMetadata.delCallees()).isEmpty();
@@ -963,7 +1011,7 @@ public class BytecodeCompilerTest {
     } catch (IllegalArgumentException expected) {
     }
     // we can still access metadata
-    assertThat(templates.getTemplateContentKind("ns.foo")).isEqualTo(ContentKind.HTML);
+    assertThat(templates.getTemplateData("ns.foo").kind()).isEqualTo(ContentKind.HTML);
   }
 
   @Test
@@ -1260,15 +1308,13 @@ public class BytecodeCompilerTest {
   private CompiledTemplates compileFiles(String... soyFileContents) {
     SoyFileSetParser parser = SoyFileSetParserBuilder.forFileContents(soyFileContents).build();
     ParseResult parseResult = parser.parse();
-    CompiledTemplates templates =
-        BytecodeCompiler.compile(
-                parseResult.registry(),
-                parseResult.fileSet(),
-                ErrorReporter.exploding(),
-                parser.soyFileSuppliers(),
-                parser.typeRegistry())
-            .get();
-    return templates;
+    return BytecodeCompiler.compile(
+            parseResult.registry(),
+            parseResult.fileSet(),
+            ErrorReporter.exploding(),
+            parser.soyFileSuppliers(),
+            parser.typeRegistry())
+        .get();
   }
 
   @Test
@@ -1409,7 +1455,7 @@ public class BytecodeCompilerTest {
                         "{template .publicTemplate}",
                         "{@param renderTemplate: bool = true}",
                         "{let $tpl: $renderTemplate ? template(loader1.publicTemplate1) :"
-                            + " template(.dummyTemplate) /}",
+                            + " template(dummyTemplate) /}",
                         "L2T",
                         "{sp}{call $tpl /}",
                         "{sp}{call $tpl /}",

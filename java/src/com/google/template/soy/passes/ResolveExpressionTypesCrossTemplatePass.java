@@ -54,6 +54,7 @@ import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.defn.TemplateHeaderVarDefn;
+import com.google.template.soy.types.ImportType;
 import com.google.template.soy.types.LegacyObjectMapType;
 import com.google.template.soy.types.ListType;
 import com.google.template.soy.types.MapType;
@@ -92,10 +93,6 @@ import java.util.stream.Collectors;
  */
 @RunAfter(ResolveExpressionTypesPass.class)
 final class ResolveExpressionTypesCrossTemplatePass implements CompilerFileSetPass {
-
-  private static final SoyErrorKind ONLY_BASIC_TEMPLATES_ALLOWED =
-      SoyErrorKind.of(
-          "Only basic templates are allowed in expressions, but found template of kind: `{0}`.");
 
   private static final SoyErrorKind ELEMENT_CALL_TO_HTML_TEMPLATE =
       SoyErrorKind.of(
@@ -278,35 +275,35 @@ final class ResolveExpressionTypesCrossTemplatePass implements CompilerFileSetPa
   private void handleDynamicTagAndCheckForLegacyDynamicTags(SoyFileNode file) {
     Set<FunctionNode> correctlyPlaced = new HashSet<>();
     Set<HtmlTagNode> allowedSlots = new HashSet<>();
-    for (HtmlTagNode tagNode :
-        SoyTreeUtils.getAllMatchingNodesOfType(
-            file, HtmlTagNode.class, (tag) -> !tag.getTagName().isStatic())) {
-      SoyType type = tagNode.getTagName().getDynamicTagName().getExpr().getType();
-      if (type.isAssignableFromStrict(StringType.getInstance())) {
-        handleDynamicTag(tagNode, correctlyPlaced);
-      } else if (!tagNode.getTagName().isTemplateCall()
-          && !type.isAssignableFromStrict(UnknownType.getInstance())) {
-        errorReporter.report(
-            tagNode.getSourceLocation(),
-            ELEMENT_CALL_TO_HTML_TEMPLATE,
-            tagNode.getTagName().getDynamicTagName().getExpr().getType());
-      } else {
-        validateTemplateCall((HtmlOpenTagNode) tagNode, allowedSlots::add);
-      }
-    }
+    SoyTreeUtils.allNodesOfType(file, HtmlTagNode.class)
+        .filter(tag -> !tag.getTagName().isStatic())
+        .forEach(
+            tagNode -> {
+              SoyType type = tagNode.getTagName().getDynamicTagName().getExpr().getType();
+              if (type.isAssignableFromStrict(StringType.getInstance())) {
+                handleDynamicTag(tagNode, correctlyPlaced);
+              } else if (!tagNode.getTagName().isTemplateCall()
+                  && !type.isAssignableFromStrict(UnknownType.getInstance())) {
+                errorReporter.report(
+                    tagNode.getSourceLocation(),
+                    ELEMENT_CALL_TO_HTML_TEMPLATE,
+                    tagNode.getTagName().getDynamicTagName().getExpr().getType());
+              } else {
+                validateTemplateCall((HtmlOpenTagNode) tagNode, allowedSlots::add);
+              }
+            });
+
     // No other uses of legacyDynamicTag are allowed.
-    for (FunctionNode fn :
-        SoyTreeUtils.getAllFunctionInvocations(file, BuiltinFunction.LEGACY_DYNAMIC_TAG)) {
-      if (!correctlyPlaced.contains(fn)) {
-        errorReporter.report(fn.getSourceLocation(), ILLEGAL_USE);
-      }
-    }
-    for (HtmlTagNode tagNode :
-        SoyTreeUtils.getAllMatchingNodesOfType(
-            file, HtmlOpenTagNode.class, (tag) -> tag.isSlot() && !allowedSlots.contains(tag))) {
-      errorReporter.report(
-          tagNode.getSourceLocation(), SLOTS_ONLY_DIRECT_DESCENDENTS_OF_TEMPLATE_CALL);
-    }
+    SoyTreeUtils.allFunctionInvocations(file, BuiltinFunction.LEGACY_DYNAMIC_TAG)
+        .filter(fn -> !correctlyPlaced.contains(fn))
+        .forEach(fn -> errorReporter.report(fn.getSourceLocation(), ILLEGAL_USE));
+
+    SoyTreeUtils.allNodesOfType(file, HtmlOpenTagNode.class)
+        .filter((tag) -> tag.isSlot() && !allowedSlots.contains(tag))
+        .forEach(
+            tagNode ->
+                errorReporter.report(
+                    tagNode.getSourceLocation(), SLOTS_ONLY_DIRECT_DESCENDENTS_OF_TEMPLATE_CALL));
   }
 
   private void validateTemplateCall(HtmlOpenTagNode openTagNode, Consumer<HtmlTagNode> consumer) {
@@ -397,7 +394,7 @@ final class ResolveExpressionTypesCrossTemplatePass implements CompilerFileSetPa
     }
     if (Parameter.isValidAttrName(name)) {
       String paramName = Parameter.attrToParamName(name);
-      if (!addAttr.apply(paramName)) {
+      if (attr.getParent() instanceof HtmlOpenTagNode && !addAttr.apply(paramName)) {
         errorReporter.report(loc, DUPLICATE_PARAM, name);
         return;
       } else if (!hasAllAttributes) {
@@ -486,24 +483,33 @@ final class ResolveExpressionTypesCrossTemplatePass implements CompilerFileSetPa
     TagName name = tagNode.getTagName();
     PrintNode printNode = name.getDynamicTagName();
     ExprNode exprNode = printNode.getExpr().getRoot();
-    if (exprNode.getKind() == Kind.FUNCTION_NODE
-        && ((FunctionNode) exprNode).getSoyFunction() == BuiltinFunction.LEGACY_DYNAMIC_TAG) {
-      FunctionNode functionNode = (FunctionNode) exprNode;
-      if (functionNode.numChildren() == 1) {
-        printNode.getExpr().clearChildren();
-        printNode.getExpr().addChild(functionNode.getChild(0));
-      } else {
-        // ResolvePluginsPass will tag this as an error since function arity is 1.
+    boolean needsWrap = true;
+    if (exprNode.getKind() == Kind.FUNCTION_NODE) {
+      needsWrap = false;
+      if (((FunctionNode) exprNode).getSoyFunction() == BuiltinFunction.LEGACY_DYNAMIC_TAG) {
+        FunctionNode functionNode = (FunctionNode) exprNode;
+        if (functionNode.numChildren() == 1) {
+          printNode.getExpr().clearChildren();
+          printNode.getExpr().addChild(functionNode.getChild(0));
+        }
+        correctlyPlaced.add(functionNode);
       }
-      correctlyPlaced.add(functionNode);
     } else if (!tagNode.getTagName().isTemplateCall()) {
-      if (printNode.getExpr().getType() == UnknownType.getInstance()
-          && exprNode.getKind() == Kind.METHOD_CALL_NODE
-          && ((MethodCallNode) exprNode).getSoyMethod() == BuiltinMethod.BIND) {
-        // Bind method + unknown type indicates an error already reported here.
-        return;
+      if (printNode.getExpr().getType() == UnknownType.getInstance()) {
+        if (exprNode instanceof MethodCallNode
+            && ((MethodCallNode) exprNode).isMethodResolved()
+            && ((MethodCallNode) exprNode).getSoyMethod() == BuiltinMethod.BIND) {
+          // Bind method + unknown type indicates an error already reported here.
+          return;
+        }
+        // Same for template literal node. This is a Soy element in the root of an element.
+        if (exprNode instanceof TemplateLiteralNode) {
+          return;
+        }
       }
-      errorReporter.report(printNode.getExpr().getSourceLocation(), NEED_WRAP);
+      if (needsWrap) {
+        errorReporter.report(printNode.getExpr().getSourceLocation(), NEED_WRAP);
+      }
     }
   }
 
@@ -571,17 +577,6 @@ final class ResolveExpressionTypesCrossTemplatePass implements CompilerFileSetPa
         return UnknownType.getInstance();
       }
       TemplateType templateType = basicTemplateOrElement.getTemplateType();
-      if (templateType.getTemplateKind() != TemplateType.TemplateKind.BASIC && !isSynthetic) {
-        // Only report errors for template literal nodes, to avoid reporting errors multiple times
-        // (ie., once for everywhere the 'named' template type has propagated in the expression
-        // tree).
-        invalidTemplateNames.add(type.getTemplateName());
-        if (isTemplateLiteral) {
-          errorReporter.report(ONLY_BASIC_TEMPLATES_ALLOWED, templateType.getTemplateKind());
-          reportedInvalidTemplateNames.add(type.getTemplateName());
-        }
-        return UnknownType.getInstance();
-      }
       if (templateType.getContentKind().getSanitizedContentKind().isHtml()
           && !templateType.isStrictHtml()
           && !isSynthetic) {
@@ -657,6 +652,11 @@ final class ResolveExpressionTypesCrossTemplatePass implements CompilerFileSetPa
 
     @Override
     public SoyType visit(MessageType type) {
+      return type;
+    }
+
+    @Override
+    public SoyType visit(ImportType type) {
       return type;
     }
   }

@@ -47,14 +47,10 @@ abstract class ImportsPass {
           StyleAllowance.NO_PUNCTUATION);
   private static final SoyErrorKind UNKNOWN_SYMBOL =
       SoyErrorKind.of("Unknown symbol {0} in {1}.{2}", StyleAllowance.NO_PUNCTUATION);
-  private static final SoyErrorKind SYMBOLS_NOT_ALLOWED =
-      SoyErrorKind.of("Imported symbols are not allowed from import type {0}.");
   private static final SoyErrorKind SYMBOLS_REQUIRED =
-      SoyErrorKind.of("One or more imported symbols are required for import type {0}.");
+      SoyErrorKind.of("One or more imported symbols are required for import.");
 
   // Naming conflict errors:
-  private static final SoyErrorKind IMPORT_COLLISION =
-      SoyErrorKind.of("Imported symbol {0} conflicts with previously imported symbol.");
   private static final SoyErrorKind IMPORT_CONFLICTS_WITH_GLOBAL =
       SoyErrorKind.of("Import ''{0}'' conflicts with a global of the same name.");
   private static final SoyErrorKind IMPORT_CONFLICTS_WITH_GLOBAL_PREFIX =
@@ -81,12 +77,6 @@ abstract class ImportsPass {
     private final SoyGeneralOptions options;
     final ErrorReporter errorReporter;
     private final ImmutableSet<ImportType> importTypesToVisit;
-    /**
-     * Map from unique imported symbol (aliasOrName) to "path//name". Used to determine whether
-     * imported symbol collisions are real collisions or just duplicates.
-     */
-    private final Map<String, String> uniqueImports = new HashMap<>();
-
     private Map<String, String> globalPrefixToFullNameMap = null;
 
     ImportVisitor(
@@ -130,7 +120,7 @@ abstract class ImportsPass {
     /**
      * Visits an import node. First, validates that the import path exists and the symbol names
      * and/or optional aliases do not collide with other import symbols. Then, delegates to the
-     * abstract {@link #visitImportNodeWithValidPathAndSymbol}.
+     * abstract {@link #processImportedModule} and {@link #processImportedSymbols}.
      */
     private void visit(ImportNode node) {
       if (!importTypesToVisit.contains(node.getImportType()) || !shouldVisit(node)) {
@@ -153,37 +143,20 @@ abstract class ImportsPass {
         return;
       }
 
-      if (node.getImportType().allowsSymbols()) {
-        if (node.getImportType().requiresSymbols() && node.getIdentifiers().isEmpty()) {
-          errorReporter.report(node.getSourceLocation(), SYMBOLS_REQUIRED, node.getImportType());
-          return;
-        }
+      if (node.getIdentifiers().isEmpty()) {
+        errorReporter.report(node.getSourceLocation(), SYMBOLS_REQUIRED);
+        return;
+      }
 
-        boolean foundSymbolErrors = false;
-        for (ImportedVar symbol : node.getIdentifiers()) {
-          String name = symbol.name();
-
-          // Ignore duplicate imports. The formatter will dedupe these and it's more convenient
-          // to not have a compilation error on duplicates.
-          String path = node.getPath() + "//" + symbol.getSymbol();
-          String duplicatePath = uniqueImports.put(name, path);
-          if (path.equals(duplicatePath)) {
-            continue;
-          }
-
-          // Import naming collisions. Report errors but continue checking the other symbols so we
-          // can report all of the errors at once.
-          if (reportErrorIfSymbolInvalid(file, name, symbol.nameLocation())) {
-            foundSymbolErrors = true;
-            continue;
-          }
+      boolean foundSymbolErrors = false;
+      for (ImportedVar symbol : node.getIdentifiers()) {
+        // Import naming collisions. Report errors but continue checking the other symbols so we
+        // can report all of the errors at once.
+        if (reportErrorIfSymbolInvalid(file, symbol.name(), symbol.nameLocation())) {
+          foundSymbolErrors = true;
         }
-        if (foundSymbolErrors) {
-          return;
-        }
-      } else if (!node.getIdentifiers().isEmpty()) {
-        errorReporter.report(
-            node.getIdentifiers().get(0).nameLocation(), SYMBOLS_NOT_ALLOWED, node.getImportType());
+      }
+      if (foundSymbolErrors) {
         return;
       }
 
@@ -250,7 +223,7 @@ abstract class ImportsPass {
 
       // Name collides with another import symbol.
       if (!file.getImportsContext().addImportedSymbol(importSymbolName)) {
-        errorReporter.report(nameLocation, IMPORT_COLLISION, importSymbolName);
+        // Don't report here. A better error message is generated later in ResolveNamesPass.
         foundErrors = true;
       }
 
@@ -281,7 +254,6 @@ abstract class ImportsPass {
             globalPrefixToFullNameMap.get(prefix));
       }
 
-      // TODO(b/161005145): Add VE naming collision check.
       return foundErrors;
     }
 

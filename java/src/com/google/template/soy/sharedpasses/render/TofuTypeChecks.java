@@ -176,6 +176,13 @@ public final class TofuTypeChecks {
         return CheckResult.fromBool(value == EvalVisitor.UNDEFINED_VE);
       case VE_DATA:
         return CheckResult.fromBool(value == EvalVisitor.UNDEFINED_VE_DATA);
+      case PROTO_TYPE:
+      case PROTO_ENUM_TYPE:
+      case PROTO_EXTENSION:
+      case PROTO_MODULE:
+      case TEMPLATE_TYPE:
+      case TEMPLATE_MODULE:
+        throw new UnsupportedOperationException();
     }
     throw new AssertionError("invalid type: " + type);
   }

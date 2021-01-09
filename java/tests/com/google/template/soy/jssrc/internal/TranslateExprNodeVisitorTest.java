@@ -99,7 +99,7 @@ public final class TranslateExprNodeVisitorTest {
   @Test
   public void testGlobal() {
     assertThatSoyExpr("MOO_2").generatesCode("MOO_2;");
-    assertThatSoyExpr("aaa.BBB").generatesCode("aaa.BBB;");
+    assertThatSoyExpr("aax.BBB").generatesCode("aax.BBB;");
   }
 
   @Test
@@ -223,7 +223,6 @@ public final class TranslateExprNodeVisitorTest {
   public void testV1Expression() {
     String soyFile =
         ""
-            + "{namespace ns}\n"
             + "{template .foo}\n"
             + "  {@param goo: ?}\n"
             + "  {v1Expression('$goo.length()')}\n"

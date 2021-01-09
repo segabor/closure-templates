@@ -53,7 +53,6 @@ import com.google.template.soy.soytree.LetValueNode;
 import com.google.template.soy.soytree.PrintNode;
 import com.google.template.soy.soytree.RawTextNode;
 import com.google.template.soy.soytree.SoyFileNode;
-import com.google.template.soy.soytree.SoyNode.Kind;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
 import com.google.template.soy.soytree.SoyNode.StandaloneNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
@@ -62,8 +61,6 @@ import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.defn.AttrParam;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.types.SanitizedType;
-import com.google.template.soy.types.SanitizedType.TrustedResourceUriType;
-import com.google.template.soy.types.SanitizedType.UriType;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyTypes;
 import com.google.template.soy.types.StringType;
@@ -118,7 +115,7 @@ final class ElementAttributePass implements CompilerFileSetPass {
           "Attribute ''{0}'' can only be present on root elements of html<?> templates.");
 
   private static final SoyErrorKind BAD_ATTRIBUTE_TYPE =
-      SoyErrorKind.of("Attributes must be of type string, trusted_resource_uri, or uri.");
+      SoyErrorKind.of("Attributes must be of type string or a sanitized type.");
 
   private static final SoyErrorKind ROOT_TAG_KIND_MISMATCH =
       SoyErrorKind.of("Expected root tag to be {0}.");
@@ -149,7 +146,7 @@ final class ElementAttributePass implements CompilerFileSetPass {
     Map<String, TemplateNode> allElementsThisCompile = new HashMap<>();
 
     // Rewrite all @attribute values in root elements.
-    SoyTreeUtils.getAllNodesOfType(file, TemplateNode.class).stream()
+    SoyTreeUtils.allNodesOfType(file, TemplateNode.class)
         .filter(
             t ->
                 t.getTemplateContentKind() instanceof ElementContentKind
@@ -161,13 +158,11 @@ final class ElementAttributePass implements CompilerFileSetPass {
             });
 
     // All other @attributes (outside of root elements) are illegal.
-    SoyTreeUtils.getAllMatchingNodesOfType(
-            file,
-            TemplateNode.class,
-            t -> t.getHtmlElementMetadata() != null && getDelegateCall(t).isEmpty())
+    SoyTreeUtils.allNodesOfType(file, TemplateNode.class)
+        .filter(t -> t.getHtmlElementMetadata() != null && getDelegateCall(t).isEmpty())
         .forEach(
             t -> {
-              SoyTreeUtils.getAllNodesOfType(t, HtmlAttributeNode.class).stream()
+              SoyTreeUtils.allNodesOfType(t, HtmlAttributeNode.class)
                   .map(HtmlAttributeNode.class::cast)
                   .filter(HtmlAttributeNode::isSoyAttr)
                   .forEach(
@@ -186,19 +181,16 @@ final class ElementAttributePass implements CompilerFileSetPass {
     checkRootElementTagNames(allElementsThisCompile);
   }
 
-  private static final ImmutableSet<SoyType> ALLOWED_ATTR_TYPES =
-      ImmutableSet.of(
-          StringType.getInstance(), UriType.getInstance(), TrustedResourceUriType.getInstance());
-
   private <T extends Node> void checkAttributeTypes(SoyFileNode file) {
-    SoyTreeUtils.getAllNodesOfType(file, TemplateNode.class).stream()
+    SoyTreeUtils.allNodesOfType(file, TemplateNode.class)
         .flatMap(t -> t.getHeaderParams().stream())
         .filter(p -> p instanceof AttrParam)
         .map(AttrParam.class::cast)
         .forEach(
             attr -> {
               SoyType type = SoyTypes.removeNull(attr.type());
-              if (!ALLOWED_ATTR_TYPES.contains(type)) {
+              if (!(type instanceof SanitizedType || type instanceof StringType)
+                  || SanitizedType.HtmlType.getInstance().isAssignableFromStrict(type)) {
                 errorReporter.report(attr.getSourceLocation(), BAD_ATTRIBUTE_TYPE);
               }
             });
@@ -231,9 +223,8 @@ final class ElementAttributePass implements CompilerFileSetPass {
             pluginResolver.lookupSoyFunction("isNonnull", 1, SourceLocation.UNKNOWN);
     ImmutableSet.Builder<String> foundNormalAttr = ImmutableSet.builder();
 
-    SoyTreeUtils.getAllMatchingNodesOfType(
-            openTagNode, HtmlAttributeNode.class, attr -> attr.getStaticKey() != null)
-        .stream()
+    SoyTreeUtils.allNodesOfType(openTagNode, HtmlAttributeNode.class)
+        .filter(attr -> attr.getStaticKey() != null)
         .forEach(
             attrNode -> {
               String attrKey = attrNode.getStaticKey();
@@ -544,7 +535,7 @@ final class ElementAttributePass implements CompilerFileSetPass {
 
   private void checkAttributeRefs(TemplateNode templateNode, Set<AttrParam> attrs) {
     // No standard var refs to @attribute params are allowed.
-    SoyTreeUtils.getAllNodesOfType(templateNode, VarRefNode.class).stream()
+    SoyTreeUtils.allNodesOfType(templateNode, VarRefNode.class)
         .filter(ref -> attrs.contains(ref.getDefnDecl()))
         .forEach(
             attrRef ->
@@ -557,10 +548,8 @@ final class ElementAttributePass implements CompilerFileSetPass {
   }
 
   static Optional<HtmlOpenTagNode> getElementOpen(TemplateNode node) {
-    // TODO(user): Dedupe logic with SoyElementPass?
-    return node.getChildren().stream()
-        .filter(n -> n.getKind() == Kind.HTML_OPEN_TAG_NODE)
-        .map(HtmlOpenTagNode.class::cast)
+    return SoyTreeUtils.allNodesOfType(node, HtmlOpenTagNode.class)
+        .filter(HtmlOpenTagNode::isElementRoot)
         .findFirst();
   }
 }

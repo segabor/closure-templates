@@ -1597,7 +1597,7 @@ goog.now = function() {
  * Evals JavaScript in the global scope.
  *
  * Throws an exception if neither execScript or eval is defined.
- * @param {string} script JavaScript string.
+ * @param {string|!TrustedScript} script JavaScript string.
  */
 goog.globalEval = function(script) {
   (0, eval)(script);
@@ -8008,17 +8008,17 @@ class SafeScript {
 
 if (goog.DEBUG) {
   /**
-   * Returns a debug string-representation of this value.
+   * Returns a string-representation of this value.
    *
    * To obtain the actual string value wrapped in a SafeScript, use
    * `SafeScript.unwrap`.
    *
+   * @return {string}
    * @see SafeScript#unwrap
    * @override
    */
   SafeScript.prototype.toString = function() {
-    return 'SafeScript{' +
-        this.privateDoNotAccessOrElseSafeScriptWrappedValue_ + '}';
+    return this.privateDoNotAccessOrElseSafeScriptWrappedValue_.toString();
   };
 }
 
@@ -8133,11 +8133,6 @@ goog.fs.url.findUrlObject_ = function() {
   if (goog.global.URL !== undefined &&
       goog.global.URL.createObjectURL !== undefined) {
     return /** @type {!goog.fs.url.UrlObject_} */ (goog.global.URL);
-    // This is what Chrome does (as of 10.0.648.6 dev)
-  } else if (
-      goog.global.webkitURL !== undefined &&
-      goog.global.webkitURL.createObjectURL !== undefined) {
-    return /** @type {!goog.fs.url.UrlObject_} */ (goog.global.webkitURL);
     // This is what the spec used to say to do
   } else if (goog.global.createObjectURL !== undefined) {
     return /** @type {!goog.fs.url.UrlObject_} */ (goog.global);
@@ -11111,18 +11106,18 @@ goog.html.SafeStyle.prototype.getTypedStringValue = function() {
 
 if (goog.DEBUG) {
   /**
-   * Returns a debug string-representation of this value.
+   * Returns a string-representation of this value.
    *
    * To obtain the actual string value wrapped in a SafeStyle, use
    * `goog.html.SafeStyle.unwrap`.
    *
+   * @return {string}
    * @see goog.html.SafeStyle#unwrap
    * @override
    */
   goog.html.SafeStyle.prototype.toString = function() {
     'use strict';
-    return 'SafeStyle{' + this.privateDoNotAccessOrElseSafeStyleWrappedValue_ +
-        '}';
+    return this.privateDoNotAccessOrElseSafeStyleWrappedValue_.toString();
   };
 }
 
@@ -11802,17 +11797,17 @@ class SafeStyleSheet {
 
 if (goog.DEBUG) {
   /**
-   * Returns a debug string-representation of this value.
+   * Returns a string-representation of this value.
    *
    * To obtain the actual string value wrapped in a SafeStyleSheet, use
    * `SafeStyleSheet.unwrap`.
    *
+   * @return {string}
    * @see SafeStyleSheet#unwrap
    * @override
    */
   SafeStyleSheet.prototype.toString = function() {
-    return 'SafeStyleSheet{' +
-        this.privateDoNotAccessOrElseSafeStyleSheetWrappedValue_ + '}';
+    return this.privateDoNotAccessOrElseSafeStyleSheetWrappedValue_.toString();
   };
 }
 
@@ -12786,7 +12781,7 @@ goog.html.SafeHtml.AttributeValue;
  * - For tags which can load code or set security relevant page metadata,
  *   more specific goog.html.SafeHtml.create*() functions must be used. Tags
  *   which are not supported by this function are applet, base, embed, iframe,
- *   link, math, object, script, style, svg, and template.
+ *   link, math, meta, object, script, style, svg, and template.
  *
  * @param {!goog.dom.TagName|string} tagName The name of the tag. Only tag names
  *     consisting of [a-zA-Z0-9-] are allowed. Tag names documented above are
@@ -15525,7 +15520,7 @@ goog.dom.safe.parseFromStringHtml = function(parser, html) {
  * Parses the string.
  * @param {!DOMParser} parser
  * @param {!goog.html.SafeHtml} content Note: We don't have a special type for
- *     XML od SVG supported by this function so we use SafeHtml.
+ *     XML or SVG supported by this function so we use SafeHtml.
  * @param {string} type
  * @return {?Document}
  */
@@ -22557,6 +22552,7 @@ goog.Uri.QueryData.prototype.extend = function(var_args) {
  * as known to be "safe".
  */
 
+goog.provide('goog.soy.data');
 goog.provide('goog.soy.data.SanitizedContent');
 goog.provide('goog.soy.data.SanitizedContentKind');
 goog.provide('goog.soy.data.SanitizedCss');
@@ -22825,6 +22821,22 @@ goog.soy.data.SanitizedJs.isCompatibleWithStrict = function(value) {
   return value instanceof goog.soy.data.SanitizedJs ||
       value instanceof goog.html.SafeScript;
 };
+
+
+/**
+ * Converts sanitized content of kind JS into SafeScript without modification.
+ * @return {!goog.html.SafeScript}
+ */
+goog.soy.data.SanitizedJs.prototype.toSafeScript = function() {
+  'use strict';
+  return goog.html.uncheckedconversions
+      .safeScriptFromStringKnownToSatisfyTypeContract(
+          goog.string.Const.from(
+              'Soy SanitizedContent of kind JS produces ' +
+              'SafeScript-contract-compliant value.'),
+          this.toString());
+};
+
 
 
 /**

@@ -17,10 +17,16 @@
 package com.google.template.soy.testing;
 
 import static com.google.common.base.Preconditions.checkNotNull;
+import static java.util.Arrays.stream;
+import static java.util.stream.Collectors.joining;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Lists;
+import com.google.protobuf.Descriptors.FieldDescriptor;
+import com.google.protobuf.Descriptors.FileDescriptor;
+import com.google.protobuf.Descriptors.GenericDescriptor;
 import com.google.template.soy.SoyFileSetParser;
 import com.google.template.soy.SoyFileSetParser.CompilationUnitAndKind;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
@@ -29,6 +35,7 @@ import com.google.template.soy.base.internal.SoyFileSupplier;
 import com.google.template.soy.conformance.ValidatedConformanceConfig;
 import com.google.template.soy.css.CssRegistry;
 import com.google.template.soy.error.ErrorReporter;
+import com.google.template.soy.internal.proto.Field;
 import com.google.template.soy.logging.ValidatedLoggingConfig;
 import com.google.template.soy.passes.CompilerPass;
 import com.google.template.soy.passes.PassManager;
@@ -86,6 +93,38 @@ public final class SoyFileSetParserBuilder {
   // the order of the nodes in the AST.
   private boolean addHtmlAttributesForDebugging = false;
   private final PassManager.Builder passManager = new PassManager.Builder();
+  private boolean disableAllTypeChecking = false;
+
+  public static SoyFileSetParserBuilder forTemplateAndImports(
+      String contents, GenericDescriptor... descriptors) {
+    return forFileAndImports("{namespace ns}", contents, descriptors);
+  }
+
+  public static SoyFileSetParserBuilder forFileAndImports(
+      String namespace, String contents, GenericDescriptor... descriptors) {
+    Preconditions.checkArgument(namespace.startsWith("{namespace "));
+    SoyFileSetParserBuilder builder =
+        forFileContents(namespace + "\n" + importStatements(descriptors) + contents);
+    builder.typeRegistry =
+        new SoyTypeRegistryBuilder().addDescriptors(Arrays.asList(descriptors)).build();
+    return builder;
+  }
+
+  private static String importStatements(GenericDescriptor... descriptors) {
+    return stream(descriptors)
+        .map(
+            d -> {
+              if (d instanceof FileDescriptor) {
+                return "";
+              }
+              String name =
+                  d instanceof FieldDescriptor
+                      ? Field.computeSoyName((FieldDescriptor) d)
+                      : d.getName();
+              return "import {" + name + "} from '" + d.getFile().getFullName() + "';";
+            })
+        .collect(joining("\n", "", "\n"));
+  }
 
   /**
    * Returns a builder that gets its Soy inputs from the given strings, treating each string as the
@@ -231,6 +270,10 @@ public final class SoyFileSetParserBuilder {
     return this;
   }
 
+  public SoyTypeRegistry getTypeRegistry() {
+    return typeRegistry;
+  }
+
   public SoyFileSetParserBuilder cssRegistry(CssRegistry cssRegistry) {
     this.cssRegistry = Optional.of(cssRegistry);
     return this;
@@ -287,6 +330,11 @@ public final class SoyFileSetParserBuilder {
     return this;
   }
 
+  public SoyFileSetParserBuilder disableAllTypeChecking(boolean disableAllTypeChecking) {
+    this.disableAllTypeChecking = disableAllTypeChecking;
+    return this;
+  }
+
   public static final SourceFilePath FILE_PATH = SourceFilePath.create("no-path");
 
   private static List<SoyFileSupplier> buildTestSoyFileSuppliers(String... soyFileContents) {
@@ -339,7 +387,9 @@ public final class SoyFileSetParserBuilder {
         .setCssRegistry(cssRegistry)
         .setPluginResolver(
             new PluginResolver(
-                PluginResolver.Mode.REQUIRE_DEFINITIONS,
+                disableAllTypeChecking
+                    ? PluginResolver.Mode.ALLOW_UNDEFINED
+                    : PluginResolver.Mode.REQUIRE_DEFINITIONS,
                 soyPrintDirectives.build(),
                 soyFunctions.build(),
                 sourceFunctions.build(),
@@ -357,6 +407,9 @@ public final class SoyFileSetParserBuilder {
     }
     if (allowV1Expression) {
       passManager.allowV1Expression();
+    }
+    if (disableAllTypeChecking) {
+      passManager.allowUnknownGlobals().disableAllTypeChecking();
     }
     return SoyFileSetParser.newBuilder()
         .setCache(astCache)

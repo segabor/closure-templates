@@ -174,6 +174,12 @@ public abstract class SoyMsg {
     }
 
     public SoyMsg build() {
+      // An alternate ID that points to itself is a no-op, so just omit it.
+      // A tricorder warning suggests eliminating such tags if they're added manually, but we need
+      // to allow it for generated code.
+      if (alternateId.isPresent() && (alternateId.getAsLong() == id)) {
+        alternateId = OptionalLong.empty();
+      }
       return new AutoValue_SoyMsg(
           localeString,
           id,
@@ -194,7 +200,7 @@ public abstract class SoyMsg {
   }
 
   /** Creates a new {@link Builder} based on the current instance. */
-  Builder toBuilder() {
+  public Builder toBuilder() {
     Builder builder =
         builder()
             .setId(getId())
@@ -252,6 +258,10 @@ public abstract class SoyMsg {
 
   /** Returns the location(s) and templates of the source file(s) that this message comes from. */
   public abstract ImmutableSet<SourceLocationAndTemplate> getSourceLocations();
+
+  public final SourceLocation getExampleSourceLocation() {
+    return getSourceLocations().iterator().next().sourceLocation();
+  }
 
   /** Returns {@code true} if this message has a fallback. */
   public abstract boolean hasFallback();

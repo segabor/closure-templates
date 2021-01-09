@@ -99,10 +99,18 @@ public final class ExprEquivalence {
 
         @Override
         protected Integer visitFunctionNode(FunctionNode node) {
-          if (node.getParamsStyle() == ParamsStyle.NAMED) {
-            return Objects.hash(node.getFunctionName(), namedParamsMap(node));
+          int hash = 1;
+          if (node.hasStaticName()) {
+            hash = hash * 31 + node.getStaticFunctionName().hashCode();
+          } else {
+            hash = hash * 31 + visit(node.getNameExpr());
           }
-          return Objects.hash(node.getFunctionName(), hashChildren(node));
+          if (node.getParamsStyle() == ParamsStyle.NAMED) {
+            hash = hash * 31 + namedParamsMap(node).hashCode();
+          } else {
+            hash = hash * 31 + hashChildren(node);
+          }
+          return hash;
         }
 
         @Override
@@ -170,6 +178,11 @@ public final class ExprEquivalence {
         @Override
         protected Integer visitStringNode(StringNode node) {
           return node.getValue().hashCode();
+        }
+
+        @Override
+        protected Integer visitProtoEnumValueNode(ProtoEnumValueNode node) {
+          return Objects.hash(node.getType(), node.getValue());
         }
 
         @Override
@@ -256,7 +269,15 @@ public final class ExprEquivalence {
       // TODO(b/78775420): consider only allowing pure functions to be equal to each other.  Will
       // require refactoring templates relying on this to extract such expressions into local
       // variables which is probably the right call anyway.
-      boolean ok = node.getFunctionName().equals(typedOther.getFunctionName());
+      if (node.hasStaticName() != typedOther.hasStaticName()) {
+        return false;
+      }
+
+      boolean ok =
+          node.hasStaticName()
+              ? node.getStaticFunctionName().equals(typedOther.getStaticFunctionName())
+              : equivalent(node.getNameExpr(), typedOther.getNameExpr());
+
       if (node.getParamsStyle() == ParamsStyle.NAMED) {
         ok = ok && namedParamsMap(node).equals(namedParamsMap(typedOther));
       } else {
@@ -328,6 +349,12 @@ public final class ExprEquivalence {
     @Override
     protected Boolean visitStringNode(StringNode node) {
       return node.getValue().equals(((StringNode) other).getValue());
+    }
+
+    @Override
+    protected Boolean visitProtoEnumValueNode(ProtoEnumValueNode node) {
+      return node.getType().equals(((ProtoEnumValueNode) other).getType())
+          && node.getValue() == ((ProtoEnumValueNode) other).getValue();
     }
 
     @Override

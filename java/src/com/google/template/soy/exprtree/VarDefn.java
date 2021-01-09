@@ -31,6 +31,10 @@ import javax.annotation.Nullable;
  *
  */
 public interface VarDefn {
+
+  /** Marker interface for VarDefn that indicates instances can be shared between AST trees. */
+  interface ImmutableVarDefn extends VarDefn {}
+
   /** Enum used to distinguish subtypes. */
   enum Kind {
     // Explicitly declared parameter.
@@ -46,6 +50,8 @@ public interface VarDefn {
 
     // State variable
     STATE,
+    // A local template name.
+    TEMPLATE,
     // Undeclared variable reference (for legacy templates).
     UNDECLARED,
   }

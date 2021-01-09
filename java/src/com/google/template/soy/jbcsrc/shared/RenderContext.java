@@ -24,7 +24,6 @@ import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.template.soy.data.LoggingAdvisingAppendable;
-import com.google.template.soy.data.SanitizedContent.ContentKind;
 import com.google.template.soy.data.SoyRecord;
 import com.google.template.soy.data.restricted.StringData;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
@@ -38,7 +37,6 @@ import com.google.template.soy.shared.SoyCssRenamingMap;
 import com.google.template.soy.shared.SoyIdRenamingMap;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.ibm.icu.util.ULocale;
-import java.util.Map;
 import java.util.function.Predicate;
 import javax.annotation.Nullable;
 
@@ -47,19 +45,10 @@ import javax.annotation.Nullable;
  * single instance of this object and it will be propagated throughout the render tree.
  */
 public final class RenderContext {
-  private static final CompiledTemplate EMPTY_TEMPLATE =
-      new CompiledTemplate() {
-        @Override
-        public RenderResult render(LoggingAdvisingAppendable appendable, RenderContext context) {
-          return RenderResult.done();
-        }
-
-        @Override
-        public ContentKind kind() {
-          // The kind doesn't really matter, since the empty string can always be safely escaped
-          return ContentKind.TEXT;
-        }
-      };
+  private static RenderResult emptyTemplate(
+      LoggingAdvisingAppendable appendable, RenderContext context) {
+    return RenderResult.done();
+  }
 
   // TODO(lukes):  within this object most of these fields are constant across all renders while
   // some are expected to change frequently (the renaming maps, msgBundle and activeDelPackages).
@@ -79,16 +68,26 @@ public final class RenderContext {
   private final boolean debugSoyTemplateInfo;
   private final SoyLogger logger;
 
-  private RenderContext(Builder builder) {
-    this.activeDelPackageSelector = checkNotNull(builder.activeDelPackageSelector);
-    this.templates = checkNotNull(builder.templates);
-    this.cssRenamingMap = builder.cssRenamingMap;
-    this.xidRenamingMap = builder.xidRenamingMap;
-    this.soyJavaDirectivesMap = builder.soyJavaDirectivesMap;
-    this.pluginInstances = builder.pluginInstances;
-    this.msgBundle = builder.msgBundle;
-    this.debugSoyTemplateInfo = builder.debugSoyTemplateInfo;
-    this.logger = builder.logger;
+  private RenderContext(
+      CompiledTemplates templates,
+      ImmutableMap<String, SoyJavaPrintDirective> soyJavaDirectivesMap,
+      ImmutableMap<String, Supplier<Object>> pluginInstances,
+      @Nullable Predicate<String> activeDelPackageSelector,
+      @Nullable SoyCssRenamingMap cssRenamingMap,
+      @Nullable SoyIdRenamingMap xidRenamingMap,
+      @Nullable SoyMsgBundle msgBundle,
+      boolean debugSoyTemplateInfo,
+      @Nullable SoyLogger logger) {
+    this.templates = templates;
+    this.soyJavaDirectivesMap = soyJavaDirectivesMap;
+    this.pluginInstances = pluginInstances;
+    this.activeDelPackageSelector =
+        activeDelPackageSelector != null ? activeDelPackageSelector : delPackage -> false;
+    this.cssRenamingMap = cssRenamingMap == null ? SoyCssRenamingMap.EMPTY : cssRenamingMap;
+    this.xidRenamingMap = xidRenamingMap == null ? SoyCssRenamingMap.EMPTY : xidRenamingMap;
+    this.msgBundle = msgBundle == null ? SoyMsgBundle.EMPTY : msgBundle;
+    this.debugSoyTemplateInfo = debugSoyTemplateInfo;
+    this.logger = logger == null ? SoyLogger.NO_OP : logger;
   }
 
   @Nullable
@@ -177,7 +176,7 @@ public final class RenderContext {
         templates.selectDelTemplate(calleeName, variant, activeDelPackageSelector);
     if (callee == null) {
       if (allowEmpty) {
-        return EMPTY_TEMPLATE;
+        return RenderContext::emptyTemplate;
       }
       throw new IllegalArgumentException(
           "Found no active impl for delegate call to \""
@@ -284,31 +283,33 @@ public final class RenderContext {
 
   @VisibleForTesting
   public Builder toBuilder() {
-    return new Builder()
+    return new Builder(templates, soyJavaDirectivesMap, pluginInstances)
         .withActiveDelPackageSelector(this.activeDelPackageSelector)
         .withPluginInstances(pluginInstances)
-        .withSoyPrintDirectives(soyJavaDirectivesMap)
         .withCssRenamingMap(cssRenamingMap)
         .withXidRenamingMap(xidRenamingMap)
-        .withMessageBundle(msgBundle)
-        .withCompiledTemplates(templates);
+        .withMessageBundle(msgBundle);
   }
 
   /** A builder for configuring the context. */
   public static final class Builder {
-    private CompiledTemplates templates;
-    private Predicate<String> activeDelPackageSelector = arg -> false;
-    private SoyCssRenamingMap cssRenamingMap = SoyCssRenamingMap.EMPTY;
-    private SoyIdRenamingMap xidRenamingMap = SoyCssRenamingMap.EMPTY;
-    private ImmutableMap<String, SoyJavaPrintDirective> soyJavaDirectivesMap = ImmutableMap.of();
-    private ImmutableMap<String, Supplier<Object>> pluginInstances = ImmutableMap.of();
-    private SoyMsgBundle msgBundle = SoyMsgBundle.EMPTY;
-    private boolean debugSoyTemplateInfo = false;
+    private final CompiledTemplates templates;
+    private final ImmutableMap<String, SoyJavaPrintDirective> soyJavaDirectivesMap;
+    private ImmutableMap<String, Supplier<Object>> pluginInstances;
+    private Predicate<String> activeDelPackageSelector;
+    private SoyCssRenamingMap cssRenamingMap;
+    private SoyIdRenamingMap xidRenamingMap;
+    private SoyMsgBundle msgBundle;
+    private boolean debugSoyTemplateInfo;
     private SoyLogger logger;
 
-    public Builder withCompiledTemplates(CompiledTemplates templates) {
-      this.templates = checkNotNull(templates);
-      return this;
+    public Builder(
+        CompiledTemplates templates,
+        ImmutableMap<String, SoyJavaPrintDirective> soyJavaDirectivesMap,
+        ImmutableMap<String, Supplier<Object>> pluginInstances) {
+      this.templates = templates;
+      this.soyJavaDirectivesMap = soyJavaDirectivesMap;
+      this.pluginInstances = pluginInstances;
     }
 
     public Builder withActiveDelPackageSelector(Predicate<String> activeDelPackageSelector) {
@@ -326,13 +327,8 @@ public final class RenderContext {
       return this;
     }
 
-    public Builder withPluginInstances(Map<String, Supplier<Object>> pluginInstances) {
-      this.pluginInstances = ImmutableMap.copyOf(pluginInstances);
-      return this;
-    }
-
-    public Builder withSoyPrintDirectives(Map<String, ? extends SoyJavaPrintDirective> directives) {
-      this.soyJavaDirectivesMap = ImmutableMap.copyOf(directives);
+    public Builder withPluginInstances(ImmutableMap<String, Supplier<Object>> pluginInstances) {
+      this.pluginInstances = checkNotNull(pluginInstances);
       return this;
     }
 
@@ -352,7 +348,16 @@ public final class RenderContext {
     }
 
     public RenderContext build() {
-      return new RenderContext(this);
+      return new RenderContext(
+          templates,
+          soyJavaDirectivesMap,
+          pluginInstances,
+          activeDelPackageSelector,
+          cssRenamingMap,
+          xidRenamingMap,
+          msgBundle,
+          debugSoyTemplateInfo,
+          logger);
     }
   }
 }

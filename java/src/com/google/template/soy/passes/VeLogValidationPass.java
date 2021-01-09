@@ -132,10 +132,8 @@ final class VeLogValidationPass implements CompilerFileSetPass {
   }
 
   private void run(TemplateNode template) {
-    for (FunctionNode node :
-        SoyTreeUtils.getAllFunctionInvocations(template, BuiltinFunction.VE_DATA)) {
-      validateVeDataFunctionNode(node);
-    }
+    SoyTreeUtils.allFunctionInvocations(template, BuiltinFunction.VE_DATA)
+        .forEach(this::validateVeDataFunctionNode);
     for (VeLogNode node : SoyTreeUtils.getAllNodesOfType(template, VeLogNode.class)) {
       if (template.isStrictHtml()) {
         validateVelogElementStructure(node);
@@ -168,7 +166,7 @@ final class VeLogValidationPass implements CompilerFileSetPass {
       reporter.report(
           function.getSourceLocation(),
           INVALID_LOGGING_FUNCTION_LOCATION,
-          function.getFunctionName(),
+          function.getStaticFunctionName(),
           " It is part of complex expression.");
       return;
     }
@@ -176,7 +174,7 @@ final class VeLogValidationPass implements CompilerFileSetPass {
       reporter.report(
           function.getSourceLocation(),
           INVALID_LOGGING_FUNCTION_LOCATION,
-          function.getFunctionName(),
+          function.getStaticFunctionName(),
           " It isn't in a print node.");
       return;
     }
@@ -185,13 +183,13 @@ final class VeLogValidationPass implements CompilerFileSetPass {
       reporter.report(
           printNode.getChild(0).getSourceLocation(),
           NO_PRINT_DIRECTIVES,
-          function.getFunctionName());
+          function.getStaticFunctionName());
     }
     if (holderNode.getParent().getKind() != SoyNode.Kind.HTML_ATTRIBUTE_VALUE_NODE) {
       reporter.report(
           function.getSourceLocation(),
           INVALID_LOGGING_FUNCTION_LOCATION,
-          function.getFunctionName(),
+          function.getStaticFunctionName(),
           " It isn't the direct child of an attribute value.");
       return;
     }
@@ -199,7 +197,7 @@ final class VeLogValidationPass implements CompilerFileSetPass {
       reporter.report(
           function.getSourceLocation(),
           INVALID_LOGGING_FUNCTION_LOCATION,
-          function.getFunctionName(),
+          function.getStaticFunctionName(),
           " It has sibling nodes in the attribute value.");
       return;
     }
@@ -228,6 +226,11 @@ final class VeLogValidationPass implements CompilerFileSetPass {
     HtmlOpenTagNode firstTag = node.getOpenTagNode();
     // If the first child of {velog} is not an open tag, output a synthetic VE log node.
     if (firstTag == null) {
+      node.setNeedsSyntheticVelogNode(true);
+      return;
+    }
+
+    if (!firstTag.getTagName().isStatic() && !firstTag.getTagName().isLegacyDynamicTagName()) {
       node.setNeedsSyntheticVelogNode(true);
       return;
     }
@@ -296,11 +299,7 @@ final class VeLogValidationPass implements CompilerFileSetPass {
         VeType veType = (VeType) veExpr.getType();
         SoyType dataType = dataExpr.getType();
         if (!veType.getDataType().isPresent()) {
-          reporter.report(
-              dataExpr.getSourceLocation(),
-              UNEXPECTED_DATA,
-              veType,
-              dataType);
+          reporter.report(dataExpr.getSourceLocation(), UNEXPECTED_DATA, veType, dataType);
         } else {
           SoyType veDataType =
               typeRegistry.getProtoRegistry().getProtoType(veType.getDataType().get());

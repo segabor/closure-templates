@@ -665,7 +665,7 @@ public final class SoyFileSet {
     } catch (SoyCompilationException | SoyInternalCompilerException e) {
       throw e;
     } catch (RuntimeException e) {
-      if (errorReporter.hasErrors()) {
+      if (errorReporter.hasErrorsOrWarnings()) {
         throw new SoyInternalCompilerException(
             Iterables.concat(errorReporter.getErrors(), errorReporter.getWarnings()), e);
       } else {
@@ -766,20 +766,20 @@ public final class SoyFileSet {
   /** A simple tool to enforce conformance and only conformance. */
   void checkConformance() {
     entryPointVoid(
-        () -> {
-          // to check conformance we only need to run as much as it takes to execute the
-          // SoyConformance pass.
-          parse(
-              passManagerBuilder()
-                  .allowUnknownJsGlobals()
-                  .allowV1Expression()
-                  .desugarHtmlAndStateNodes(false)
-                  .optimize(false)
-                  .addHtmlAttributesForDebugging(false)
-                  // TODO(lukes): kill the pass continuation mechanism
-                  .addPassContinuationRule(
-                      SoyConformancePass.class, PassContinuationRule.STOP_AFTER_PASS));
-        });
+        () ->
+            // to check conformance we only need to run as much as it takes to execute the
+            // SoyConformance pass.
+            parse(
+                passManagerBuilder()
+                    .allowUnknownJsGlobals()
+                    .astRewrites(AstRewrites.KYTHE)
+                    .allowV1Expression()
+                    .desugarHtmlAndStateNodes(false)
+                    .optimize(false)
+                    .addHtmlAttributesForDebugging(false)
+                    // TODO(lukes): kill the pass continuation mechanism
+                    .addPassContinuationRule(
+                        SoyConformancePass.class, PassContinuationRule.STOP_AFTER_PASS)));
   }
 
   AnnotatedLoggingConfig generateAnnotatedLoggingConfig(
@@ -884,7 +884,7 @@ public final class SoyFileSet {
                 SoyTypeRegistry.DEFAULT_UNKNOWN)
             .fileSet();
     throwIfErrorsPresent();
-    SoyMsgBundle bundle = new ExtractMsgsVisitor().exec(soyTree);
+    SoyMsgBundle bundle = new ExtractMsgsVisitor(errorReporter).exec(soyTree);
     throwIfErrorsPresent();
     return bundle;
   }

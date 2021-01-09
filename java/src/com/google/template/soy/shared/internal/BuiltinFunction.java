@@ -33,6 +33,9 @@ public enum BuiltinFunction implements SoyFunction {
   IS_LAST("isLast"),
   INDEX("index"),
   CHECK_NOT_NULL("checkNotNull"),
+  // TODO(b/144312362): try changing it to private $$isParamSet when hooking up with default value
+  // desugaring so that it can be tested implicitly.
+  IS_PARAM_SET("isParamSet"),
   /**
    * Function for substituting CSS class names according to a lookup map.
    *
@@ -41,6 +44,7 @@ public enum BuiltinFunction implements SoyFunction {
    */
   CSS("css"),
   XID("xid"),
+  TEMPLATE("template"),
   SOY_SERVER_KEY("$soyServerKey"),
   V1_EXPRESSION("v1Expression"),
   UNKNOWN_JS_GLOBAL("unknownJsGlobal"),
@@ -101,6 +105,7 @@ public enum BuiltinFunction implements SoyFunction {
         return ImmutableSet.of(3);
       case DEBUG_SOY_TEMPLATE_INFO:
         return ImmutableSet.of(0);
+      case IS_PARAM_SET:
       case SOY_SERVER_KEY:
       case IS_FIRST:
       case IS_LAST:
@@ -113,6 +118,7 @@ public enum BuiltinFunction implements SoyFunction {
       case REMAINDER:
       case MSG_WITH_ID:
       case TO_FLOAT:
+      case TEMPLATE:
         return ImmutableSet.of(1);
       case PROTO_INIT:
         throw new UnsupportedOperationException();
@@ -136,6 +142,8 @@ public enum BuiltinFunction implements SoyFunction {
       case VE_DATA:
       case TO_FLOAT:
       case PROTO_INIT:
+      case TEMPLATE:
+      case IS_PARAM_SET:
         return true;
       case IS_FIRST: // implicitly depends on loop index
       case IS_LAST: // implicitly depends on loop index

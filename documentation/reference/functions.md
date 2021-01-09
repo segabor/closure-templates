@@ -217,6 +217,13 @@ from the method parameter wins.
 
 ## String Methods
 
+NOTE: it is generally tricky to manipulate user authored text with these
+functions, these are intended for manipulating textual 'data', not something
+that should be displayed to a human. These functions are not generally unicode
+aware and may do bad things if used naively. For example, consider calling
+`.substring()` on text containing emoji, without being extremely careful you are
+likely to break the emoji and subvert user intention.
+
 ### `str.contains(subStr)` {#strContains}
 
 Checks whether a string contains a particular substring.
@@ -229,16 +236,26 @@ Checks whether a string ends with a particular substring.
 
 ### `str.indexOf(subStr)` {#strIndexOf}
 
-Returns the index of the first occurrence of `substr` within `str`, or `-1`.
-Case-sensitive, 0-based index.
+Returns the character index of the first occurrence of `substr` within `str`, or
+`-1`. Case-sensitive, 0-based index.
 
 Also callable as deprecated global function: `strIndexOf(str, subStr)`
+
+WARNING: The index is based on characters (aka java `char` or utf-16
+characters), not Unicode codepoints or more useful concepts like graphemes. It
+is almost never valid to use this to break text meant for users into parts since
+it will be very easy to break the string (e.g. split an emoji in half).
 
 ### `str.length()` {#strLen}
 
 Returns the length of a string in characters.
 
 Also callable as deprecated global function: `strLen(str)`
+
+WARNING: The length is based on characters (aka java `char` or utf-16
+characters), not Unicode codepoints or more useful concepts like graphemes. It
+is almost never valid to use this to break text meant for users into parts since
+it will be very easy to break the string (e.g. split an emoji in half).
 
 ### `str.split(sep)` {#strSplit}
 
@@ -255,10 +272,10 @@ Returns the substring of `str` beginning at index `start`. If `end` is provided
 returns the substring of `str` beginning at index `start`, and ending at `end -
 1`.
 
-WARNING: The index is based on characters, not unicode codepoints or more useful
-concepts like graphemes. It is almost never valid to use this to break text
-meant for users into parts since it will be very easy to break the string (e.g.
-split an emoji in half).
+WARNING: The index is based on characters (aka java `char` or utf-16
+characters), not Unicode codepoints or more useful concepts like graphemes. It
+is almost never valid to use this to break text meant for users into parts since
+it will be very easy to break the string (e.g. split an emoji in half).
 
 Also callable as deprecated global function: `strSub(str, start[, end])`
 
@@ -458,6 +475,10 @@ parameter record must be a record literal, and each member must match the name
 and type of an unbound parameter in the template-type expression. Parameters
 already bound to the template type may not be bound again.
 
+<section class="polyglot">
+
+###### Call Command {.pg-tab}
+
 ```soy
 {template foo}
   {@param fn: (a:string) => html}
@@ -474,6 +495,26 @@ already bound to the template type may not be bound again.
   {/call}
 {/template}
 ```
+
+###### Element Composition {.pg-tab}
+
+```soy
+{template foo kind="html<div>"}
+  {@param fn: (a:string) => html}
+  <div></div>
+{/template}
+
+{template bar}
+  {@param a: string}
+  {@param i2: string}
+{/template}
+
+{template example}
+  <{foo(fn: template(bar).bind(record(i2: 'Hello')))} />
+{/template}
+```
+
+</section>
 
 
 ## Localization (l10n) Functions

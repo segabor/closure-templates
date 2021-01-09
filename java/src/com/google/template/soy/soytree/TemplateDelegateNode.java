@@ -29,6 +29,7 @@ import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.exprtree.IntegerNode;
+import com.google.template.soy.exprtree.ProtoEnumValueNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.soytree.defn.TemplateHeaderVarDefn;
 import javax.annotation.Nullable;
@@ -47,8 +48,8 @@ public final class TemplateDelegateNode extends TemplateNode {
       SoyErrorKind.of("Invalid variant ''{0}'' value must non-negative.");
   private static final SoyErrorKind INVALID_VARIANT_EXPR =
       SoyErrorKind.of(
-          "Invalid variant expression (must be a string literal containing an identifier or global"
-              + " expression).");
+          "Invalid variant expression with kind {0} (must be a string literal containing an"
+              + " identifier or global expression).");
 
   public static final String VARIANT_ATTR = "variant";
 
@@ -191,6 +192,10 @@ public final class TemplateDelegateNode extends TemplateNode {
       // on this node.
       long variantValue = ((IntegerNode) exprNode).getValue();
       delTemplateKey = DelTemplateKey.create(delTemplateName, String.valueOf(variantValue));
+    } else if (exprNode instanceof ProtoEnumValueNode) {
+      delTemplateKey =
+          DelTemplateKey.create(
+              delTemplateName, String.valueOf(((ProtoEnumValueNode) exprNode).getValue()));
     } else if (exprNode instanceof StringNode) {
       // Globals were already substituted: We may now create the definitive variant and key fields
       // on this node.
@@ -233,6 +238,8 @@ public final class TemplateDelegateNode extends TemplateNode {
           reporter.report(in.getSourceLocation(), INVALID_VARIANT_INTEGER, in.getValue());
         }
         break;
+      case PROTO_ENUM_VALUE_NODE:
+        break;
       case GLOBAL_NODE:
         GlobalNode gn = (GlobalNode) primitiveNode;
         if (gn.isResolved()) {
@@ -242,7 +249,8 @@ public final class TemplateDelegateNode extends TemplateNode {
         }
         break;
       default:
-        reporter.report(primitiveNode.getSourceLocation(), INVALID_VARIANT_EXPR);
+        reporter.report(
+            primitiveNode.getSourceLocation(), INVALID_VARIANT_EXPR, primitiveNode.getKind());
     }
   }
 }

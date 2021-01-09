@@ -24,6 +24,7 @@ import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
+import com.google.common.collect.Sets;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.base.internal.TriState;
 import com.google.template.soy.conformance.ValidatedConformanceConfig;
@@ -38,7 +39,7 @@ import com.google.template.soy.soytree.TemplateNameRegistry;
 import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.TemplatesPerFile;
 import com.google.template.soy.types.SoyTypeRegistry;
-import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
@@ -167,15 +168,14 @@ public final class PassManager {
               + executed.stream().map(Class::getSimpleName).collect(joining(", ")));
     }
     ImmutableList<Class<? extends CompilerPass>> shouldNotHaveAlreadyRun = pass.runBefore();
-    if (!Collections.disjoint(executed, shouldNotHaveAlreadyRun)) {
+    Set<Class<? extends CompilerPass>> ranButShouldntHave =
+        Sets.intersection(new HashSet<>(shouldNotHaveAlreadyRun), executed);
+    if (!ranButShouldntHave.isEmpty()) {
       throw new IllegalStateException(
           "Attempted to execute pass "
               + pass.name()
               + " but it should always run before ("
-              + shouldNotHaveAlreadyRun.stream()
-                  .filter(dep -> !executed.contains(dep))
-                  .map(Class::getSimpleName)
-                  .collect(joining(", "))
+              + ranButShouldntHave.stream().map(Class::getSimpleName).collect(joining(", "))
               + ").\n Passes executed so far: "
               + executed.stream().map(Class::getSimpleName).collect(joining(", ")));
     }
@@ -393,10 +393,8 @@ public final class PassManager {
       addPass(
           new ResolveTemplateImportsPass(options, errorReporter),
           partialTemplateRegistryPassesBuilder);
-      if (astRewrites.atLeast(AstRewrites.KYTHE)) {
-        addPass(new ResolveTemplateFunctionsPass(), partialTemplateRegistryPassesBuilder);
-      }
-      addPass(new ResolveTemplateNamesPass(), partialTemplateRegistryPassesBuilder);
+      addPass(new RestoreGlobalsPass(), partialTemplateRegistryPassesBuilder);
+      addPass(new RestoreCompilerChecksPass(errorReporter), partialTemplateRegistryPassesBuilder);
       // needs to come early since it is necessary to create template metadata objects for
       // header compilation
       addPass(
@@ -423,7 +421,7 @@ public final class PassManager {
       // Run before the RewriteGlobalsPass as it removes some globals.
       addPass(new VeRewritePass(), partialTemplateRegistryPassesBuilder);
       addPass(
-          new RewriteGlobalsPass(options.getCompileTimeGlobals(), errorReporter),
+          new RewriteGlobalsPass(options.getCompileTimeGlobals()),
           partialTemplateRegistryPassesBuilder);
       addPass(new XidPass(errorReporter), partialTemplateRegistryPassesBuilder);
       addPass(
@@ -433,6 +431,19 @@ public final class PassManager {
           new UnknownJsGlobalPass(allowUnknownJsGlobals, errorReporter),
           partialTemplateRegistryPassesBuilder);
       addPass(new ResolveNamesPass(errorReporter), partialTemplateRegistryPassesBuilder);
+      addPass(
+          new ResolveDottedImportsPass(errorReporter, registry),
+          partialTemplateRegistryPassesBuilder);
+      if (astRewrites.atLeast(AstRewrites.KYTHE)) {
+        addPass(new ResolveTemplateFunctionsPass(), partialTemplateRegistryPassesBuilder);
+      }
+      addPass(new ResolveTemplateNamesPass(errorReporter), partialTemplateRegistryPassesBuilder);
+      if (!disableAllTypeChecking) {
+        // Without type checking proto enums in variant expressions are not resolved.
+        addPass(
+            new ValidateVariantExpressionsPass(errorReporter),
+            partialTemplateRegistryPassesBuilder);
+      }
       // needs to be after ResolveNames and MsgsPass
       if (astRewrites.atLeast(AstRewrites.ALL)) {
         addPass(new MsgWithIdFunctionPass(errorReporter), partialTemplateRegistryPassesBuilder);
@@ -453,6 +464,8 @@ public final class PassManager {
         // and before ResolveExpressionTypesPass (since we insert expressions).
         addPass(new AddDebugAttributesPass(), partialTemplateRegistryPassesBuilder);
       }
+      addPass(
+          new CheckAllFunctionsResolvedPass(pluginResolver), partialTemplateRegistryPassesBuilder);
       if (!disableAllTypeChecking) {
         addPass(new CheckDeclaredTypesPass(errorReporter), partialTemplateRegistryPassesBuilder);
         // Run before ResolveExpressionTypesPass since this makes type analysis on null safe
@@ -473,12 +486,6 @@ public final class PassManager {
         }
       }
 
-      // Because conformance exits abruptly after this pass we must ensure that the AST is left in a
-      // complete state. Therefore this pass should come after ResolveExpressionTypesPass and
-      // others.
-      addPass(
-          new SoyConformancePass(conformanceConfig, errorReporter),
-          partialTemplateRegistryPassesBuilder);
       addPass(
           new ResolvePackageRelativeCssNamesPass(errorReporter),
           partialTemplateRegistryPassesBuilder);
@@ -510,6 +517,12 @@ public final class PassManager {
       // use.
       ImmutableList.Builder<CompilerFileSetPass> crossTemplateCheckingPassesBuilder =
           ImmutableList.builder();
+      // Because conformance exits abruptly after this pass we must ensure that the AST is left in a
+      // complete state. Therefore this pass should come after ResolveExpressionTypesPass and
+      // others.
+      addPass(
+          new SoyConformancePass(conformanceConfig, errorReporter),
+          crossTemplateCheckingPassesBuilder);
 
       addPass(new CheckTemplateHeaderVarsPass(errorReporter), crossTemplateCheckingPassesBuilder);
       if (!disableAllTypeChecking) {
@@ -529,7 +542,8 @@ public final class PassManager {
               new ElementCheckCrossTemplatePass(errorReporter), crossTemplateCheckingPassesBuilder);
           if (astRewrites.atLeast(AstRewrites.ALL)) {
             addPass(
-                new SoyElementCompositionPass(errorReporter), crossTemplateCheckingPassesBuilder);
+                new SoyElementCompositionPass(errorReporter, soyPrintDirectives),
+                crossTemplateCheckingPassesBuilder);
           }
         }
       }

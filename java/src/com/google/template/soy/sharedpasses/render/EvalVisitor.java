@@ -23,6 +23,7 @@ import static com.google.template.soy.shared.internal.SharedRuntime.equal;
 import static com.google.template.soy.shared.internal.SharedRuntime.lessThan;
 import static com.google.template.soy.shared.internal.SharedRuntime.lessThanOrEqual;
 import static com.google.template.soy.shared.internal.SharedRuntime.minus;
+import static com.google.template.soy.shared.internal.SharedRuntime.mod;
 import static com.google.template.soy.shared.internal.SharedRuntime.negative;
 import static com.google.template.soy.shared.internal.SharedRuntime.plus;
 import static com.google.template.soy.shared.internal.SharedRuntime.soyServerKey;
@@ -95,6 +96,7 @@ import com.google.template.soy.exprtree.OperatorNodes.NullCoalescingOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.OrOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.PlusOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.TimesOpNode;
+import com.google.template.soy.exprtree.ProtoEnumValueNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.TemplateLiteralNode;
@@ -260,6 +262,11 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
 
   @Override
   protected SoyValue visitStringNode(StringNode node) {
+    return convertResult(node.getValue());
+  }
+
+  @Override
+  protected SoyValue visitProtoEnumValueNode(ProtoEnumValueNode node) {
     return convertResult(node.getValue());
   }
 
@@ -650,7 +657,7 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
 
     SoyValue operand0 = visit(node.getChild(0));
     SoyValue operand1 = visit(node.getChild(1));
-    return convertResult(operand0.longValue() % operand1.longValue());
+    return mod(operand0, operand1);
   }
 
   @Override
@@ -759,6 +766,8 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
     if (soyFunction instanceof BuiltinFunction) {
       BuiltinFunction nonpluginFn = (BuiltinFunction) soyFunction;
       switch (nonpluginFn) {
+        case IS_PARAM_SET:
+          return visitIsSetFunction(node);
         case IS_FIRST:
           return visitIsFirstFunction(node);
         case IS_LAST:
@@ -792,6 +801,7 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
           return UNDEFINED_VE_DATA;
         case MSG_WITH_ID:
         case REMAINDER:
+        case TEMPLATE:
           // should have been removed earlier in the compiler
           throw new AssertionError();
       }
@@ -811,7 +821,7 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
     } else {
       throw RenderException.create(
           "Failed to find Soy function with name '"
-              + node.getFunctionName()
+              + node.getStaticFunctionName()
               + "'"
               + " (function call \""
               + node.toSourceString()
@@ -881,6 +891,10 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
       throw RenderException.create(
           "While computing function \"" + fnNode.toSourceString() + "\": " + e.getMessage(), e);
     }
+  }
+
+  private SoyValue visitIsSetFunction(FunctionNode node) {
+    return BooleanData.forValue(env.hasVar(((VarRefNode) node.getChild(0)).getDefnDecl()));
   }
 
   private SoyValue visitIsFirstFunction(FunctionNode node) {

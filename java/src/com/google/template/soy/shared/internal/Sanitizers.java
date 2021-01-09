@@ -127,17 +127,11 @@ public final class Sanitizers {
     }
 
     @Override
-    protected void notifyContentKind(ContentKind kind) throws IOException {
+    protected void notifyKindAndDirectionality(ContentKind kind, @Nullable Dir contentDir)
+        throws IOException {
       if (isInHtml()) {
         activeAppendable = delegate;
-        delegate.setSanitizedContentKind(kind);
-      }
-    }
-
-    @Override
-    protected void notifyContentDirectionality(@Nullable Dir contentDir) throws IOException {
-      if (isInHtml()) {
-        delegate.setSanitizedContentDirectionality(contentDir);
+        delegate.setKindAndDirectionality(kind, contentDir);
       }
     }
 
@@ -178,12 +172,8 @@ public final class Sanitizers {
       if (!isInHtml()) {
         StringBuilder buffer = (StringBuilder) activeAppendable;
         if (buffer.length() > 0) {
-          SanitizedContent content =
-              cleanHtml(buffer.toString(), getSanitizedContentDirectionality(), optionalSafeTags);
-          delegate
-              .setSanitizedContentKind(content.getContentKind())
-              .setSanitizedContentDirectionality(content.getContentDirection())
-              .append(content.getContent());
+          cleanHtml(buffer.toString(), getSanitizedContentDirectionality(), optionalSafeTags)
+              .render(delegate);
           buffer.setLength(0);
         }
       }
@@ -258,10 +248,12 @@ public final class Sanitizers {
     }
 
     @Override
-    protected void notifyContentKind(ContentKind kind) throws IOException {
+    protected void notifyKindAndDirectionality(ContentKind kind, @Nullable Dir directionality)
+        throws IOException {
       if (isInHtml()) {
         activeAppendable = EscapingConventions.NormalizeHtml.INSTANCE.escape(delegate);
       }
+      delegate.setKindAndDirectionality(kind, directionality);
     }
 
     @Override
@@ -329,6 +321,11 @@ public final class Sanitizers {
     return escapeHtmlAttribute(value.coerceToString());
   }
 
+  public static LoggingAdvisingAppendable escapeHtmlAttributeStreaming(
+      LoggingAdvisingAppendable appendable) {
+    return StreamingAttributeEscaper.create(appendable, EscapingConventions.EscapeHtml.INSTANCE);
+  }
+
   /**
    * Converts plain text to HTML by entity escaping so the result can safely be embedded in an HTML
    * attribute value.
@@ -364,6 +361,12 @@ public final class Sanitizers {
       return stripHtmlTags(value.coerceToString(), null, false);
     }
     return escapeHtmlAttributeNospace(value.coerceToString());
+  }
+
+  public static LoggingAdvisingAppendable escapeHtmlAttributeNospaceStreaming(
+      LoggingAdvisingAppendable appendable) {
+    return StreamingAttributeEscaper.create(
+        appendable, EscapingConventions.EscapeHtmlNospace.INSTANCE);
   }
 
   /**
@@ -813,10 +816,12 @@ public final class Sanitizers {
     }
 
     @Override
-    protected void notifyContentKind(ContentKind kind) throws IOException {
+    protected void notifyKindAndDirectionality(ContentKind kind, @Nullable Dir dir)
+        throws IOException {
       if (kind == ContentKind.ATTRIBUTES) {
         activeAppendable = delegate;
       }
+      delegate.setKindAndDirectionality(kind, dir);
     }
 
     @Override
@@ -944,8 +949,8 @@ public final class Sanitizers {
    * @param rawSpacesAllowed true if spaces are allowed in the output unescaped as is the case when
    *     the output is embedded in a regular text node, or in a quoted attribute.
    */
-  @VisibleForTesting
-  static String stripHtmlTags(String value, TagWhitelist safeTags, boolean rawSpacesAllowed) {
+  public static String stripHtmlTags(
+      String value, TagWhitelist safeTags, boolean rawSpacesAllowed) {
     EscapingConventions.CrossLanguageStringXform normalizer =
         rawSpacesAllowed
             ? EscapingConventions.NormalizeHtml.INSTANCE

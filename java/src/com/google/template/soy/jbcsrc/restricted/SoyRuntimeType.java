@@ -210,6 +210,12 @@ public abstract class SoyRuntimeType {
       case ANY:
         // no unique unboxed representation
         return null;
+      case PROTO_TYPE:
+      case PROTO_ENUM_TYPE:
+      case PROTO_EXTENSION:
+      case PROTO_MODULE:
+      case TEMPLATE_TYPE:
+      case TEMPLATE_MODULE:
     }
     throw new AssertionError("can't map " + soyType + " to an unboxed soy runtime type");
   }

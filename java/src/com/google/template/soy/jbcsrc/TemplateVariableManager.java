@@ -16,6 +16,8 @@
 
 package com.google.template.soy.jbcsrc;
 
+import static com.google.common.base.Preconditions.checkState;
+
 import com.google.auto.value.AutoValue;
 import com.google.template.soy.jbcsrc.TemplateVariableManager.VarKey.Kind;
 import com.google.template.soy.jbcsrc.restricted.CodeBuilder;
@@ -27,6 +29,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.commons.Method;
 
@@ -364,11 +367,14 @@ final class TemplateVariableManager implements LocalVariableManager {
   /** Statements for saving and restoring local variables in class fields. */
   @AutoValue
   abstract static class SaveRestoreState {
-    abstract Statement save();
+    abstract Optional<Statement> save();
 
-    abstract Statement restore();
+    abstract Optional<Statement> restore();
   }
 
+  void assertSaveRestoreStateIsEmpty() {
+    checkState(variablesByKey.isEmpty());
+  }
   /** Returns a {@link SaveRestoreState} for the current state of the variable set. */
   SaveRestoreState saveRestoreState() {
     List<Statement> saves = new ArrayList<>();
@@ -379,6 +385,7 @@ final class TemplateVariableManager implements LocalVariableManager {
       restores.add(var.restore());
     }
     return new AutoValue_TemplateVariableManager_SaveRestoreState(
-        Statement.concat(saves), Statement.concat(restores));
+        saves.isEmpty() ? Optional.empty() : Optional.of(Statement.concat(saves)),
+        restores.isEmpty() ? Optional.empty() : Optional.of(Statement.concat(restores)));
   }
 }

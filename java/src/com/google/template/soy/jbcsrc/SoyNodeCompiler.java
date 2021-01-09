@@ -34,11 +34,10 @@ import static org.objectweb.asm.commons.GeneratorAdapter.EQ;
 import com.google.auto.value.AutoValue;
 import com.google.common.collect.ImmutableList;
 import com.google.common.primitives.Ints;
-import com.google.template.soy.base.internal.FixedIdGenerator;
 import com.google.template.soy.base.internal.SanitizedContentKind;
+import com.google.template.soy.basetree.Node;
 import com.google.template.soy.data.SoyRecord;
 import com.google.template.soy.data.SoyValueProvider;
-import com.google.template.soy.data.internal.Converters;
 import com.google.template.soy.data.internal.ParamStore;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.ExprNode;
@@ -69,7 +68,6 @@ import com.google.template.soy.logging.LoggingFunction;
 import com.google.template.soy.msgs.internal.MsgUtils;
 import com.google.template.soy.msgs.internal.MsgUtils.MsgPartsAndIds;
 import com.google.template.soy.shared.RangeArgs;
-import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
 import com.google.template.soy.soytree.AbstractReturningSoyNodeVisitor;
@@ -93,6 +91,7 @@ import com.google.template.soy.soytree.LogNode;
 import com.google.template.soy.soytree.MsgFallbackGroupNode;
 import com.google.template.soy.soytree.MsgHtmlTagNode;
 import com.google.template.soy.soytree.MsgNode;
+import com.google.template.soy.soytree.MsgPlaceholderNode;
 import com.google.template.soy.soytree.PrintDirectiveNode;
 import com.google.template.soy.soytree.PrintNode;
 import com.google.template.soy.soytree.RawTextNode;
@@ -101,6 +100,7 @@ import com.google.template.soy.soytree.SoyNode.BlockNode;
 import com.google.template.soy.soytree.SoyNode.RenderUnitNode;
 import com.google.template.soy.soytree.SoyNode.StandaloneNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
+import com.google.template.soy.soytree.SoyTreeUtils.VisitDirective;
 import com.google.template.soy.soytree.SwitchCaseNode;
 import com.google.template.soy.soytree.SwitchDefaultNode;
 import com.google.template.soy.soytree.SwitchNode;
@@ -229,20 +229,17 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     abstract int numberOfDetachStates();
   }
 
-  CompiledMethodBody compile(RenderUnitNode node) {
-    return compile(node, ExtraCodeCompiler.NO_OP, ExtraCodeCompiler.NO_OP);
-  }
-
   CompiledMethodBody compile(
       RenderUnitNode node, ExtraCodeCompiler prefix, ExtraCodeCompiler suffix) {
     List<Statement> statements = new ArrayList<>();
+    if (shouldCheckForSoftLimit(node)) {
+      statements.add(detachState.detachLimited(appendableExpression));
+    }
     // Tag the content with the kind
+    // TODO(lukes): directionality is always the default, do we need to set it?
     statements.add(
         appendableExpression
-            .setSanitizedContentKind(node.getContentKind())
-            .setSanitizedContentDirectionality(
-                Converters.contentKindfromSanitizedContentKind(node.getContentKind())
-                    .getDefaultDir())
+            .setSanitizedContentKindAndDirectionality(node.getContentKind())
             .toStatement());
     statements.add(prefix.compile(exprCompiler, appendableExpression, detachState));
     statements.add(visitChildrenInNewScope(node));
@@ -266,9 +263,70 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     }
   }
 
+  /**
+   * Certain content kinds are limited in size by their nature. Skip detach logic in those cases.
+   */
+  private static boolean kindRequiresDetach(SanitizedContentKind kind) {
+    switch (kind) {
+      case TEXT:
+      case HTML:
+      case HTML_ELEMENT:
+      case CSS: // Sometimes templates include very large JS and CSS documents.
+      case JS:
+        return true;
+      case TRUSTED_RESOURCE_URI: // uris are naturally small (>2K is unlikely to work in practice)
+      case URI:
+      case ATTRIBUTES:
+        // attributes are generally small as well, though don't really share a tight bound.
+        return false;
+    }
+    throw new AssertionError("invalid kind: " + kind);
+  }
+
+  private static boolean directlyPrintingNode(Node node) {
+    if (node instanceof SoyNode) {
+      SoyNode.Kind kind = ((SoyNode) node).getKind();
+      return kind == SoyNode.Kind.RAW_TEXT_NODE || kind == SoyNode.Kind.PRINT_NODE;
+    }
+    return false;
+  }
+
+  /**
+   * Returns true if we should add logic for checking if we have exceeded the soft limit to the
+   * beginning of the code generated for the given node.
+   *
+   */
+  private static boolean shouldCheckForSoftLimit(RenderUnitNode node) {
+    // Only check templates
+    if (!(node instanceof TemplateNode)) {
+      return false;
+    }
+    // Only for certain content kinds
+    if (!kindRequiresDetach(node.getContentKind())) {
+      return false;
+    }
+    // Only if it contains a print node directly.  If it is just a set of call nodes (possibly with
+    // control flow) we can assume that buffer checks will be handled by our callees.
+    return SoyTreeUtils.allNodes(
+            node,
+            n -> {
+              // Don't explore expr nodes or render unit nodes.  let/param nodes may contain
+              // printing nodes but it is only relevant if they themselves are printed, in which
+              // case our later check will find them.
+              if (!(n instanceof SoyNode)
+                  || n instanceof LetContentNode
+                  || n instanceof CallParamContentNode) {
+                return VisitDirective.SKIP_CHILDREN;
+              }
+              return VisitDirective.CONTINUE;
+            })
+        .anyMatch(SoyNodeCompiler::directlyPrintingNode);
+  }
+
   @Override
   protected Statement visitTemplateNode(TemplateNode node) {
-    return visitChildrenInNewScope(node);
+    // template nodes are directly handled by compile()
+    throw new AssertionError("should not be called");
   }
 
   private Statement visitChildrenInNewScope(BlockNode node) {
@@ -602,7 +660,13 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
           expressionToSoyValueProviderCompiler.compileToSoyValueProviderIfUsefulToPreserveStreaming(
               expr, detachState.createExpressionDetacher(reattachPoint));
       if (asSoyValueProvider.isPresent()) {
-        return renderIncrementally(asSoyValueProvider.get(), node.getChildren(), reattachPoint);
+        boolean requiresDetachLogic =
+            exprCompiler.requiresDetach(expr)
+                || node.getChildren().stream()
+                    .flatMap(pdn -> pdn.getExprList().stream())
+                    .anyMatch(exprCompiler::requiresDetach);
+        return renderIncrementally(
+            asSoyValueProvider.get(), node.getChildren(), reattachPoint, requiresDetachLogic);
       }
     }
 
@@ -614,14 +678,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     AppendableExpression renderSoyValue =
         appendableExpression.appendString(value.coerceToString()).labelStart(reattachPoint);
 
-    Statement stmt;
-    if (shouldCheckBuffer(node)) {
-      stmt = detachState.detachLimited(renderSoyValue);
-    } else {
-      stmt = renderSoyValue.toStatement();
-    }
-
-    return stmt;
+    return renderSoyValue.toStatement();
   }
 
   private Statement visitLoggingFunction(
@@ -706,7 +763,10 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
    * @return a statement for the full render.
    */
   private Statement renderIncrementally(
-      Expression soyValueProvider, List<PrintDirectiveNode> directives, Label reattachPoint) {
+      Expression soyValueProvider,
+      List<PrintDirectiveNode> directives,
+      Label reattachPoint,
+      boolean requiresDetachLogic) {
     // In this case we want to render the SoyValueProvider via renderAndResolve which will
     // enable incremental rendering of parameters for lazy transclusions!
     // This actually ends up looking a lot like how calls work so we use the same strategy.
@@ -758,43 +818,22 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
             // the isLast param
             // TODO(lukes): pass a real value here when we have expression use analysis.
             constant(false));
-    Statement doCall = detachState.detachForRender(callRenderAndResolve);
+    Statement doCall =
+        requiresDetachLogic
+            ? detachState.detachForRender(callRenderAndResolve)
+            : detachState.assertFullyRenderered(callRenderAndResolve);
     return Statement.concat(initRenderee, initAppendable, doCall, clearAppendable, clearRenderee);
-  }
-
-  /**
-   * Returns true if the print expression should check the rendering buffer and generate a detach.
-   *
-   * <p>We do not generate detaches for css() and xid() builtin functions, since they are typically
-   * very short.
-   */
-  private static boolean shouldCheckBuffer(PrintNode node) {
-    if (!(node.getExpr().getRoot() instanceof FunctionNode)) {
-      return true;
-    }
-
-    FunctionNode fn = (FunctionNode) node.getExpr().getRoot();
-    if (!(fn.getSoyFunction() instanceof BuiltinFunction)) {
-      return true;
-    }
-
-    BuiltinFunction bfn = (BuiltinFunction) fn.getSoyFunction();
-    if (bfn != BuiltinFunction.XID && bfn != BuiltinFunction.CSS) {
-      return true;
-    }
-
-    return false;
   }
 
   @Override
   protected Statement visitRawTextNode(RawTextNode node) {
-    AppendableExpression render =
-        appendableExpression.appendString(constant(node.getRawText(), fields));
-    // TODO(lukes): add some heuristics about when to add this
-    // ideas:
-    // * never try to detach in certain 'contexts' (e.g. attribute context)
-    // * never detach after rendering small chunks (< 128 bytes?)
-    return detachState.detachLimited(render);
+    AppendableExpression render;
+    if (node.getRawText().length() == 1) {
+      render = appendableExpression.appendChar(constant(node.getRawText().charAt(0)));
+    } else {
+      render = appendableExpression.appendString(constant(node.getRawText(), fields));
+    }
+    return render.toStatement();
   }
 
   @Override
@@ -1058,7 +1097,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
   /**
    * Renders a {@link com.google.template.soy.jbcsrc.shared.CompiledTemplate} incrementally.
    *
-   * <p>Similar to {@link #renderIncrementally(Expression, List, Label)}, we need to:
+   * <p>Similar to {@link #renderIncrementally(Expression, List, Label, boolean)}, we need to:
    *
    * <ul>
    *   <li>Stash the CompiledTemplate in a field {@code $currentCallee}, so that if we detach
@@ -1124,7 +1163,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
             .invoke(
                 MethodRef.COMPILED_TEMPLATE_RENDER, appendable, parameterLookup.getRenderContext())
             .withSourceLocation(node.getSourceLocation());
-    Statement callCallee = detachState.detachForCall(callRender);
+    Statement callCallee = detachState.detachForRender(callRender);
     Statement clearCallee =
         currentCalleeField.putInstanceField(
             thisVar, BytecodeUtils.constantNull(COMPILED_TEMPLATE_TYPE));
@@ -1284,17 +1323,24 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
         appendableExpression,
         new PlaceholderCompiler() {
           @Override
-          public Expression compileToSoyValueProvider(
-              ExprRootNode node, ExpressionDetacher expressionDetatcher) {
-            return expressionToSoyValueProviderCompiler.compile(node, expressionDetatcher);
+          public Placeholder compile(ExprRootNode node, ExpressionDetacher expressionDetatcher) {
+            return Placeholder.create(
+                expressionToSoyValueProviderCompiler.compile(node, expressionDetatcher),
+                exprCompiler.requiresDetach(node));
           }
 
           @Override
-          public Expression compileToSoyValueProvider(
+          public Placeholder compile(
               String phname,
               StandaloneNode node,
               ExtraCodeCompiler prefix,
               ExtraCodeCompiler suffix) {
+            // We want to use the LazyClosureCompiler to optionally produce a new class for this
+            // node.  To do this we create a synthetic `let` variable.
+            // We need to take `node` and reparent it as the child of the `let`, we also need to
+            // insert this let into the AST in the original location.  This is because the
+            // LazyClosureCompiler makes code generation decisions by querying ancestors, so it
+            // needs to be part of the main tree.
             LetContentNode fakeLet =
                 LetContentNode.forVariable(
                     /*id=*/ -1,
@@ -1302,12 +1348,17 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
                     "$" + phname,
                     node.getSourceLocation(),
                     SanitizedContentKind.TEXT);
-            // copy the node so we don't end up removing it from the parent as a side effect.
-            fakeLet.addChild(SoyTreeUtils.cloneWithNewIds(node, new FixedIdGenerator(-1)));
-            fakeLet.setParent(node.getParent());
-            return lazyClosureCompiler
-                .compileLazyContent("ph", fakeLet, phname, prefix, suffix)
-                .soyValueProvider();
+            MsgPlaceholderNode placeholderParent = (MsgPlaceholderNode) node.getParent();
+            checkState(placeholderParent.numChildren() == 1);
+            fakeLet.addChild(node); // NOTE: this removes node from placeholderParent
+            placeholderParent.addChild(fakeLet);
+
+            LazyClosureCompiler.LazyClosure closure =
+                lazyClosureCompiler.compileLazyContent("ph", fakeLet, phname, prefix, suffix);
+            placeholderParent.removeChild(fakeLet);
+            placeholderParent.addChild(node); // Restore the tree to the prior state.
+            return Placeholder.create(
+                closure.soyValueProvider(), closure.requiresDetachLogicToResolve());
           }
         });
   }

@@ -90,6 +90,7 @@ import com.google.template.soy.exprtree.OperatorNodes.NotEqualOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.NotOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.NullCoalescingOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.OrOpNode;
+import com.google.template.soy.exprtree.ProtoEnumValueNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.TemplateLiteralNode;
@@ -282,6 +283,11 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
   @Override
   protected Expression visitStringNode(StringNode node) {
     return stringLiteral(node.getValue());
+  }
+
+  @Override
+  protected Expression visitProtoEnumValueNode(ProtoEnumValueNode node) {
+    return number(node.getValue());
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -808,6 +814,8 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
 
     if (soyFunction instanceof BuiltinFunction) {
       switch ((BuiltinFunction) soyFunction) {
+        case IS_PARAM_SET:
+          return visitIsSetFunction(node);
         case IS_FIRST:
           return visitIsFirstFunction(node);
         case IS_LAST:
@@ -840,6 +848,7 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
         case LEGACY_DYNAMIC_TAG:
         case REMAINDER:
         case MSG_WITH_ID:
+        case TEMPLATE:
           // should have been removed earlier in the compiler
           throw new AssertionError();
       }
@@ -850,7 +859,7 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
     } else if (soyFunction instanceof SoyJavaScriptSourceFunction) {
       return javascriptValueFactory.applyFunction(
           node.getSourceLocation(),
-          node.getFunctionName(),
+          node.getStaticFunctionName(),
           (SoyJavaScriptSourceFunction) soyFunction,
           visitChildren(node),
           codeGenerator);
@@ -859,10 +868,10 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
         errorReporter.report(
             node.getSourceLocation(),
             SOY_JS_SRC_FUNCTION_NOT_FOUND,
-            node.getFunctionName(),
+            node.getStaticFunctionName(),
             soyFunction == null ? "missing implementation" : soyFunction.getClass().getName());
         // use a fake function and keep going
-        soyFunction = getUnknownFunction(node.getFunctionName(), node.numChildren());
+        soyFunction = getUnknownFunction(node.getStaticFunctionName(), node.numChildren());
       }
 
       return SoyJsPluginUtils.applySoyFunction(
@@ -893,6 +902,11 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
   private Expression visitIsFirstFunction(FunctionNode node) {
     String varName = ((VarRefNode) node.getChild(0)).getName();
     return variableMappings.get(varName + "__isFirst");
+  }
+
+  private Expression visitIsSetFunction(FunctionNode node) {
+    Expression expression = visit(node.getChild(0));
+    return expression.tripleNotEquals(Expression.LITERAL_UNDEFINED);
   }
 
   private Expression visitIsLastFunction(FunctionNode node) {

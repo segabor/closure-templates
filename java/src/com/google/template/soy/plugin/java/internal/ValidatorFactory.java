@@ -419,7 +419,14 @@ final class ValidatorFactory extends JavaValueFactory {
         break;
       case NAMED_TEMPLATE:
       case TEMPLATE:
-        throw new IllegalStateException("Cannot have template type from function signature");
+      case PROTO_TYPE:
+      case PROTO_ENUM_TYPE:
+      case PROTO_EXTENSION:
+      case PROTO_MODULE:
+      case TEMPLATE_TYPE:
+      case TEMPLATE_MODULE:
+        throw new IllegalStateException(
+            "Cannot have " + type.getKind() + " from function signature");
     }
 
     checkState(expectedClasses != null, "expectedClass not set!");

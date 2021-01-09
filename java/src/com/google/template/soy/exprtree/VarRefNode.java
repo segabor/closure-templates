@@ -19,6 +19,7 @@ package com.google.template.soy.exprtree;
 import com.google.common.base.Preconditions;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.basetree.CopyState;
+import com.google.template.soy.exprtree.VarDefn.ImmutableVarDefn;
 import com.google.template.soy.types.SoyType;
 import javax.annotation.Nullable;
 
@@ -42,7 +43,7 @@ public final class VarRefNode extends AbstractExprNode {
    * For cases where we are able to infer a stronger type than the variable, this will contain the
    * stronger type which overrides the variable's type.
    */
-  private SoyType subtituteType;
+  private SoyType substituteType;
 
   /**
    * @param name The name of the variable.
@@ -58,12 +59,16 @@ public final class VarRefNode extends AbstractExprNode {
   private VarRefNode(VarRefNode orig, CopyState copyState) {
     super(orig, copyState);
     this.name = orig.name;
-    this.subtituteType = orig.subtituteType;
-    // Maintain the original def in case only a subtree is getting cloned, but also register a
-    // listener so that if the defn is replaced we will get updated also.
-    this.defn = orig.defn;
+    this.substituteType = orig.substituteType;
     if (orig.defn != null) {
-      copyState.registerRefListener(orig.defn, this::setDefn);
+      if (orig.defn instanceof ImmutableVarDefn) {
+        this.defn = orig.defn;
+      } else {
+        // Maintain the original def in case only a subtree is getting cloned, but also register a
+        // listener so that if the defn is replaced we will get updated also.
+        this.defn = orig.defn;
+        copyState.registerRefListener(orig.defn, this::setDefn);
+      }
     }
   }
 
@@ -76,7 +81,11 @@ public final class VarRefNode extends AbstractExprNode {
   public SoyType getType() {
     // We won't know the type until we know the variable declaration.
     Preconditions.checkState(defn != null);
-    return subtituteType != null ? subtituteType : defn.type();
+    return substituteType != null ? substituteType : defn.type();
+  }
+
+  public boolean hasType() {
+    return defn != null && (substituteType != null || defn.hasType());
   }
 
   /** Returns the source of the variable reference, possibly with leading "$". */
@@ -128,7 +137,7 @@ public final class VarRefNode extends AbstractExprNode {
    * @param type The overridden type value.
    */
   public void setSubstituteType(SoyType type) {
-    subtituteType = type;
+    substituteType = type;
   }
 
   @Override

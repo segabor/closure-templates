@@ -16,8 +16,10 @@
 
 package com.google.template.soy.passes;
 
+import static com.google.common.base.Strings.nullToEmpty;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Sets;
@@ -71,9 +73,6 @@ public final class SoyElementPass implements CompilerFileSetPass {
       SoyErrorKind.of(
           "The root node of Soy elements must not have a key. "
               + "Instead, consider wrapping the Soy element in a keyed tag node.");
-
-  private static final SoyErrorKind ROOT_IS_DYNAMIC_TAG =
-      SoyErrorKind.of("The root node of Soy elements must not be a dynamic HTML tag.");
 
   private static final SoyErrorKind SOY_ELEMENT_OPEN_TAG_CLOSE_AMBIGUOUS =
       SoyErrorKind.of("Soy element open tags must map to exactly one close tag.");
@@ -227,8 +226,12 @@ public final class SoyElementPass implements CompilerFileSetPass {
           openTag.getTagName().isStatic()
               ? openTag.getTagName().getStaticTagName()
               : tryGetDelegateTagName(delegateTemplate, templatesInLibrary, registry);
-      if (tagName.equals(DYNAMIC_ELEMENT_TAG) && isSoyElement) {
-        errorReporter.report(openTag.getSourceLocation(), ROOT_IS_DYNAMIC_TAG);
+      if (delegateTemplate != null
+          && !openTag.getTagName().isStatic()
+          && !openTag.getTagName().isLegacyDynamicTagName()
+          && calleeMightBeASoyElement(delegateTemplate, templatesInLibrary, registry)
+          && isSoyElement) {
+        errorReporter.report(openTag.getSourceLocation(), SOYELEMENT_CANNOT_WRAP_SOY_ELEMENT);
       }
       if (hasSkipNode && template instanceof TemplateElementNode) {
         errorReporter.report(openTag.getSourceLocation(), SOYELEMENT_CANNOT_BE_SKIPPED);
@@ -240,15 +243,28 @@ public final class SoyElementPass implements CompilerFileSetPass {
             .setTag(tagName)
             .setIsVelogged(veLogNode != null)
             .setIsSkip(hasSkipNode)
-            .setDelegateElement(delegateTemplate)
+            .setDelegateElement(nullToEmpty(delegateTemplate))
             .build();
     template.setHtmlElementMetadata(info);
     return info;
   }
 
-  private String tryGetDelegateTagName(
+  private static boolean calleeMightBeASoyElement(
       String delegateName, Map<String, TemplateNode> templates, ImportsTemplateRegistry registry) {
     if (delegateName.isEmpty()) {
+      return true;
+    }
+
+    TemplateNode callee = templates.get(delegateName);
+    if (callee != null) {
+      return callee instanceof TemplateElementNode;
+    }
+    return registry.getBasicTemplateOrElement(delegateName).getSoyElement().getIsSoyElement();
+  }
+
+  private static String tryGetDelegateTagName(
+      String delegateName, Map<String, TemplateNode> templates, ImportsTemplateRegistry registry) {
+    if (delegateName == null) {
       return DYNAMIC_ELEMENT_TAG;
     }
 
@@ -257,8 +273,9 @@ public final class SoyElementPass implements CompilerFileSetPass {
     if (callee != null) {
       calleeKind = callee.getTemplateContentKind();
     } else {
-      calleeKind =
-          registry.getBasicTemplateOrElement(delegateName).getTemplateType().getContentKind();
+      TemplateMetadata metadata = registry.getBasicTemplateOrElement(delegateName);
+      Preconditions.checkNotNull(metadata, "No metadata for %s", delegateName);
+      calleeKind = metadata.getTemplateType().getContentKind();
     }
 
     if (calleeKind instanceof ElementContentKind) {
@@ -276,18 +293,21 @@ public final class SoyElementPass implements CompilerFileSetPass {
     // The normal TagName.isTemplateCall() doesn't work before ResolveExpressionTypesPass.
     TagName tagName = openTag.getTagName();
     if (tagName.isStatic()) {
-      return "";
+      return null;
     }
     PrintNode printNode = tagName.getDynamicTagName();
     ExprNode exprNode = printNode.getExpr().getRoot();
+    if (exprNode instanceof TemplateLiteralNode) {
+      return ((TemplateLiteralNode) exprNode).getResolvedName();
+    }
     if (!(exprNode.getKind() == ExprNode.Kind.METHOD_CALL_NODE
         && ((MethodCallNode) exprNode).getMethodName().identifier().equals("bind"))) {
-      return "";
+      return null;
     }
 
     MethodCallNode bind = (MethodCallNode) exprNode;
     if (bind.getChild(0).getKind() != ExprNode.Kind.TEMPLATE_LITERAL_NODE) {
-      return "";
+      return null;
     }
 
     return ((TemplateLiteralNode) bind.getChild(0)).getResolvedName();
