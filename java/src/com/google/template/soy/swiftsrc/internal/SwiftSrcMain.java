@@ -3,21 +3,23 @@ package com.google.template.soy.swiftsrc.internal;
 import static com.google.common.base.Preconditions.checkNotNull;
 import java.io.File;
 import java.io.IOException;
-import java.io.StringWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
+import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Supplier;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.Iterables;
-import com.google.common.collect.Multimap;
 import com.google.common.io.Files;
+import com.google.template.soy.base.SourceFilePath;
+import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.error.ErrorReporter;
+import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.internal.i18n.BidiGlobalDir;
-import com.google.template.soy.shared.internal.MainEntryPointUtils;
 import com.google.template.soy.shared.internal.SoyScopedData;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
@@ -27,6 +29,10 @@ import com.google.template.soy.swiftsrc.SoySwiftSrcOptions;
 import com.google.template.soy.swiftsrc.internal.GenSwiftExprsVisitor.GenSwiftExprsVisitorFactory;
 
 public class SwiftSrcMain {
+
+  private static final SoyErrorKind DUPLICATE_NAMESPACE_ERROR =
+      SoyErrorKind.of(
+          "Multiple files are providing the same namespace: {0}. Soy namespaces must be unique.");
 
   /** The scope object that manages the API call scope. */
   private final SoyScopedData.Enterable apiCallScope;
@@ -55,9 +61,11 @@ public class SwiftSrcMain {
 
     // FIXME do we need this?
     BidiGlobalDir bidiGlobalDir = BidiGlobalDir.LTR;
-    // SoyBidiUtils.decodeBidiGlobalDirFromPyOptions(pySrcOptions.getBidiIsRtlFn());
+//    BidiGlobalDir bidiGlobalDir =
+//        SoyBidiUtils.decodeBidiGlobalDirFromPyOptions(swiftSrcOptions.getBidiIsRtlFn());
     try (SoyScopedData.InScope inScope = apiCallScope.enter(/* msgBundle= */ null, bidiGlobalDir)) {
-      return createVisitor(swiftSrcOptions, bidiGlobalDir, errorReporter, currentManifest).gen(soyTree, errorReporter);
+      return createVisitor(swiftSrcOptions, inScope.getBidiGlobalDir(), errorReporter, currentManifest)
+          .gen(soyTree, errorReporter);
     }
   }
 
@@ -73,22 +81,20 @@ public class SwiftSrcMain {
    * @throws SoySyntaxException If a syntax error is found.
    * @throws IOException If there is an error in opening/writing an output Python file.
    */
-  public void genSwiftFiles(
-      SoyFileSetNode soyTree,
-      SoySwiftSrcOptions swiftSrcOptions,
-      String outputPathFormat,
-      ErrorReporter errorReporter)
+  public List<String> genSwiftFiles(
+      SoyFileSetNode soyTree, SoySwiftSrcOptions swiftSrcOptions, ErrorReporter errorReporter)
       throws IOException {
 
     ImmutableList<SoyFileNode> srcsToCompile = ImmutableList.copyOf(soyTree.getChildren());
 
-    // Determine the output paths.
-    List<String> soyNamespaces = getSoyNamespaces(soyTree);
-    Multimap<String, Integer> outputs =
-        MainEntryPointUtils.mapOutputsToSrcs(null, outputPathFormat, srcsToCompile);
-
     // Generate the manifest and add it to the current manifest.
-    ImmutableMap<String, String> manifest = generateManifest(soyNamespaces, outputs);
+    //ImmutableMap<String, String> manifest = generateManifest(soyNamespaces, outputs);
+    ImmutableMap<String, String> manifest =
+        generateManifest(
+            getSoyNamespaces(soyTree),
+            swiftSrcOptions.getInputToOutputFilePaths(),
+            swiftSrcOptions.getOutputDirectoryFlag(),
+            errorReporter);
 
     // Generate the Swift source.
     List<String> swiftFileContents = genSwiftSource(soyTree, swiftSrcOptions, manifest, errorReporter);
@@ -99,16 +105,6 @@ public class SwiftSrcMain {
               "Expected to generate %d code chunk(s), got %d",
               srcsToCompile.size(), swiftFileContents.size()));
     }
-
-    // Write out the Swift outputs.
-    for (String outputFilePath : outputs.keySet()) {
-      try (Writer out = Files.newWriter(new File(outputFilePath), StandardCharsets.UTF_8)) {
-        for (int inputFileIndex : outputs.get(outputFilePath)) {
-          out.write(swiftFileContents.get(inputFileIndex));
-        }
-      }
-    }
-
 
 
     // Write out template renderer map
@@ -152,14 +148,16 @@ public class SwiftSrcMain {
         out.write(rendererMap.toString());
       }
     }
+
+    return swiftFileContents;
   }
 
-  private List<String> getSoyNamespaces(SoyFileSetNode soyTree) {
-    List<String> namespaces = new ArrayList<>();
+  private static ImmutableMap<SourceFilePath, String> getSoyNamespaces(SoyFileSetNode soyTree) {
+    ImmutableMap.Builder<SourceFilePath, String> namespaces = new ImmutableMap.Builder<>();
     for (SoyFileNode soyFile : soyTree.getChildren()) {
-      namespaces.add(soyFile.getNamespace());
+      namespaces.put(soyFile.getFilePath(), soyFile.getNamespace());
     }
-    return namespaces;
+    return namespaces.build();
   }
 
   /**
@@ -168,16 +166,26 @@ public class SwiftSrcMain {
    */
   @Deprecated
   private static ImmutableMap<String, String> generateManifest(
-      List<String> soyNamespaces, Multimap<String, Integer> outputs) {
-    ImmutableMap.Builder<String, String> manifest = new ImmutableMap.Builder<>();
-    for (String outputFilePath : outputs.keySet()) {
-      for (int inputFileIndex : outputs.get(outputFilePath)) {
-        String swiftPath = outputFilePath.replace(".swift", "").replace('/', '.');
+      Map<SourceFilePath, String> soyNamespaces,
+      Map<SourceFilePath, Path> inputToOutputPaths,
+      Optional<Path> outputDirectoryFlag,
+      ErrorReporter errorReporter) {
 
-        manifest.put(soyNamespaces.get(inputFileIndex), swiftPath);
+    Map<String, String> manifest = new HashMap<>();
+
+    for (SourceFilePath inputFilePath : inputToOutputPaths.keySet()) {
+      String outputFilePath = inputToOutputPaths.get(inputFilePath).toString();
+      String swiftPath = outputFilePath.replace(".swift", "").replace('/', '.');
+
+      String namespace = soyNamespaces.get(inputFilePath);
+      if (manifest.containsKey(namespace)) {
+        errorReporter.report(SourceLocation.UNKNOWN, DUPLICATE_NAMESPACE_ERROR, namespace);
       }
+
+      manifest.put(namespace, swiftPath);
     }
-    return manifest.build();
+
+    return ImmutableMap.copyOf(manifest);
   }
 
   @VisibleForTesting

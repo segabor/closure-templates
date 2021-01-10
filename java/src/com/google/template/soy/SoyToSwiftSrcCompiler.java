@@ -5,31 +5,11 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.kohsuke.args4j.Option;
-
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.template.soy.swiftsrc.SoySwiftSrcOptions;
 
 public class SoyToSwiftSrcCompiler extends AbstractSoyCompiler {
-  @Option(
-    name = "--outputPathFormat",
-    required = true,
-    usage =
-        "[Required] A format string that specifies how to build the path to each"
-            + " output file. There will be one output Python file (UTF-8) for each input Soy"
-            + " file. The format string can include literal characters as well as the"
-            + " placeholders {INPUT_PREFIX}, {INPUT_DIRECTORY}, {INPUT_FILE_NAME}, and"
-            + " {INPUT_FILE_NAME_NO_EXT}. Additionally periods are not allowed in the"
-            + " outputted filename outside of the final py extension."
-  )
-  private String outputPathFormat = "";
-
-
-  @Option(
-    name = "--syntaxVersion",
-    usage = "User-declared syntax version for the Soy file bundle (e.g. 2.2, 2.3)."
-  )
-  private String syntaxVersion = "";
-
   @Option(
     name = "--namespaceManifestPath",
     usage =
@@ -40,8 +20,21 @@ public class SoyToSwiftSrcCompiler extends AbstractSoyCompiler {
   )
   private List<String> namespaceManifestPaths = new ArrayList<>();
 
+  private final PerInputOutputFiles outputFiles = new PerInputOutputFiles("swift");
+
   public static void main(String[] args) {
     new SoyToSwiftSrcCompiler().runMain(args);
+  }
+
+  SoyToSwiftSrcCompiler(PluginLoader loader, SoyInputCache cache) {
+    super(loader, cache);
+  }
+
+  SoyToSwiftSrcCompiler() {}
+
+  @Override
+  Iterable<?> extraFlagsObjects() {
+    return ImmutableList.of(outputFiles);
   }
 
   @Override
@@ -58,18 +51,19 @@ public class SoyToSwiftSrcCompiler extends AbstractSoyCompiler {
     } */
 
     final String rendererMapFile = namespaceManifestPaths.isEmpty() ? "TemplateRenderers.swift" : namespaceManifestPaths.get(0);
-    
+
     // Create SoyPySrcOptions.
     SoySwiftSrcOptions pySrcOptions =
         new SoySwiftSrcOptions(
-            // runtimePath,
-            // environmentModulePath,
             // bidiIsRtlFn,
             // translationClass,
-            ImmutableMap.<String, String>of(), rendererMapFile);
+            ImmutableMap.<String, String>of(),
+            outputFiles.getOutputFilePathsForInputs(sfs.getSourceFilePaths()),
+            outputFiles.getOutputDirectoryFlag(),
+            rendererMapFile);
 
     // Compile.
-    sfs.compileToSwiftSrcFiles(outputPathFormat, pySrcOptions);
+    outputFiles.writeFiles(srcs, sfs.compileToSwiftSrcFiles(pySrcOptions));
   }
 
 }

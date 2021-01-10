@@ -1134,17 +1134,19 @@ public final class SoyFileSet {
         });
   }
 
-  public void compileToSwiftSrcFiles(
-      String outputPathFormat, SoySwiftSrcOptions swiftSrcOptions)
-      throws IOException {
-    resetErrorReporter();
-    ParseResult result = parse();
-    throwIfErrorsPresent();
-    new SwiftSrcMain(scopedData.enterable())
-        .genSwiftFiles(result.fileSet(), swiftSrcOptions, outputPathFormat, errorReporter);
-
-    throwIfErrorsPresent();
-    reportWarnings();
+  List<String> compileToSwiftSrcFiles(SoySwiftSrcOptions swiftSrcOptions) {
+      return entryPoint(
+          () -> {
+            try {
+              ParseResult result = parse();
+              throwIfErrorsPresent();
+              return new SwiftSrcMain(scopedData.enterable())
+                  .genSwiftFiles(result.fileSet(), swiftSrcOptions, errorReporter);
+            } catch (IOException e) {
+              throw new RuntimeException(e);
+            }
+          }
+      );
   }
 
   @AutoValue
