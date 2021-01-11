@@ -9338,18 +9338,19 @@ goog.html.TrustedResourceUrl.prototype.cloneWithParams = function(
 
 if (goog.DEBUG) {
   /**
-   * Returns a debug string-representation of this value.
+   * Returns a string-representation of this value.
    *
    * To obtain the actual string value wrapped in a TrustedResourceUrl, use
    * `goog.html.TrustedResourceUrl.unwrap`.
    *
+   * @return {string}
    * @see goog.html.TrustedResourceUrl#unwrap
    * @override
    */
   goog.html.TrustedResourceUrl.prototype.toString = function() {
     'use strict';
-    return 'TrustedResourceUrl{' +
-        this.privateDoNotAccessOrElseTrustedResourceUrlWrappedValue_ + '}';
+    return this.privateDoNotAccessOrElseTrustedResourceUrlWrappedValue_
+        .toString();
   };
 }
 
@@ -10255,17 +10256,18 @@ goog.html.SafeUrl.prototype.getDirection = function() {
 
 if (goog.DEBUG) {
   /**
-   * Returns a debug string-representation of this value.
+   * Returns a string-representation of this value.
    *
    * To obtain the actual string value wrapped in a SafeUrl, use
    * `goog.html.SafeUrl.unwrap`.
    *
+   * @return {string}
    * @see goog.html.SafeUrl#unwrap
    * @override
    */
   goog.html.SafeUrl.prototype.toString = function() {
     'use strict';
-    return 'SafeUrl{' + this.privateDoNotAccessOrElseSafeUrlWrappedValue_ + '}';
+    return this.privateDoNotAccessOrElseSafeUrlWrappedValue_.toString();
   };
 }
 
@@ -15365,6 +15367,7 @@ goog.dom.safe.setNonceForScriptElement_ = function(script) {
  *     assigned to.
  * @param {string|!goog.html.SafeUrl} url The URL to assign.
  * @see goog.html.SafeUrl#sanitize
+
  */
 goog.dom.safe.setLocationHref = function(loc, url) {
   'use strict';
@@ -42808,6 +42811,26 @@ soy.$$concatAttributeValues = function(l, r, delimiter) {
     return l;
   }
   return l + delimiter + r;
+};
+
+
+/**
+ * Conditionally concatenates two attribute values with a delimiter if they are
+ * both non-empty.
+ *
+ * @param {string} l
+ * @param {string} r
+ * @return {!goog.soy.data.SanitizedCss|!soydata.$$EMPTY_STRING_}
+ */
+soy.$$concatCssValues = function(l, r) {
+  if (l !== soydata.$$EMPTY_STRING_.VALUE) {
+    goog.asserts.assertInstanceof(l, goog.soy.data.SanitizedCss);
+  }
+  if (r !== soydata.$$EMPTY_STRING_.VALUE) {
+    goog.asserts.assertInstanceof(r, goog.soy.data.SanitizedCss);
+  }
+  return soydata.VERY_UNSAFE.$$ordainSanitizedCssForInternalBlocks(
+      soy.$$concatAttributeValues(l, r, ';'));
 };
 
 

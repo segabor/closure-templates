@@ -492,16 +492,10 @@ public class BytecodeCompilerTest {
             "  {/if}",
             "{/template}");
     templateClass = templates.getTemplateData("ns.msg").templateClass();
-    innerClass = Iterables.getOnlyElement(Arrays.asList(templateClass.getDeclaredClasses()));
-    assertThat(innerClass.getSimpleName()).isEqualTo("ph_FOO");
-    // The placeholder inner class doesn't require a `$state` field because `$name` is definetely
-    // already resolved.
-    assertThat(innerClass.getDeclaredFields()).hasLength(1);
-    assertThat(innerClass.getDeclaredField("$template").getType())
-        .isAssignableTo(CompiledTemplate.class);
+    // The placeholder doesn't require an inner class  because `$name` is definitely already
+    // resolved so it is evaluated inline
+    assertThat(templateClass.getDeclaredClasses()).isEmpty();
   }
-
-
 
   private static TemplateMetadata getTemplateMetadata(CompiledTemplates templates, String name) {
     return templates.getTemplateData(name).templateClass().getAnnotation(TemplateMetadata.class);
@@ -950,12 +944,46 @@ public class BytecodeCompilerTest {
             "{namespace ns}",
             "{template .foo}",
             "  {@param? content : string}",
-            "  {$content ?: 'empty'}",
+            "  {checkNotNull($content)}",
             "{/template}");
-    subject.rendersAs("empty");
+    subject.rendersAs("full", ImmutableMap.of("content", "full"));
+    subject.failsToRenderWith(NullPointerException.class);
     subject.failsToRenderWith(
         ClassCastException.class,
         ImmutableMap.of("content", SanitizedContents.constantHtml("<b>hello</b>")));
+  }
+
+  @Test
+  public void testPassHtmlAsNullableString_printNodeDoesntFail() throws Exception {
+    CompiledTemplateSubject subject =
+        TemplateTester.assertThatFile(
+            "{namespace ns}",
+            "{template .foo}",
+            "  {@param? content : string}",
+            "  {$content ?: 'empty'}",
+            "{/template}");
+    subject.rendersAs("empty");
+    subject.rendersAs("full", ImmutableMap.of("content", "full"));
+    // NOTE: we don't fail with a ClassCastException here, this is because we end up calling
+    // `renderandResolve` on the parameter as a SoyValueProvider
+    subject.rendersAs(
+        "<b>hello</b>", ImmutableMap.of("content", SanitizedContents.constantHtml("<b>hello</b>")));
+  }
+
+  @Test
+  public void testPassHtmlAsString_printNodeDoesntFail() throws Exception {
+    CompiledTemplateSubject subject =
+        TemplateTester.assertThatFile(
+            "{namespace ns}",
+            "{template .foo}",
+            "  {@param content : string}",
+            "  {$content}",
+            "{/template}");
+    subject.rendersAs("full", ImmutableMap.of("content", "full"));
+    // NOTE: we don't fail with a ClassCastException here, this is because we end up calling
+    // `renderandResolve` on the parameter as a SoyValueProvider
+    subject.rendersAs(
+        "<b>hello</b>", ImmutableMap.of("content", SanitizedContents.constantHtml("<b>hello</b>")));
   }
 
   private Object getField(String name, CompiledTemplate template) throws Exception {
@@ -1455,7 +1483,7 @@ public class BytecodeCompilerTest {
                         "{template .publicTemplate}",
                         "{@param renderTemplate: bool = true}",
                         "{let $tpl: $renderTemplate ? template(loader1.publicTemplate1) :"
-                            + " template(dummyTemplate) /}",
+                            + " dummyTemplate /}",
                         "L2T",
                         "{sp}{call $tpl /}",
                         "{sp}{call $tpl /}",
@@ -1535,7 +1563,6 @@ public class BytecodeCompilerTest {
   private static CompilingClassLoader createCompilingClassLoader(
       SoyFileSetParser parser, ParseResult parseResult) {
     return new CompilingClassLoader(
-        new CompiledTemplateRegistry(parseResult.registry()),
         parseResult.fileSet(),
         parser.soyFileSuppliers(),
         parser.typeRegistry());

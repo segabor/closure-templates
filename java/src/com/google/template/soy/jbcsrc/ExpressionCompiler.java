@@ -34,7 +34,6 @@ import com.google.template.soy.data.SoyLegacyObjectMap;
 import com.google.template.soy.data.SoyMap;
 import com.google.template.soy.data.SoyRecord;
 import com.google.template.soy.data.internal.RuntimeMapTypeTracker;
-import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.exprtree.AbstractLocalVarDefn;
 import com.google.template.soy.exprtree.AbstractReturningExprNodeVisitor;
 import com.google.template.soy.exprtree.BooleanNode;
@@ -89,7 +88,6 @@ import com.google.template.soy.jbcsrc.restricted.ConstructorRef;
 import com.google.template.soy.jbcsrc.restricted.Expression;
 import com.google.template.soy.jbcsrc.restricted.Expression.Feature;
 import com.google.template.soy.jbcsrc.restricted.FieldRef;
-import com.google.template.soy.jbcsrc.restricted.JbcSrcPluginContext;
 import com.google.template.soy.jbcsrc.restricted.LocalVariable;
 import com.google.template.soy.jbcsrc.restricted.MethodRef;
 import com.google.template.soy.jbcsrc.restricted.SoyExpression;
@@ -98,7 +96,6 @@ import com.google.template.soy.jbcsrc.restricted.Statement;
 import com.google.template.soy.jbcsrc.shared.ClassLoaderFallbackCallFactory;
 import com.google.template.soy.jbcsrc.shared.LegacyFunctionAdapter;
 import com.google.template.soy.logging.ValidatedLoggingConfig.ValidatedLoggableElement;
-import com.google.template.soy.plugin.internal.JavaPluginExecContext;
 import com.google.template.soy.plugin.java.internal.PluginAnalyzer;
 import com.google.template.soy.plugin.java.restricted.SoyJavaSourceFunction;
 import com.google.template.soy.shared.internal.BuiltinFunction;
@@ -113,7 +110,6 @@ import com.google.template.soy.types.ListType;
 import com.google.template.soy.types.NullType;
 import com.google.template.soy.types.SoyProtoType;
 import com.google.template.soy.types.SoyType.Kind;
-import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.SoyTypes;
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.MethodType;
@@ -151,20 +147,10 @@ final class ExpressionCompiler {
         TemplateAnalysis analysis,
         TemplateParameterLookup parameters,
         LocalVariableManager varManager,
-        FieldManager fields,
-        ErrorReporter reporter,
-        SoyTypeRegistry registry,
-        CompiledTemplateRegistry compiledTemplateRegistry) {
+        JavaSourceFunctionCompiler sourceFunctionCompiler) {
       this.compilerVisitor =
           new CompilerVisitor(
-              analysis,
-              parameters,
-              varManager,
-              fields,
-              BasicDetacher.INSTANCE,
-              reporter,
-              registry,
-              compiledTemplateRegistry);
+              analysis, parameters, varManager, BasicDetacher.INSTANCE, sourceFunctionCompiler);
     }
 
     private BasicExpressionCompiler(CompilerVisitor visitor) {
@@ -196,27 +182,15 @@ final class ExpressionCompiler {
       TemplateAnalysis analysis,
       TemplateParameterLookup parameters,
       LocalVariableManager varManager,
-      FieldManager fields,
-      ErrorReporter reporter,
-      SoyTypeRegistry registry,
-      CompiledTemplateRegistry compiledTemplateRegistry) {
+      JavaSourceFunctionCompiler sourceFunctionCompiler) {
     return new ExpressionCompiler(
-        analysis,
-        checkNotNull(parameters),
-        varManager,
-        fields,
-        reporter,
-        registry,
-        compiledTemplateRegistry);
+        analysis, checkNotNull(parameters), varManager, sourceFunctionCompiler);
   }
 
   static BasicExpressionCompiler createConstantCompiler(
       TemplateAnalysis analysis,
       LocalVariableManager varManager,
-      FieldManager fields,
-      ErrorReporter reporter,
-      SoyTypeRegistry registry,
-      CompiledTemplateRegistry compiledTemplateRegistry) {
+      JavaSourceFunctionCompiler sourceFunctionCompiler) {
     return new BasicExpressionCompiler(
         new CompilerVisitor(
             analysis,
@@ -262,11 +236,8 @@ final class ExpressionCompiler {
               }
             },
             varManager,
-            fields,
             ExpressionDetacher.NullDetatcher.INSTANCE,
-            reporter,
-            registry,
-            compiledTemplateRegistry));
+            sourceFunctionCompiler));
   }
 
   /**
@@ -279,12 +250,8 @@ final class ExpressionCompiler {
       TemplateAnalysis analysis,
       TemplateParameterLookup parameters,
       LocalVariableManager varManager,
-      FieldManager fields,
-      ErrorReporter reporter,
-      SoyTypeRegistry registry,
-      CompiledTemplateRegistry compiledTemplateRegistry) {
-    return new BasicExpressionCompiler(
-        analysis, parameters, varManager, fields, reporter, registry, compiledTemplateRegistry);
+      JavaSourceFunctionCompiler sourceFunctionCompiler) {
+    return new BasicExpressionCompiler(analysis, parameters, varManager, sourceFunctionCompiler);
   }
 
   /**
@@ -298,26 +265,17 @@ final class ExpressionCompiler {
   private final TemplateAnalysis analysis;
   private final TemplateParameterLookup parameters;
   private final LocalVariableManager varManager;
-  private final FieldManager fields;
-  private final ErrorReporter reporter;
-  private final SoyTypeRegistry registry;
-  private final CompiledTemplateRegistry compiledTemplateRegistry;
+  private final JavaSourceFunctionCompiler sourceFunctionCompiler;
 
   private ExpressionCompiler(
       TemplateAnalysis analysis,
       TemplateParameterLookup parameters,
       LocalVariableManager varManager,
-      FieldManager fields,
-      ErrorReporter reporter,
-      SoyTypeRegistry registry,
-      CompiledTemplateRegistry compiledTemplateRegistry) {
+      JavaSourceFunctionCompiler sourceFunctionCompiler) {
     this.analysis = analysis;
     this.parameters = checkNotNull(parameters);
     this.varManager = checkNotNull(varManager);
-    this.fields = checkNotNull(fields);
-    this.reporter = reporter;
-    this.registry = registry;
-    this.compiledTemplateRegistry = compiledTemplateRegistry;
+    this.sourceFunctionCompiler = checkNotNull(sourceFunctionCompiler);
   }
 
   /**
@@ -368,14 +326,7 @@ final class ExpressionCompiler {
     }
     return Optional.of(
         new CompilerVisitor(
-                analysis,
-                parameters,
-                varManager,
-                fields,
-                /* detacher=*/ null,
-                reporter,
-                registry,
-                compiledTemplateRegistry)
+                analysis, parameters, varManager, /* detacher=*/ null, sourceFunctionCompiler)
             .exec(node));
   }
 
@@ -385,15 +336,7 @@ final class ExpressionCompiler {
    */
   BasicExpressionCompiler asBasicCompiler(ExpressionDetacher detacher) {
     return new BasicExpressionCompiler(
-        new CompilerVisitor(
-            analysis,
-            parameters,
-            varManager,
-            fields,
-            detacher,
-            reporter,
-            registry,
-            compiledTemplateRegistry));
+        new CompilerVisitor(analysis, parameters, varManager, detacher, sourceFunctionCompiler));
   }
 
   private static final class CompilerVisitor
@@ -403,28 +346,19 @@ final class ExpressionCompiler {
     final TemplateAnalysis analysis;
     final TemplateParameterLookup parameters;
     final LocalVariableManager varManager;
-    final FieldManager fields;
-    final ErrorReporter reporter;
-    final SoyTypeRegistry registry;
-    final CompiledTemplateRegistry compiledTemplateRegistry;
+    private final JavaSourceFunctionCompiler sourceFunctionCompiler;
 
     CompilerVisitor(
         TemplateAnalysis analysis,
         TemplateParameterLookup parameters,
         LocalVariableManager varManager,
-        FieldManager fields,
         ExpressionDetacher detacher,
-        ErrorReporter reporter,
-        SoyTypeRegistry registry,
-        CompiledTemplateRegistry compiledTemplateRegistry) {
+        JavaSourceFunctionCompiler sourceFunctionCompiler) {
       this.analysis = analysis;
       this.detacher = detacher;
       this.parameters = parameters;
       this.varManager = varManager;
-      this.fields = fields;
-      this.reporter = reporter;
-      this.registry = registry;
-      this.compiledTemplateRegistry = compiledTemplateRegistry;
+      this.sourceFunctionCompiler = sourceFunctionCompiler;
     }
 
     @Override
@@ -451,7 +385,7 @@ final class ExpressionCompiler {
 
     @Override
     protected final SoyExpression visitStringNode(StringNode node) {
-      return SoyExpression.forString(constant(node.getValue(), fields));
+      return SoyExpression.forString(constant(node.getValue()));
     }
 
     @Override
@@ -553,55 +487,53 @@ final class ExpressionCompiler {
 
       */
       return SoyExpression.forList(
-              (ListType) node.getType(),
-              new Expression(BytecodeUtils.LIST_TYPE, Feature.NON_NULLABLE) {
-                @Override
-                protected void doGen(CodeBuilder adapter) {
-                  listVarInitializer.gen(adapter); //   List<?> a_list = ...;
-                  resultVarInitializer.gen(adapter); // List<?> a_result = new ArrayList<>();
-                  sizeVarInitializer.gen(adapter); //   int a_length = a_list.size();
-                  indexVarInitializer.gen(adapter); //  int a_i = 0;
+          (ListType) node.getType(),
+          new Expression(BytecodeUtils.LIST_TYPE, Feature.NON_NULLABLE) {
+            @Override
+            protected void doGen(CodeBuilder adapter) {
+              listVarInitializer.gen(adapter); //   List<?> a_list = ...;
+              resultVarInitializer.gen(adapter); // List<?> a_result = new ArrayList<>();
+              sizeVarInitializer.gen(adapter); //   int a_length = a_list.size();
+              indexVarInitializer.gen(adapter); //  int a_i = 0;
 
-                  Label loopStart = new Label();
-                  Label loopContinue = new Label();
-                  Label loopEnd = new Label();
+              Label loopStart = new Label();
+              Label loopContinue = new Label();
+              Label loopEnd = new Label();
 
-                  adapter.mark(loopStart);
+              adapter.mark(loopStart);
 
-                  indexVar.gen(adapter);
-                  sizeVar.gen(adapter);
-                  adapter.ifICmp(Opcodes.IFGE, loopEnd); // if (a_i >= a_length) break;
+              indexVar.gen(adapter);
+              sizeVar.gen(adapter);
+              adapter.ifICmp(Opcodes.IFGE, loopEnd); // if (a_i >= a_length) break;
 
-                  itemVarInitializer.gen(adapter); // Object a = a_list.get(a_i);
+              itemVarInitializer.gen(adapter); // Object a = a_list.get(a_i);
 
-                  if (userIndexVar != null) {
-                    userIndexVarInitializer.gen(adapter); // int i = a_i;
-                  }
+              if (userIndexVar != null) {
+                userIndexVarInitializer.gen(adapter); // int i = a_i;
+              }
 
-                  if (visitedFilter != null) {
-                    visitedFilter.gen(adapter);
-                    adapter.ifZCmp(Opcodes.IFEQ, loopContinue); // if (!filter.test(a,i)) continue;
-                  }
+              if (visitedFilter != null) {
+                visitedFilter.gen(adapter);
+                adapter.ifZCmp(Opcodes.IFEQ, loopContinue); // if (!filter.test(a,i)) continue;
+              }
 
-                  resultVar.gen(adapter);
-                  visitedMap.gen(adapter);
-                  MethodRef.ARRAY_LIST_ADD.invokeUnchecked(
-                      adapter); // a_result.add(map.apply(a,i));
-                  adapter.pop(); // pop boolean return value of List.add()
+              resultVar.gen(adapter);
+              visitedMap.gen(adapter);
+              MethodRef.ARRAY_LIST_ADD.invokeUnchecked(adapter); // a_result.add(map.apply(a,i));
+              adapter.pop(); // pop boolean return value of List.add()
 
-                  adapter.mark(loopContinue);
+              adapter.mark(loopContinue);
 
-                  adapter.iinc(indexVar.index(), 1); // a_i++
-                  adapter.goTo(loopStart);
+              adapter.iinc(indexVar.index(), 1); // a_i++
+              adapter.goTo(loopStart);
 
-                  adapter.mark(loopEnd);
+              adapter.mark(loopEnd);
 
-                  resultVar.gen(adapter); // "return" a_result;
-                  // exit the loop
-                  exitScope.gen(adapter);
-                }
-              })
-          .box();
+              resultVar.gen(adapter); // "return" a_result;
+              // exit the loop
+              exitScope.gen(adapter);
+            }
+          });
     }
 
     @Override
@@ -1269,8 +1201,7 @@ final class ExpressionCompiler {
         List<SoyExpression> args = new ArrayList<>(node.numParams() + 1);
         args.add(baseExpr);
         node.getParams().forEach(n -> args.add(visit(n)));
-        return visitSoyJavaSourceFunction(
-            JavaPluginExecContext.forMethodCallNode(node, sourceMethod), args);
+        return sourceFunctionCompiler.compile(node, sourceMethod, args, parameters);
       }
       throw new AssertionError(function.getClass());
     }
@@ -1545,8 +1476,7 @@ final class ExpressionCompiler {
       Object fn = node.getSoyFunction();
       List<SoyExpression> args = visitChildren(node);
       if (fn instanceof SoyJavaSourceFunction) {
-        return visitSoyJavaSourceFunction(
-            JavaPluginExecContext.forFunctionNode(node, (SoyJavaSourceFunction) fn), args);
+        return sourceFunctionCompiler.compile(node, (SoyJavaSourceFunction) fn, args, parameters);
       }
 
       // Functions that are not a SoyJavaSourceFunction
@@ -1563,45 +1493,6 @@ final class ExpressionCompiler {
           MethodRef.RUNTIME_CALL_LEGACY_FUNCTION
               .invoke(legacyFunctionRuntimeExpr, list)
               .checkedCast(SoyRuntimeType.getBoxedType(node.getType()).runtimeType()));
-    }
-
-    SoyExpression visitSoyJavaSourceFunction(
-        JavaPluginExecContext context, List<SoyExpression> args) {
-      return new JbcSrcValueFactory(
-              context,
-              // parameters is null when we are in a constant context.
-              parameters == null
-                  ? new JbcSrcPluginContext() {
-                    private Expression error() {
-                      throw new UnsupportedOperationException(
-                          "Cannot access contextual data from a pure context");
-                    }
-
-                    @Override
-                    public Expression getBidiGlobalDir() {
-                      return error();
-                    }
-
-                    @Override
-                    public Expression getAllRequiredCssNamespaces(SoyExpression template) {
-                      return error();
-                    }
-
-                    @Override
-                    public Expression getULocale() {
-                      return error();
-                    }
-                  }
-                  : parameters.getPluginContext(),
-              pluginName -> {
-                if (parameters == null) {
-                  throw new UnsupportedOperationException("Pure functions cannot have instances");
-                }
-                return parameters.getRenderContext().getPluginInstance(pluginName);
-              },
-              reporter,
-              registry)
-          .computeForJavaSource(args);
     }
 
     // Proto initialization calls

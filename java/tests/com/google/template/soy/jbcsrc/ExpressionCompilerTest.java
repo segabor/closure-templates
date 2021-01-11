@@ -57,7 +57,6 @@ import com.google.template.soy.jbcsrc.shared.RenderContext;
 import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.soytree.PrintNode;
 import com.google.template.soy.soytree.TemplateNode;
-import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.testing.SharedTestUtils;
 import com.google.template.soy.testing.SoyFileSetParserBuilder;
@@ -634,10 +633,8 @@ public class ExpressionCompilerTest {
                 LocalVariable.createThisVar(
                     TypeInfo.create(Object.class), new Label(), new Label()),
                 getRenderMethod()),
-            fields,
-            ErrorReporter.exploding(),
-            SoyTypeRegistryBuilder.create(),
-            new CompiledTemplateRegistry(TemplateRegistry.EMPTY));
+            new JavaSourceFunctionCompiler(
+                SoyTypeRegistryBuilder.create(), ErrorReporter.exploding()));
 
     return testExpressionCompiler.compileRootExpression(
         ((FunctionNode) code.getExpr().getChild(0)).getChild(0),
@@ -655,6 +652,11 @@ public class ExpressionCompilerTest {
                   return soyValueProvider;
                 }
                 return MethodRef.SOY_VALUE_PROVIDER_RESOLVE.invoke(soyValueProvider);
+              }
+
+              @Override
+              public Expression waitForSoyValueProvider(Expression soyValueProvider) {
+                return soyValueProvider;
               }
 
               @Override
