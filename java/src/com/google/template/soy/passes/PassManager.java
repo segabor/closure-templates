@@ -114,7 +114,7 @@ public final class PassManager {
    * @param partialTemplateRegistryWithJustDeps registry of {@link TemplatesPerFile} for just the
    *     deps (we don't have enough info yet to create the metadata for the current fileset).
    */
-  public void runPartialTemplateRegistryPasses(
+  public CompilerFileSetPass.Result runPartialTemplateRegistryPasses(
       SoyFileSetNode soyTree,
       TemplateNameRegistry templateNameRegistry,
       TemplateRegistry partialTemplateRegistryWithJustDeps) {
@@ -124,10 +124,11 @@ public final class PassManager {
       CompilerFileSetPass.Result result =
           pass.run(
               sourceFiles, idGenerator, templateNameRegistry, partialTemplateRegistryWithJustDeps);
-      if (result == CompilerFileSetPass.Result.STOP) {
-        break;
+      if (!result.equals(CompilerFileSetPass.Result.CONTINUE)) {
+        return result;
       }
     }
+    return CompilerFileSetPass.Result.CONTINUE;
   }
 
   /**
@@ -208,7 +209,6 @@ public final class PassManager {
     private SoyGeneralOptions options;
     private Optional<CssRegistry> cssRegistry;
     private boolean allowUnknownGlobals;
-    private boolean allowV1Expression;
     private boolean allowUnknownJsGlobals;
     private boolean disableAllTypeChecking;
     private boolean desugarHtmlAndStateNodes = true;
@@ -272,16 +272,6 @@ public final class PassManager {
      */
     public Builder allowUnknownGlobals() {
       this.allowUnknownGlobals = true;
-      return this;
-    }
-
-    /**
-     * Allows v1Expression().
-     *
-     * <p>This option is only available for backwards compatibility with legacy JS only templates.
-     */
-    public Builder allowV1Expression() {
-      this.allowV1Expression = true;
       return this;
     }
 
@@ -425,9 +415,6 @@ public final class PassManager {
           partialTemplateRegistryPassesBuilder);
       addPass(new XidPass(errorReporter), partialTemplateRegistryPassesBuilder);
       addPass(
-          new V1ExpressionPass(allowV1Expression, errorReporter),
-          partialTemplateRegistryPassesBuilder);
-      addPass(
           new UnknownJsGlobalPass(allowUnknownJsGlobals, errorReporter),
           partialTemplateRegistryPassesBuilder);
       addPass(new ResolveNamesPass(errorReporter), partialTemplateRegistryPassesBuilder);
@@ -453,12 +440,6 @@ public final class PassManager {
       addPass(new StrictHtmlValidationPass(errorReporter), partialTemplateRegistryPassesBuilder);
 
       addPass(new SoyElementPass(errorReporter), partialTemplateRegistryPassesBuilder);
-      if (astRewrites.atLeast(AstRewrites.ALL)) {
-        addPass(
-            new ElementAttributePass(errorReporter, pluginResolver),
-            partialTemplateRegistryPassesBuilder);
-      }
-
       if (addHtmlAttributesForDebugging) {
         // needs to run after MsgsPass (so we don't mess up the auto placeholder naming algorithm)
         // and before ResolveExpressionTypesPass (since we insert expressions).
@@ -520,31 +501,34 @@ public final class PassManager {
       // Because conformance exits abruptly after this pass we must ensure that the AST is left in a
       // complete state. Therefore this pass should come after ResolveExpressionTypesPass and
       // others.
+      if (astRewrites.atLeast(AstRewrites.ALL)) {
+        addPass(
+            new ElementAttributePass(errorReporter, pluginResolver),
+            crossTemplateCheckingPassesBuilder);
+      }
       addPass(
           new SoyConformancePass(conformanceConfig, errorReporter),
           crossTemplateCheckingPassesBuilder);
-
-      addPass(new CheckTemplateHeaderVarsPass(errorReporter), crossTemplateCheckingPassesBuilder);
       if (!disableAllTypeChecking) {
-        // Upgrade the "named template" placeholder types to proper template types, now that their
-        // signatures are known.
         addPass(
             new ResolveExpressionTypesCrossTemplatePass(
                 registry, errorReporter, astRewrites.atLeast(AstRewrites.ALL)),
             crossTemplateCheckingPassesBuilder);
+      }
+      addPass(new CheckTemplateHeaderVarsPass(errorReporter), crossTemplateCheckingPassesBuilder);
+      if (!disableAllTypeChecking) {
         // Needs to come after types have been set.
         addPass(
             new EnforceExperimentalFeaturesPass(options.getExperimentalFeatures(), errorReporter),
             crossTemplateCheckingPassesBuilder);
         addPass(new CheckTemplateCallsPass(errorReporter), crossTemplateCheckingPassesBuilder);
-        if (options.getExperimentalFeatures().contains("enableTemplateElementKind")) {
+        addPass(
+            new ElementCheckCrossTemplatePass(errorReporter), crossTemplateCheckingPassesBuilder);
+        if (astRewrites.atLeast(AstRewrites.ALL)) {
+
           addPass(
-              new ElementCheckCrossTemplatePass(errorReporter), crossTemplateCheckingPassesBuilder);
-          if (astRewrites.atLeast(AstRewrites.ALL)) {
-            addPass(
-                new SoyElementCompositionPass(errorReporter, soyPrintDirectives),
-                crossTemplateCheckingPassesBuilder);
-          }
+              new SoyElementCompositionPass(errorReporter, soyPrintDirectives),
+              crossTemplateCheckingPassesBuilder);
         }
       }
       addPass(new CallAnnotationPass(), crossTemplateCheckingPassesBuilder);

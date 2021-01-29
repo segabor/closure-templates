@@ -31,6 +31,7 @@ import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.base.internal.SoyFileSupplier;
 import com.google.template.soy.css.CssRegistry;
 import com.google.template.soy.error.ErrorReporter;
+import com.google.template.soy.passes.CompilerFileSetPass;
 import com.google.template.soy.passes.PassManager;
 import com.google.template.soy.shared.SoyAstCache;
 import com.google.template.soy.soyparse.SoyFileParser;
@@ -89,13 +90,22 @@ public abstract class SoyFileSetParser {
     /** The TemplateRegistry, which is guaranteed to be present if the error reporter is empty. */
     private final Optional<TemplateRegistry> registry;
 
-    static ParseResult create(SoyFileSetNode soyTree, Optional<TemplateRegistry> registry) {
-      return new ParseResult(soyTree, registry);
+    private final Optional<CssRegistry> cssRegistry;
+
+    static ParseResult create(
+        SoyFileSetNode soyTree,
+        Optional<TemplateRegistry> registry,
+        Optional<CssRegistry> cssRegistry) {
+      return new ParseResult(soyTree, registry, cssRegistry);
     }
 
-    ParseResult(SoyFileSetNode soyTree, Optional<TemplateRegistry> registry) {
+    ParseResult(
+        SoyFileSetNode soyTree,
+        Optional<TemplateRegistry> registry,
+        Optional<CssRegistry> cssRegistry) {
       this.soyTree = soyTree;
       this.registry = registry;
+      this.cssRegistry = cssRegistry;
     }
 
     public SoyFileSetNode fileSet() {
@@ -107,6 +117,13 @@ public abstract class SoyFileSetParser {
      */
     public final TemplateRegistry registry() {
       return registry.orElseThrow(
+          () ->
+              new IllegalStateException(
+                  "No template registry, did you forget to check the error reporter?"));
+    }
+
+    public final CssRegistry cssRegistry() {
+      return cssRegistry.orElseThrow(
           () ->
               new IllegalStateException(
                   "No template registry, did you forget to check the error reporter?"));
@@ -216,7 +233,7 @@ public abstract class SoyFileSetParser {
     // If we couldn't parse all the files, we can't run the fileset passes or build the template
     // registry.
     if (filesWereSkipped) {
-      return ParseResult.create(soyTree, Optional.empty());
+      return ParseResult.create(soyTree, Optional.empty(), Optional.empty());
     }
 
     // Build the template registry for the file set & its dependencies.
@@ -239,9 +256,14 @@ public abstract class SoyFileSetParser {
     // Run the passes that we need to finish building the template registry.
     FileSetTemplateRegistry partialRegistryForDeps = builder.build();
     soyTree.setFileSetTemplateRegistry(partialRegistryForDeps);
-    passManager()
-        .runPartialTemplateRegistryPasses(
-            soyTree, templateNamesForEachFile, partialRegistryForDeps);
+    CompilerFileSetPass.Result result =
+        passManager()
+            .runPartialTemplateRegistryPasses(
+                soyTree, templateNamesForEachFile, partialRegistryForDeps);
+
+    if (!result.equals(CompilerFileSetPass.Result.CONTINUE)) {
+      return ParseResult.create(soyTree, Optional.empty(), Optional.empty());
+    }
 
     // Now register the templates in this file set.
     for (SoyFileNode node : soyTree.getChildren()) {
@@ -256,7 +278,7 @@ public abstract class SoyFileSetParser {
     FileSetTemplateRegistry registry = builder.build();
     soyTree.setFileSetTemplateRegistry(registry);
     passManager().runWholeFilesetPasses(soyTree, registry);
-    return ParseResult.create(soyTree, Optional.of(registry));
+    return ParseResult.create(soyTree, Optional.of(registry), cssRegistry());
   }
 
   /**

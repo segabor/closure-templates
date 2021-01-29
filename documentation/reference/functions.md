@@ -309,18 +309,57 @@ The RFC for sms: https://tools.ietf.org/html/rfc5724
 
 Returns a copy of a string with leading and trailing whitespace removed.
 
+## Proto methods
+
+### `proto.getExtension(name)`
+
+Returns the value of the extension field of the `proto`, given the name of an
+imported extension field as the parameter.
+
+#### Example usage
+
+```proto
+package soy.example;
+message Person {
+  extensions 1000 to max;
+}
+message Height {
+  extend Person {
+    optional Height height = 1001;
+    repeated Height past_height = 1002;
+  }
+  optional int32 cm = 1;
+}
+```
+
+The template below accesses the `Height` extension of the `Person` proto.
+
+```soy
+{template .foo}
+  {@param proto: soy.example.Person}
+  {$proto.getExtension(soy.example.Height.height).cm}
+{/template}
+```
+
+#### Repeated extension fields
+
+Access repeated extension fields by appending `List` to the fully qualified name
+of the extension.
+
+For example, given the [above definition](#example-usage) of the repeated proto
+field `past_height`, it would be accessed as follows:
+
+```soy
+{template .heightHistory}
+  {@param person: soy.example.Person}
+  {for $height in $person.getExtension(soy.example.pastHeightList)}
+    {$height.cm}
+  {/for}
+{/template}
+```
+
 ## Other Functions
 
-
-### `v1Expression(stringLiteral)` {#v1Expression}
-
-The `v1Expression` function is part of the support for deprecated V1 syntax.
-This function can only be used by the JavaScript backend in legacy exempted
-files. When used the function must take a
-[string literal](expressions.md#string-literal) that contains some pseudo Soy
-code. The JavaScript backend will perform some simple textual replacements to
-make variable references work, but otherwise emit it as is in the generated
-JavaScript.
 
 ### `legacyDynamicTag($ag)` {#legacyDynamicTag}
 
@@ -352,18 +391,18 @@ reference.
 This will compile to something like:
 
 ```js
-/** @suppress {missingRequire} */ (foo.Bar)
+/** @suppress {missingRequire} */ (some.javascript.Identifier)
 ```
 
 This pattern is provided for backwards compatibility with old versions of the
 Soy compiler that didn't require globals definitions to be provided. Users
 should consider replacing the use of this function with one of the following:
 
-*   a custom soy plugin to represent the needed functionality.
-*   a globals definition for the referenced global.
+*   a custom soy plugin to represent the needed functionality
+*   a globals definition for the referenced global
 *   representing the value as a proto enum
 
-NOTE: b/162340156 is in progress enforcing that this is used
+NOTE: b/162340156 is in progress enforcing that this is used.
 
 ### `css([baseClass,] selector)` {#css}
 

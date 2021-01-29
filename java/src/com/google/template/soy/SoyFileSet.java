@@ -773,7 +773,6 @@ public final class SoyFileSet {
                 passManagerBuilder()
                     .allowUnknownJsGlobals()
                     .astRewrites(AstRewrites.KYTHE)
-                    .allowV1Expression()
                     .desugarHtmlAndStateNodes(false)
                     .optimize(false)
                     .addHtmlAttributesForDebugging(false)
@@ -861,7 +860,6 @@ public final class SoyFileSet {
         parse(
                 passManagerBuilder()
                     .allowUnknownGlobals()
-                    .allowV1Expression()
                     .allowUnknownJsGlobals()
                     // necessary because we are using an invalid type registry, also we don't really
                     // need to run the optimizer anyway.
@@ -945,6 +943,11 @@ public final class SoyFileSet {
   public SoySauce compileTemplates() {
     return compileTemplates(ImmutableMap.of());
   }
+
+  public CssRegistry getCssRegistry() {
+    return cssRegistry.get();
+  }
+
   /**
    * Compiles this Soy file set into a set of java classes implementing the {@link SoySauce}
    * interface.
@@ -1076,10 +1079,7 @@ public final class SoyFileSet {
     return entryPoint(
         () -> {
           PassManager.Builder builder =
-              passManagerBuilder()
-                  .allowV1Expression()
-                  .allowUnknownJsGlobals()
-                  .desugarHtmlAndStateNodes(false);
+              passManagerBuilder().allowUnknownJsGlobals().desugarHtmlAndStateNodes(false);
           ParseResult result = parse(builder);
           throwIfErrorsPresent();
           TemplateRegistry registry = result.registry();
@@ -1174,8 +1174,7 @@ public final class SoyFileSet {
                       .allowUnknownJsGlobals()
                       // Only run passes that not cross template checking.
                       .addPassContinuationRule(
-                          CheckTemplateHeaderVarsPass.class, PassContinuationRule.STOP_BEFORE_PASS)
-                      .allowV1Expression(),
+                          CheckTemplateHeaderVarsPass.class, PassContinuationRule.STOP_BEFORE_PASS),
                   typeRegistry);
           // throw before accessing registry() to make sure it is definitely available.
           throwIfErrorsPresent();
@@ -1196,6 +1195,8 @@ public final class SoyFileSet {
 
     /** The full parsed AST. */
     public abstract SoyFileSetNode fileSet();
+
+    public abstract CssRegistry cssRegistry();
 
     /** Compiler warnings. This will include errors if {@code treatErrorsAsWarnings} was set. */
     public abstract ImmutableList<SoyError> warnings();
@@ -1221,8 +1222,7 @@ public final class SoyFileSet {
                       .desugarHtmlAndStateNodes(false)
                       // TODO(lukes): This is needed for kythe apparently
                       .allowUnknownGlobals()
-                      .allowUnknownJsGlobals()
-                      .allowV1Expression(),
+                      .allowUnknownJsGlobals(),
                   typeRegistry);
           ImmutableList<SoyError> warnings;
           if (treatErrorsAsWarnings) {
@@ -1239,6 +1239,7 @@ public final class SoyFileSet {
           return new AutoValue_SoyFileSet_AnalysisResult(
               result.hasRegistry() ? Optional.of(result.registry()) : Optional.empty(),
               result.fileSet(),
+              result.cssRegistry(),
               warnings);
         });
   }

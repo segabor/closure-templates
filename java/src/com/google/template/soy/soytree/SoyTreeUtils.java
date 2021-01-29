@@ -23,6 +23,8 @@ import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.base.Strings;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.base.internal.Identifier;
@@ -43,6 +45,7 @@ import com.google.template.soy.soytree.SoyNode.ExprHolderNode;
 import com.google.template.soy.soytree.SoyNode.Kind;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
 import com.google.template.soy.types.BoolType;
+import com.google.template.soy.types.UnknownType;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -61,6 +64,13 @@ import java.util.stream.StreamSupport;
  *
  */
 public final class SoyTreeUtils {
+
+  static final ImmutableSet<SoyNode.Kind> NODES_THAT_DONT_CONTRIBUTE_OUTPUT =
+      Sets.immutableEnumSet(
+          SoyNode.Kind.LET_CONTENT_NODE,
+          SoyNode.Kind.LET_VALUE_NODE,
+          SoyNode.Kind.DEBUGGER_NODE,
+          SoyNode.Kind.LOG_NODE);
 
   private static final Joiner COMMA_JOINER = Joiner.on(", ");
 
@@ -233,8 +243,11 @@ public final class SoyTreeUtils {
     SourceLocation unknown = node.getSourceLocation().clearRange();
     FunctionNode isNonnull =
         FunctionNode.newPositional(Identifier.create("isNonnull", unknown), isNonNullFn, unknown);
-    isNonnull.addChild(new ExprRootNode(node.copy(new CopyState())));
+    ExprRootNode exprNode = new ExprRootNode(node.copy(new CopyState()));
+    exprNode.setType(node.getType());
+    isNonnull.addChild(exprNode);
     isNonnull.setType(BoolType.getInstance());
+    isNonnull.setAllowedParamTypes(ImmutableList.of(UnknownType.getInstance()));
     return isNonnull;
   }
 
@@ -244,9 +257,11 @@ public final class SoyTreeUtils {
     IfNode ifNode = new IfNode(id.get(), unknown);
     IfCondNode ifCondNode =
         new IfCondNode(id.get(), unknown, unknown, "if", buildNotNull(node, isNonnull));
+    ifCondNode.getExpr().setType(BoolType.getInstance());
     ifNode.addChild(ifCondNode);
     PrintNode printNode =
         new PrintNode(id.get(), unknown, true, node, ImmutableList.of(), exploding());
+    printNode.getExpr().setType(node.getType());
     ifCondNode.addChild(printNode);
     return ifNode;
   }
@@ -491,8 +506,14 @@ public final class SoyTreeUtils {
    * MsgPlaceholderNode). Otherwise, returns null.
    */
   public static HtmlTagNode getNodeAsHtmlTagNode(SoyNode node, boolean openTag) {
+    if (node == null) {
+      return null;
+    }
     SoyNode.Kind tagKind =
         openTag ? SoyNode.Kind.HTML_OPEN_TAG_NODE : SoyNode.Kind.HTML_CLOSE_TAG_NODE;
+    if (NODES_THAT_DONT_CONTRIBUTE_OUTPUT.contains(node.getKind())) {
+      return getNodeAsHtmlTagNode(nextSibling(node), openTag);
+    }
     if (node.getKind() == tagKind) {
       return (HtmlTagNode) node;
     }

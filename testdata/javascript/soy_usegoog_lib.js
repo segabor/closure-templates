@@ -2139,6 +2139,22 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
 
 
   /**
+   * Tries to detect whether the current browser is Edge, based on the user
+   * agent. This matches only pre-Chromium Edge.
+   * @see https://docs.microsoft.com/en-us/microsoft-edge/web-platform/user-agent-string
+   * @return {boolean} True if the current browser is Edge.
+   * @private
+   */
+  goog.isEdge_ = function() {
+    var userAgent = goog.global.navigator && goog.global.navigator.userAgent ?
+        goog.global.navigator.userAgent :
+        '';
+    var edgeRe = /Edge\/(\d+)(\.\d)*/i;
+    return !!userAgent.match(edgeRe);
+  };
+
+
+  /**
    * Tries to detect whether is in the context of an HTML document.
    * @return {boolean} True if it looks like HTML document.
    * @private
@@ -2271,10 +2287,6 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
       }
     }
 
-    var userAgent = goog.global.navigator && goog.global.navigator.userAgent ?
-        goog.global.navigator.userAgent :
-        '';
-
     // Identify ES3-only browsers by their incorrect treatment of commas.
     addNewerLanguageTranspilationCheck('es5', function() {
       return evalCheck('[1,].length==1');
@@ -2282,9 +2294,7 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
     addNewerLanguageTranspilationCheck('es6', function() {
       // Edge has a non-deterministic (i.e., not reproducible) bug with ES6:
       // https://github.com/Microsoft/ChakraCore/issues/1496.
-      var re = /Edge\/(\d+)(\.\d)*/i;
-      var edgeUserAgent = userAgent.match(re);
-      if (edgeUserAgent) {
+      if (goog.isEdge_()) {
         // The Reflect.construct test below is flaky on Edge. It can sometimes
         // pass or fail on 40 15.15063, so just exit early for Edge and treat
         // it as ES5. Until we're on a more up to date version just always use
@@ -3477,17 +3487,18 @@ if (!COMPILED && goog.DEPENDENCIES_ENABLED) {
     /** @type {?} */
     var doc = goog.global.document;
 
-    var isInternetExplorer =
-        goog.inHtmlDocument_() && 'ActiveXObject' in goog.global;
+    var isInternetExplorerOrEdge = goog.inHtmlDocument_() &&
+        ('ActiveXObject' in goog.global || goog.isEdge_());
 
-    // Don't delay in any version of IE. There's bug around this that will
-    // cause out of order script execution. This means that on older IE ES6
-    // modules will load too early (while the document is still loading + the
-    // dom is not available). The other option is to load too late (when the
-    // document is complete and the onload even will never fire). This seems
-    // to be the lesser of two evils as scripts already act like the former.
+    // Don't delay in any version of IE or pre-Chromium Edge. There's a bug
+    // around this that will cause out of order script execution. This means
+    // that on older IE ES6 modules will load too early (while the document is
+    // still loading + the dom is not available). The other option is to load
+    // too late (when the document is complete and the onload even will never
+    // fire). This seems to be the lesser of two evils as scripts already act
+    // like the former.
     if (isEs6 && goog.inHtmlDocument_() && goog.isDocumentLoading_() &&
-        !isInternetExplorer) {
+        !isInternetExplorerOrEdge) {
       goog.Dependency.defer_ = true;
       // Transpiled ES6 modules still need to load like regular ES6 modules,
       // aka only after the document is interactive.
@@ -6249,14 +6260,6 @@ goog.require('goog.dom.HtmlElement');
  * and that's not possible with literal or enum types. It is a record type so
  * that runtime type checks don't try to validate the lie.
  *
- * Closure Compiler unconditionally converts the following constants to their
- * string value (goog.dom.TagName.A -> 'A'). These are the consequences:
- * 1. Don't add any members or static members to goog.dom.TagName as they
- *    couldn't be accessed after this optimization.
- * 2. Keep the constant name and its string value the same:
- *    goog.dom.TagName.X = new goog.dom.TagName('Y');
- *    is converted to 'X', not 'Y'.
- *
  * @template T
  * @record
  */
@@ -8006,21 +8009,19 @@ class SafeScript {
   }
 }
 
-if (goog.DEBUG) {
-  /**
-   * Returns a string-representation of this value.
-   *
-   * To obtain the actual string value wrapped in a SafeScript, use
-   * `SafeScript.unwrap`.
-   *
-   * @return {string}
-   * @see SafeScript#unwrap
-   * @override
-   */
-  SafeScript.prototype.toString = function() {
-    return this.privateDoNotAccessOrElseSafeScriptWrappedValue_.toString();
-  };
-}
+/**
+ * Returns a string-representation of this value.
+ *
+ * To obtain the actual string value wrapped in a SafeScript, use
+ * `SafeScript.unwrap`.
+ *
+ * @return {string}
+ * @see SafeScript#unwrap
+ * @override
+ */
+SafeScript.prototype.toString = function() {
+  return this.privateDoNotAccessOrElseSafeScriptWrappedValue_.toString();
+};
 
 
 /**
@@ -9336,23 +9337,20 @@ goog.html.TrustedResourceUrl.prototype.cloneWithParams = function(
 };
 
 
-if (goog.DEBUG) {
-  /**
-   * Returns a string-representation of this value.
-   *
-   * To obtain the actual string value wrapped in a TrustedResourceUrl, use
-   * `goog.html.TrustedResourceUrl.unwrap`.
-   *
-   * @return {string}
-   * @see goog.html.TrustedResourceUrl#unwrap
-   * @override
-   */
-  goog.html.TrustedResourceUrl.prototype.toString = function() {
-    'use strict';
-    return this.privateDoNotAccessOrElseTrustedResourceUrlWrappedValue_
-        .toString();
-  };
-}
+/**
+ * Returns a string-representation of this value.
+ *
+ * To obtain the actual string value wrapped in a TrustedResourceUrl, use
+ * `goog.html.TrustedResourceUrl.unwrap`.
+ *
+ * @return {string}
+ * @see goog.html.TrustedResourceUrl#unwrap
+ * @override
+ */
+goog.html.TrustedResourceUrl.prototype.toString = function() {
+  'use strict';
+  return this.privateDoNotAccessOrElseTrustedResourceUrlWrappedValue_ + '';
+};
 
 
 /**
@@ -10254,22 +10252,21 @@ goog.html.SafeUrl.prototype.getDirection = function() {
 };
 
 
-if (goog.DEBUG) {
-  /**
-   * Returns a string-representation of this value.
-   *
-   * To obtain the actual string value wrapped in a SafeUrl, use
-   * `goog.html.SafeUrl.unwrap`.
-   *
-   * @return {string}
-   * @see goog.html.SafeUrl#unwrap
-   * @override
-   */
-  goog.html.SafeUrl.prototype.toString = function() {
-    'use strict';
-    return this.privateDoNotAccessOrElseSafeUrlWrappedValue_.toString();
-  };
-}
+/**
+ * Returns a string-representation of this value.
+ *
+ * To obtain the actual string value wrapped in a SafeUrl, use
+ * `goog.html.SafeUrl.unwrap`.
+ *
+ * @return {string}
+ * @see goog.html.SafeUrl#unwrap
+ * @override
+ */
+goog.html.SafeUrl.prototype.toString = function() {
+  'use strict';
+  return this.privateDoNotAccessOrElseSafeUrlWrappedValue_.toString();
+};
+
 
 
 /**
@@ -11106,22 +11103,20 @@ goog.html.SafeStyle.prototype.getTypedStringValue = function() {
 };
 
 
-if (goog.DEBUG) {
-  /**
-   * Returns a string-representation of this value.
-   *
-   * To obtain the actual string value wrapped in a SafeStyle, use
-   * `goog.html.SafeStyle.unwrap`.
-   *
-   * @return {string}
-   * @see goog.html.SafeStyle#unwrap
-   * @override
-   */
-  goog.html.SafeStyle.prototype.toString = function() {
-    'use strict';
-    return this.privateDoNotAccessOrElseSafeStyleWrappedValue_.toString();
-  };
-}
+/**
+ * Returns a string-representation of this value.
+ *
+ * To obtain the actual string value wrapped in a SafeStyle, use
+ * `goog.html.SafeStyle.unwrap`.
+ *
+ * @return {string}
+ * @see goog.html.SafeStyle#unwrap
+ * @override
+ */
+goog.html.SafeStyle.prototype.toString = function() {
+  'use strict';
+  return this.privateDoNotAccessOrElseSafeStyleWrappedValue_.toString();
+};
 
 
 /**
@@ -11797,21 +11792,19 @@ class SafeStyleSheet {
   }
 }
 
-if (goog.DEBUG) {
-  /**
-   * Returns a string-representation of this value.
-   *
-   * To obtain the actual string value wrapped in a SafeStyleSheet, use
-   * `SafeStyleSheet.unwrap`.
-   *
-   * @return {string}
-   * @see SafeStyleSheet#unwrap
-   * @override
-   */
-  SafeStyleSheet.prototype.toString = function() {
-    return this.privateDoNotAccessOrElseSafeStyleSheetWrappedValue_.toString();
-  };
-}
+/**
+ * Returns a string-representation of this value.
+ *
+ * To obtain the actual string value wrapped in a SafeStyleSheet, use
+ * `SafeStyleSheet.unwrap`.
+ *
+ * @return {string}
+ * @see SafeStyleSheet#unwrap
+ * @override
+ */
+SafeStyleSheet.prototype.toString = function() {
+  return this.privateDoNotAccessOrElseSafeStyleSheetWrappedValue_.toString();
+};
 
 
 /**
@@ -12529,22 +12522,20 @@ goog.html.SafeHtml.prototype.getTypedStringValue = function() {
 };
 
 
-if (goog.DEBUG) {
-  /**
-   * Returns a debug string-representation of this value.
-   *
-   * To obtain the actual string value wrapped in a SafeHtml, use
-   * `goog.html.SafeHtml.unwrap`.
-   *
-   * @see goog.html.SafeHtml.unwrap
-   * @override
-   */
-  goog.html.SafeHtml.prototype.toString = function() {
-    'use strict';
-    return 'SafeHtml{' + this.privateDoNotAccessOrElseSafeHtmlWrappedValue_ +
-        '}';
-  };
-}
+/**
+ * Returns a string-representation of this value.
+ *
+ * To obtain the actual string value wrapped in a SafeHtml, use
+ * `goog.html.SafeHtml.unwrap`.
+ *
+ * @return {string}
+ * @see goog.html.SafeHtml.unwrap
+ * @override
+ */
+goog.html.SafeHtml.prototype.toString = function() {
+  'use strict';
+  return this.privateDoNotAccessOrElseSafeHtmlWrappedValue_.toString();
+};
 
 
 /**
@@ -15511,7 +15502,7 @@ goog.dom.safe.openInWindow = function(
  * Parses the HTML as 'text/html'.
  * @param {!DOMParser} parser
  * @param {!goog.html.SafeHtml} html The HTML to be parsed.
- * @return {?Document}
+ * @return {!Document}
  */
 goog.dom.safe.parseFromStringHtml = function(parser, html) {
   'use strict';
@@ -15525,7 +15516,7 @@ goog.dom.safe.parseFromStringHtml = function(parser, html) {
  * @param {!goog.html.SafeHtml} content Note: We don't have a special type for
  *     XML or SVG supported by this function so we use SafeHtml.
  * @param {string} type
- * @return {?Document}
+ * @return {!Document}
  */
 goog.dom.safe.parseFromString = function(parser, content, type) {
   'use strict';

@@ -3,8 +3,6 @@
 
 [TOC]
 
-NOTE: This is not generally available. Please do not use this feature yet.
-
 ## HTML-tag templates {#html-tag-templates}
 
 HTML-tag templates are templates that declare a `kind` of `html<[TAG_NAME]>`.
@@ -175,7 +173,7 @@ HTML-tag templates can declare specific attributes that it requires using the
 
 ```soy
 {template example kind="html<div>"}
-  {@attribute aria-label}
+  {@attribute aria-label: string}
   <div @aria-label></div>
 {/template}
 ```
@@ -194,7 +192,7 @@ to pass the attribute:
 
 ```soy
 {template caller kind="html<div>"}
-  {@attribute aria-label:string}
+  {@attribute aria-label: string}
   <{example()} @aria-label></>
 {/template}
 ```
@@ -214,7 +212,7 @@ final DOM output if it is not passed in. The following will produce an empty
 
 ```soy
 {template example kind="html<div>"}
-  {@attribute? aria-label}
+  {@attribute? aria-label: string}
   <div @aria-label></div>
 {/template}
 
@@ -227,7 +225,7 @@ You can specify a default in the callee HTML-tag template.
 
 ```soy
 {template example kind="html<div>"}
-  {@attribute? aria-label:string}
+  {@attribute? aria-label: string}
   <div @aria-label="SomeDefault"></div>
 {/template}
 ```

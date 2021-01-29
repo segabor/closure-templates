@@ -539,8 +539,6 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
    *
    * <pre>
    * var $import1 = goog.require('some.namespace');
-   * var $templateAlias1 = $import1.tmplOne;
-   * var $templateAlias2 = $import1.tmplTwo;
    * var $import2 = goog.require('other.namespace');
    * ...
    * </pre>
@@ -548,8 +546,6 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
    * @param soyFile The node we're visiting.
    */
   private void addCodeToRequireGoogModules(SoyFileNode soyFile) {
-    int counter = 1;
-
     // Get all the unique calls in the file.
     Set<String> calls = new HashSet<>();
     for (TemplateLiteralNode templateLiteralNode :
@@ -570,21 +566,12 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       }
 
       // Add a require of the module
-      String namespaceAlias = "$import" + counter++;
+      String namespaceAlias = templateAliases.getNamespaceAlias(namespace);
       String importNamespace = getGoogModuleNamespace(namespace);
       jsCodeBuilder.append(
           VariableDeclaration.builder(namespaceAlias)
               .setRhs(GOOG_REQUIRE.call(stringLiteral(importNamespace)))
               .build());
-      // Alias all the templates used from the module
-      for (String fullyQualifiedName : namespaceToTemplates.get(namespace)) {
-        String alias = templateAliases.get(fullyQualifiedName);
-        String shortName = fullyQualifiedName.substring(fullyQualifiedName.lastIndexOf('.'));
-        jsCodeBuilder.append(
-            VariableDeclaration.builder(alias)
-                .setRhs(dottedIdNoRequire(namespaceAlias + shortName))
-                .build());
-      }
     }
   }
 
@@ -1543,14 +1530,18 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       Expression paramTempVar,
       String alias,
       JsType defaultType,
-      boolean declareStatic) {
+      boolean declareStatic,
+      CodeChunk.Generator codeGenerator) {
     checkArgument(param.hasDefault());
 
-    Expression defaultValue = translateExpr(param.defaultValue());
-    Statement defaultValueAssignment = Statement.assign(paramTempVar, defaultValue);
-    return Statement.ifStatement(
-            paramTempVar.tripleEquals(Expression.LITERAL_UNDEFINED), defaultValueAssignment)
-        .build();
+    // var = var === undefined ? default : var;
+    return Statement.assign(
+        paramTempVar,
+        Expression.ifExpression(
+                paramTempVar.tripleEquals(Expression.LITERAL_UNDEFINED),
+                translateExpr(param.defaultValue()))
+            .setElse(paramTempVar)
+            .build(codeGenerator));
   }
 
   /**
@@ -1586,18 +1577,12 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
                 paramChunk,
                 alias,
                 getJsTypeForParamForDeclaration(paramType),
-                /* declareStatic= */ true));
+                /* declareStatic= */ true,
+                generator));
       }
-      // The param value to assign
-      Expression value;
-      Optional<Expression> soyTypeAssertion =
-          jsType.getSoyTypeAssertion(paramChunk, paramName, generator);
-      // The type-cast expression.
-      if (soyTypeAssertion.isPresent()) {
-        value = soyTypeAssertion.get();
-      } else {
-        value = paramChunk;
-      }
+      // The param value to assign with an optional runtime type check
+      Expression value =
+          jsType.getSoyTypeAssertion(paramChunk, paramName, generator).orElse(paramChunk);
 
       VariableDeclaration.Builder declarationBuilder =
           VariableDeclaration.builder(paramAlias)
