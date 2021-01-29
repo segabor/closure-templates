@@ -74,6 +74,8 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
 
   private static final SoyErrorKind PROTO_ACCESS_NOT_SUPPORTED =
       SoyErrorKind.of("Proto accessors are not supported in Swift src.");
+  private static final SoyErrorKind PROTO_INIT_NOT_SUPPORTED =
+      SoyErrorKind.of("Proto init is not supported in Swift src.");
   private static final SoyErrorKind SOY_SWIFT_SRC_FUNCTION_NOT_FOUND =
       SoyErrorKind.of("Failed to find SoySwiftSrcFunction ''{0}''.");
   private static final SoyErrorKind UNTYPED_BRACKET_ACCESS_NOT_SUPPORTED =
@@ -409,6 +411,8 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
   // FIXME
   private SwiftExpr visitNonPluginFunction(FunctionNode node, BuiltinFunction nonpluginFn) {
     switch (nonpluginFn) {
+      case IS_PARAM_SET:
+        return visitIsSetFunction(node);
       case IS_FIRST:
         return visitForEachFunction(node, "__isFirst");
       case IS_LAST:
@@ -416,29 +420,38 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
       case INDEX:
         return visitForEachFunction(node, "__index");
       case CHECK_NOT_NULL:
-        return visitCheckNotNullFunction(node);
+        return assertNotNull(node.getChild(0));
       case CSS:
         return visitCssFunction(node);
       case XID:
         return visitXidFunction(node);
+      case SOY_SERVER_KEY:
+        return visitSoyServerKeyFunction(node);
       case IS_PRIMARY_MSG_IN_USE:
         return visitIsPrimaryMsgInUseFunction(node);
       case TO_FLOAT:
         // this is a no-op in python
         return visit(node.getChild(0));
       case DEBUG_SOY_TEMPLATE_INFO:
-        // 'debugSoyTemplateInfo' is used for inspecting soy template info from rendered pages.
-        // FIXME Resolve to false now
+        // 'debugSoyTemplateInfo' is used for inpsecting soy template info from rendered pages.
+        // Always resolve to false since there is no plan to support this feature in PySrc.
         return new SwiftExpr("false", Integer.MAX_VALUE);
-      case V1_EXPRESSION:
+      case LEGACY_DYNAMIC_TAG:
+      case UNKNOWN_JS_GLOBAL:
         throw new UnsupportedOperationException(
-            "the v1Expression function can't be used in templates compiled to Python");
+            "the "
+                + nonpluginFn.getName()
+                + " function can't be used in templates compiled to Swift");
       case VE_DATA:
         return NONE;
       case MSG_WITH_ID:
       case REMAINDER:
+      case TEMPLATE:
         // should have been removed earlier in the compiler
         throw new AssertionError();
+      case PROTO_INIT:
+        errorReporter.report(node.getSourceLocation(), PROTO_INIT_NOT_SUPPORTED);
+        return ERROR;
     }
     throw new AssertionError();
   }
@@ -448,11 +461,22 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
     return localVarExprs.getVariableExpression(varName + suffix);
   }
 
-  // FIXME
-  private SwiftExpr visitCheckNotNullFunction(FunctionNode node) {
-    SwiftExpr childExpr = visit(node.getChild(0));
-    return childExpr;
+  // FIXME: runtime.is_set is a non existent runtime function in SoyKit
+  // It should check if SoyValue has member with varName, like dict.keys.contains(varName)
+  private SwiftExpr visitIsSetFunction(FunctionNode node) {
+    String varName = ((VarRefNode) node.getChild(0)).getNameWithoutLeadingDollar();
+    return new SwiftFunctionExprBuilder("runtime.is_set").addArg(varName).addArg(DATA_INTERNAL_VAR_NAME).asSwiftExpr();
   }
+
+  private SwiftExpr assertNotNull(ExprNode node) {
+    return assertNotNull(visit(node));
+  }
+
+  // FIXME: runtime.check_not_null is a non existent runtime function in SoyKit
+  private static SwiftExpr assertNotNull(SwiftExpr expr) {
+    return new SwiftFunctionExprBuilder("runtime.check_not_null").addArg(expr).asSwiftExpr();
+  }
+
 
   // FIXME
   private SwiftExpr visitCssFunction(FunctionNode node) {
@@ -466,6 +490,10 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
     return new SwiftFunctionExprBuilder("runtime.getXIDName")
         .addArg(visit(node.getChild(0)))
         .asSwiftExpr();
+  }
+
+  private SwiftExpr visitSoyServerKeyFunction(FunctionNode node) {
+    return visit(node.getChild(0));
   }
 
   // FIXME
