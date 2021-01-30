@@ -46,25 +46,31 @@ public class SwiftSrcMain {
    *
    * @param soyTree The Soy parse tree to generate Swift source code for.
    * @param swiftSrcOptions The compilation options relevant to this backend.
-   * @param currentManifest The namespace manifest for current sources.
    * @param errorReporter The Soy error reporter that collects errors during code generation.
    * @return A list of strings where each string represents the Swift source code that belongs in
    *     one Swift file. The generated Swift files correspond one-to-one to the original Soy
    *     source files.
-   * @throws SoySyntaxException If a syntax error is found.
+   * @throws IOException If a syntax error is found.
    */
   public List<String> genSwiftSource(
       SoyFileSetNode soyTree,
       SoySwiftSrcOptions swiftSrcOptions,
-      ImmutableMap<String, String> currentManifest,
       ErrorReporter errorReporter) {
+
+    // Generate the manifest and add it to the current manifest.
+    ImmutableMap<String, String> manifest =
+            generateManifest(
+                    getSoyNamespaces(soyTree),
+                    swiftSrcOptions.getInputToOutputFilePaths(),
+                    swiftSrcOptions.getOutputDirectoryFlag(),
+                    errorReporter);
 
     // FIXME do we need this?
     BidiGlobalDir bidiGlobalDir = BidiGlobalDir.LTR;
 //    BidiGlobalDir bidiGlobalDir =
 //        SoyBidiUtils.decodeBidiGlobalDirFromPyOptions(swiftSrcOptions.getBidiIsRtlFn());
     try (SoyScopedData.InScope inScope = apiCallScope.enter(/* msgBundle= */ null, bidiGlobalDir)) {
-      return createVisitor(swiftSrcOptions, inScope.getBidiGlobalDir(), errorReporter, currentManifest)
+      return createVisitor(swiftSrcOptions, inScope.getBidiGlobalDir(), errorReporter, manifest)
           .gen(soyTree, errorReporter);
     }
   }
@@ -75,10 +81,7 @@ public class SwiftSrcMain {
    *
    * @param soyTree The Soy parse tree to generate Python source code for.
    * @param swiftSrcOptions The compilation options relevant to this backend.
-   * @param outputPathFormat The format string defining how to build the output file path
-   *     corresponding to an input file path.
    * @param errorReporter The Soy error reporter that collects errors during code generation.
-   * @throws SoySyntaxException If a syntax error is found.
    * @throws IOException If there is an error in opening/writing an output Python file.
    */
   public List<String> genSwiftFiles(
@@ -87,17 +90,8 @@ public class SwiftSrcMain {
 
     ImmutableList<SoyFileNode> srcsToCompile = ImmutableList.copyOf(soyTree.getChildren());
 
-    // Generate the manifest and add it to the current manifest.
-    //ImmutableMap<String, String> manifest = generateManifest(soyNamespaces, outputs);
-    ImmutableMap<String, String> manifest =
-        generateManifest(
-            getSoyNamespaces(soyTree),
-            swiftSrcOptions.getInputToOutputFilePaths(),
-            swiftSrcOptions.getOutputDirectoryFlag(),
-            errorReporter);
-
     // Generate the Swift source.
-    List<String> swiftFileContents = genSwiftSource(soyTree, swiftSrcOptions, manifest, errorReporter);
+    List<String> swiftFileContents = genSwiftSource(soyTree, swiftSrcOptions, errorReporter);
 
     if (srcsToCompile.size() != swiftFileContents.size()) {
       throw new AssertionError(
