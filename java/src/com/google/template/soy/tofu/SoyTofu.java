@@ -45,16 +45,6 @@ import javax.annotation.Nullable;
 public interface SoyTofu {
 
   /**
-   * Gets the namespace of this SoyTofu object. The namespace is simply a convenience allowing
-   * {@code newRenderer()} to be called with a partial template name (e.g. ".fooTemplate"). Note:
-   * The namespace may be null, in which case {@code newRenderer()} must be called with the full
-   * template name.
-   *
-   * @return The namespace of this SoyTofu object, or null if no namespace.
-   */
-  String getNamespace();
-
-  /**
    * Queries the current SoyTofu instance to see if it holds a given template. If the requested
    * template is found, `true` is returned, otherwise, `false`.
    *
@@ -369,53 +359,4 @@ public interface SoyTofu {
     @Deprecated
     SanitizedContent renderStrict();
   }
-
-  /**
-   * Renders a template.
-   *
-   * @param templateInfo Info for the template to render.
-   * @param data The data to call the template with. Can be null if the template has no parameters.
-   * @param msgBundle The bundle of translated messages, or null to use the messages from the Soy
-   *     source.
-   * @return The rendered text.
-   * @deprecated Use {@link #newRenderer(SoyTemplateInfo)}.
-   */
-  @Deprecated
-  String render(
-      SoyTemplateInfo templateInfo, @Nullable SoyRecord data, @Nullable SoyMsgBundle msgBundle);
-
-  /**
-   * Renders a template.
-   *
-   * <p>Note: If you call this method instead of {@link #render(String, SoyRecord, SoyMsgBundle)},
-   * your template data will be converted to a {@code SoyRecord} object on each call. This may not
-   * be a big deal if you only need to use the data object once. But if you need to reuse the same
-   * data object for multiple calls, it's more efficient to build your own {@code SoyRecord} object
-   * and reuse it with {@link #render(String, SoyRecord, SoyMsgBundle)}.
-   *
-   * @param templateName The name of the template to render. If this SoyTofu instance is namespaced,
-   *     then this parameter should be a partial name beginning with a dot (e.g. ".fooTemplate").
-   * @param data The data to call the template with. Can be null if the template has no parameters.
-   * @param msgBundle The bundle of translated messages, or null to use the messages from the Soy
-   *     source.
-   * @return The rendered text.
-   * @deprecated Use {@link #newRenderer(String)}.
-   */
-  @Deprecated
-  String render(
-      String templateName, @Nullable Map<String, ?> data, @Nullable SoyMsgBundle msgBundle);
-
-  /**
-   * Renders a template.
-   *
-   * @param templateName The name of the template to render. If this SoyTofu instance is namespaced,
-   *     then this parameter should be a partial name beginning with a dot (e.g. ".fooTemplate").
-   * @param data The data to call the template with. Can be null if the template has no parameters.
-   * @param msgBundle The bundle of translated messages, or null to use the messages from the Soy
-   *     source.
-   * @return The rendered text.
-   * @deprecated Use {@link #newRenderer(String)}.
-   */
-  @Deprecated
-  String render(String templateName, @Nullable SoyRecord data, @Nullable SoyMsgBundle msgBundle);
 }

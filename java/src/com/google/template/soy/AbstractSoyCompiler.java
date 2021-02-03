@@ -159,6 +159,18 @@ public abstract class AbstractSoyCompiler {
   private List<File> cssMetadata = new ArrayList<>();
 
   @Option(
+      name = "--check_css_list",
+      usage =
+          "Filename for list of files to exempt from checking css() calls for classes in CSS"
+              + " files.")
+  private File checkCssList = null;
+
+  @Option(
+      name = "--skip_css_reference_check",
+      usage = "Whether to skip the go/css-conformance#check-css-references check.")
+  private boolean skipCssReferenceCheck = false;
+
+  @Option(
       name = "--enableExperimentalFeatures",
       usage =
           "Enable experimental features that are not generally available. "
@@ -310,6 +322,10 @@ public abstract class AbstractSoyCompiler {
     if (disableOptimizer) {
       sfsBuilder.disableOptimizer();
     }
+
+    sfsBuilder.setRequireTemplateImports(
+        experimentalFeatures.contains("requireTemplateImports") && generatedFiles.isEmpty());
+
     compile(sfsBuilder);
     timer.stop();
     // Unless the build is faster than 1 second, issue a warning if more than half of the build is

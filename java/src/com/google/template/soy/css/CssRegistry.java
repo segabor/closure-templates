@@ -38,6 +38,10 @@ public abstract class CssRegistry {
 
   abstract Optional<ImmutableListMultimap<String, String>> classMap();
 
+  public abstract ImmutableList<String> checkCssList();
+
+  public abstract boolean skipCssReferenceCheck();
+
   @Memoized
   public ImmutableMap<String, String> symbolToFilePath() {
     return filePathToSymbol().entrySet().stream()
@@ -62,6 +66,11 @@ public abstract class CssRegistry {
 
   public static CssRegistry create(
       ImmutableSet<String> providedSymbols, ImmutableMap<String, String> filePathToSymbol) {
-    return new AutoValue_CssRegistry(providedSymbols, filePathToSymbol, Optional.empty());
+    return new AutoValue_CssRegistry(
+        providedSymbols,
+        filePathToSymbol,
+        Optional.empty(),
+        ImmutableList.of(),
+        false /* skipCssReferenceCheck */);
   }
 }

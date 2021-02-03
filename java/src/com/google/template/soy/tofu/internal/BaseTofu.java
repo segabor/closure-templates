@@ -171,16 +171,6 @@ public final class BaseTofu implements SoyTofu {
   }
 
   /**
-   * {@inheritDoc}
-   *
-   * <p>For objects of this class, the namespace is always null.
-   */
-  @Override
-  public String getNamespace() {
-    return null;
-  }
-
-  /**
    * Queries the current SoyTofu instance to see if it holds a given template. If the requested
    * template is found, `true` is returned, otherwise, `false`.
    *
@@ -653,38 +643,5 @@ public final class BaseTofu implements SoyTofu {
     private void enforceContentKind(TemplateNode template) {
       enforceContentKind(template, expectedContentKind);
     }
-  }
-
-  // -----------------------------------------------------------------------------------------------
-  // Old render methods.
-
-  @Deprecated
-  @Override
-  public String render(
-      SoyTemplateInfo templateInfo, @Nullable SoyRecord data, @Nullable SoyMsgBundle msgBundle) {
-    return new RendererImpl(this, templateInfo.getName(), null)
-        .setData(data)
-        .setMsgBundle(msgBundle)
-        .render();
-  }
-
-  @Deprecated
-  @Override
-  public String render(
-      String templateName, @Nullable Map<String, ?> data, @Nullable SoyMsgBundle msgBundle) {
-    return new RendererImpl(this, templateName, null)
-        .setData(data)
-        .setMsgBundle(msgBundle)
-        .render();
-  }
-
-  @Deprecated
-  @Override
-  public String render(
-      String templateName, @Nullable SoyRecord data, @Nullable SoyMsgBundle msgBundle) {
-    return new RendererImpl(this, templateName, null)
-        .setData(data)
-        .setMsgBundle(msgBundle)
-        .render();
   }
 }
