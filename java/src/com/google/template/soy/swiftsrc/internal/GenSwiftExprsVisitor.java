@@ -258,7 +258,6 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
 
     StringBuilder swiftExprTextSb = new StringBuilder();
 
-    boolean hasElse = false;
     for (SoyNode child : node.getChildren()) {
 
       if (child instanceof IfCondNode) {
@@ -281,7 +280,6 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
         swiftExprTextSb.append(condBlock.getText());
 
       } else if (child instanceof IfElseNode) {
-        hasElse = true;
         IfElseNode ien = (IfElseNode) child;
 
         swiftExprTextSb.append(" : ");
