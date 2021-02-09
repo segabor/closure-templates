@@ -252,11 +252,6 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
           "(_ data: SoyValue = .map([:]), _ ijData: SoyValue = .map([:])) throws -> String {");
       swiftCodeBuilder.increaseIndent();
 
-      generatePreconditions(node);
-      
-      swiftCodeBuilder.appendLine("");
-      swiftCodeBuilder.appendLine("");
-
       generateFunctionBody(node);
 
       // Dedent to end the function.
@@ -720,16 +715,6 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       swiftCodeBuilder.appendLine("import Foundation");
       swiftCodeBuilder.appendLine("import SoyKit");
       swiftCodeBuilder.appendLine();
-    }
-
-    private void generatePreconditions(TemplateNode node) {
-      swiftCodeBuilder.appendLine("guard case let .map("+DATA_INTERNAL_VAR_NAME +") = data, case let .map("+IJDATA_INTERNAL_VAR_NAME+") = ijData else {");
-      swiftCodeBuilder.increaseIndent();
-      swiftCodeBuilder.appendLine("// Input type mismatch detected!");
-      swiftCodeBuilder.appendLine("// TODO provide feedback");
-      swiftCodeBuilder.appendLine("return \"\"");
-      swiftCodeBuilder.decreaseIndent();
-      swiftCodeBuilder.appendLine("}");
     }
 
     /** Helper for visitTemplateNode which generates the function body. */
