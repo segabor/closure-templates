@@ -119,6 +119,6 @@ public class EscapeHtmlDirective
 
   @Override
   public SwiftExpr applyForSwiftSrc(SwiftExpr value, List<SwiftExpr> args) {
-    return new SwiftExpr("soy.escapeHtml(" + value.getText() + ")", Integer.MAX_VALUE);
+    return new SwiftExpr("escapeHtml(" + value.getText() + ")", Integer.MAX_VALUE);
   }
 }

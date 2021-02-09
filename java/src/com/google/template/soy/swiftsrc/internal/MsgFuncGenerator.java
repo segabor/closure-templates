@@ -72,14 +72,17 @@ public final class MsgFuncGenerator {
 
     if (this.msgNode.isPlrselMsg()) {
       if (this.msgNode.isPluralMsg()) {
-        this.prepareFunc = new SwiftFunctionExprBuilder(translator + ".prepare_plural");
+        // prepare / render plural
+        this.prepareFunc = new SwiftFunctionExprBuilder(translator + ".prepare");
         this.renderFunc = new SwiftFunctionExprBuilder(translator + ".render_plural");
       } else {
+        // prepare / render ICU string
         this.prepareFunc = new SwiftFunctionExprBuilder(translator + ".prepare_icu");
         this.renderFunc = new SwiftFunctionExprBuilder(translator + ".render_icu");
       }
     } else if (this.msgNode.isRawTextMsg()) {
-      this.prepareFunc = new SwiftFunctionExprBuilder(translator + ".prepare_literal");
+      // prepare / render literal
+      this.prepareFunc = new SwiftFunctionExprBuilder(translator + ".prepare");
       this.renderFunc = new SwiftFunctionExprBuilder(translator + ".render_literal");
     } else {
       this.prepareFunc = new SwiftFunctionExprBuilder(translator + ".prepare");

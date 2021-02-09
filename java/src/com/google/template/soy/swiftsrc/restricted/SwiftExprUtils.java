@@ -16,7 +16,7 @@ import com.google.template.soy.internal.targetexpr.TargetExpr;
 
 public final class SwiftExprUtils {
   /** The variable name used to reference the current translator instance. */
-  public static final String TRANSLATOR_NAME = "translator_impl";
+  public static final String TRANSLATOR_NAME = "defaultTranslator";
 
   /** Expression constant for empty string. */
   private static final SwiftExpr EMPTY_STRING = new SwiftStringExpr("\"\"");
