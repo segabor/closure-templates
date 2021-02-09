@@ -14,7 +14,7 @@ public class SoyToSwiftSrcCompiler extends AbstractSoyCompiler {
     name = "--namespaceManifestPath",
     usage =
         "A list of paths to a manifest file which provides a map of soy namespaces to"
-            + " their Python paths. If this is provided, direct imports will be used,"
+            + " their Swift paths. If this is provided, direct imports will be used,"
             + " drastically improving runtime performance.",
     handler = SoyCmdLineParser.StringListOptionHandler.class
   )
@@ -22,15 +22,26 @@ public class SoyToSwiftSrcCompiler extends AbstractSoyCompiler {
 
   private final PerInputOutputFiles outputFiles = new PerInputOutputFiles("swift");
 
-  public static void main(String[] args) {
-    new SoyToSwiftSrcCompiler().runMain(args);
-  }
-
   SoyToSwiftSrcCompiler(PluginLoader loader, SoyInputCache cache) {
     super(loader, cache);
   }
 
   SoyToSwiftSrcCompiler() {}
+
+  /**
+   * Compiles a set of Soy files into corresponding Swift source files.
+   *
+   * @param args Should contain command-line flags and the list of paths to the Soy files.
+   * @throws IOException If there are problems reading the input files or writing the output file.
+   */
+  public static void main(final String[] args) throws IOException {
+    new SoyToSwiftSrcCompiler().runMain(args);
+  }
+
+  @Override
+  protected void validateFlags() {
+    outputFiles.validateFlags();
+  }
 
   @Override
   Iterable<?> extraFlagsObjects() {
@@ -53,7 +64,7 @@ public class SoyToSwiftSrcCompiler extends AbstractSoyCompiler {
     final String rendererMapFile = namespaceManifestPaths.isEmpty() ? "TemplateRenderers.swift" : namespaceManifestPaths.get(0);
 
     // Create SoyPySrcOptions.
-    SoySwiftSrcOptions pySrcOptions =
+    SoySwiftSrcOptions swiftSrcOptions =
         new SoySwiftSrcOptions(
             // bidiIsRtlFn,
             // translationClass,
@@ -63,7 +74,7 @@ public class SoyToSwiftSrcCompiler extends AbstractSoyCompiler {
             rendererMapFile);
 
     // Compile.
-    outputFiles.writeFiles(srcs, sfs.compileToSwiftSrcFiles(pySrcOptions));
+    outputFiles.writeFiles(srcs, sfs.compileToSwiftSrcFiles(swiftSrcOptions));
   }
 
 }

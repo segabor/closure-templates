@@ -4,7 +4,6 @@ import static com.google.template.soy.swiftsrc.internal.TranslateToSwiftExprVisi
 import static com.google.template.soy.swiftsrc.internal.TranslateToSwiftExprVisitor.IJDATA_INTERNAL_VAR_NAME;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import com.google.auto.value.AutoValue;
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Preconditions;
@@ -31,7 +30,6 @@ import com.google.template.soy.soytree.PrintNode;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyNode;
-import com.google.template.soy.soytree.SoyNode.BlockNode;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
 import com.google.template.soy.soytree.SwitchCaseNode;
 import com.google.template.soy.soytree.SwitchDefaultNode;
@@ -335,8 +333,9 @@ public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
         return;
       }
 
-      // Not computable as Python expressions, so generate full code.
-      TranslateToSwiftExprVisitor translator = new TranslateToSwiftExprVisitor(localVarExprs, errorReporter, pluginValueFactory, ConditionalEvaluationMode.CONDITIONAL);
+      // Not computable as Swift expressions, so generate full code.
+      TranslateToSwiftExprVisitor translator =
+          new TranslateToSwiftExprVisitor(localVarExprs, pluginValueFactory, errorReporter, ConditionalEvaluationMode.CONDITIONAL);
       for (SoyNode child : node.getChildren()) {
         if (child instanceof IfCondNode) {
           IfCondNode icn = (IfCondNode) child;

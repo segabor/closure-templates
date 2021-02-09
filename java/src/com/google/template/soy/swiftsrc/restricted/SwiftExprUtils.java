@@ -3,7 +3,6 @@ package com.google.template.soy.swiftsrc.restricted;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-
 import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
@@ -182,6 +181,36 @@ public final class SwiftExprUtils {
     } else {
       return new SwiftExpr("(" + expr.getText() + ")", Integer.MAX_VALUE);
     }
+  }
+
+  
+  /**
+   * Doc: https://github.com/google/closure-templates/blob/master/documentation/reference/expressions.md#list-comprehensions
+   * 
+   */
+  public static SwiftExpr genSwiftListComprehensionExpr(SwiftExpr listExpr, SwiftExpr transformExpr,
+      SwiftExpr filterExpr, String varName, String indexName) {
+
+
+    final boolean indexed = indexName != null;
+
+    // "$a" or "$i, $a"
+    final String varsExpr = indexed ? indexName + ", " + varName : varName;
+
+    // compose expression
+    final StringBuilder exprBuff = new StringBuilder();
+    exprBuff.append(listExpr);
+    if (indexed) {
+      exprBuff.append(".enumerated()");
+    }
+    if (filterExpr != null) {
+      exprBuff.append(".filter {").append(varsExpr).append(" in ").append(filterExpr.getText())
+          .append("}");
+    }
+    exprBuff.append(".map {").append(varsExpr).append(" in ").append(transformExpr.getText())
+        .append("}");
+
+    return new SwiftExpr(exprBuff.toString(), Integer.MAX_VALUE);
   }
 
   /**

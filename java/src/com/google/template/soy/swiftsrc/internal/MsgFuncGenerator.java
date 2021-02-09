@@ -116,7 +116,7 @@ public final class MsgFuncGenerator {
 
   private SwiftStringExpr swiftFuncForGeneralMsg() {
     String pyMsgText = processMsgPartsHelper(msgParts, escaperForSwiftFormatString);
-    Map<SwiftExpr, SwiftExpr> nodePyVarToPyExprMap = collectVarNameListAndToPyExprMap();
+    Map<SwiftExpr, SwiftExpr> nodePyVarToPyExprMap = collectVarNameListAndToSwiftExprMap();
 
     prepareFunc
         .addArg(msgId)
@@ -132,7 +132,7 @@ public final class MsgFuncGenerator {
   private SwiftStringExpr swiftFuncForPluralMsg() {
     SoyMsgPluralPart pluralPart = (SoyMsgPluralPart) msgParts.get(0);
     MsgPluralNode pluralNode = msgNode.getRepPluralNode(pluralPart.getPluralVarName());
-    Map<SwiftExpr, SwiftExpr> nodePyVarToPyExprMap = collectVarNameListAndToPyExprMap();
+    Map<SwiftExpr, SwiftExpr> nodePyVarToPyExprMap = collectVarNameListAndToSwiftExprMap();
     Map<SwiftExpr, SwiftExpr> caseSpecStrToMsgTexts = new LinkedHashMap<>();
 
     for (Case<SoyMsgPluralCaseSpec> pluralCase : pluralPart.getCases()) {
@@ -158,7 +158,7 @@ public final class MsgFuncGenerator {
   }
 
   private SwiftStringExpr swiftFuncForSelectMsg() {
-    Map<SwiftExpr, SwiftExpr> nodeSwiftVarToPyExprMap = collectVarNameListAndToPyExprMap();
+    Map<SwiftExpr, SwiftExpr> nodeSwiftVarToPyExprMap = collectVarNameListAndToSwiftExprMap();
 
     ImmutableList<SoyMsgPart> msgPartsInIcuSyntax =
         IcuSyntaxUtils.convertMsgPartsToEmbeddedIcuSyntax(msgParts);
@@ -182,7 +182,7 @@ public final class MsgFuncGenerator {
    * @return A Map populated with all the variables used with in this message node, using {@link
    *     MsgPlaceholderInitialNode#genBasePhName}.
    */
-  private Map<SwiftExpr, SwiftExpr> collectVarNameListAndToPyExprMap() {
+  private Map<SwiftExpr, SwiftExpr> collectVarNameListAndToSwiftExprMap() {
     Map<SwiftExpr, SwiftExpr> nodePyVarToPyExprMap = new LinkedHashMap<>();
     for (Map.Entry<String, MsgSubstUnitNode> entry : msgNode.getVarNameToRepNodeMap().entrySet()) {
       MsgSubstUnitNode substUnitNode = entry.getValue();

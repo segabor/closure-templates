@@ -1,9 +1,12 @@
 package com.google.template.soy.swiftsrc.internal;
 
+import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Preconditions.checkNotNull;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-
+import javax.annotation.Nullable;
 import com.google.common.base.Function;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.Iterables;
@@ -13,6 +16,7 @@ import com.google.template.soy.exprtree.AbstractReturningExprNodeVisitor;
 import com.google.template.soy.exprtree.BooleanNode;
 import com.google.template.soy.exprtree.DataAccessNode;
 import com.google.template.soy.exprtree.ExprNode;
+import com.google.template.soy.exprtree.ExprNode.AccessChainComponentNode;
 import com.google.template.soy.exprtree.ExprNode.OperatorNode;
 import com.google.template.soy.exprtree.ExprNode.PrimitiveNode;
 import com.google.template.soy.exprtree.Operator.Operand;
@@ -20,21 +24,32 @@ import com.google.template.soy.exprtree.Operator.SyntaxElement;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.FieldAccessNode;
 import com.google.template.soy.exprtree.FunctionNode;
+import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.exprtree.IntegerNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
+import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
+import com.google.template.soy.exprtree.MethodCallNode;
 import com.google.template.soy.exprtree.NullNode;
+import com.google.template.soy.exprtree.NullSafeAccessNode;
 import com.google.template.soy.exprtree.Operator;
+import com.google.template.soy.exprtree.OperatorNodes.AssertNonNullOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.ConditionalOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.EqualOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.NotEqualOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.NotOpNode;
 import com.google.template.soy.exprtree.OperatorNodes.NullCoalescingOpNode;
 import com.google.template.soy.logging.LoggingFunction;
+import com.google.template.soy.plugin.restricted.SoySourceFunction;
 import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
 import com.google.template.soy.shared.internal.BuiltinFunction;
+import com.google.template.soy.shared.internal.BuiltinMethod;
+import com.google.template.soy.shared.restricted.SoyMethod;
+import com.google.template.soy.shared.restricted.SoySourceFunctionMethod;
+import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.exprtree.StringNode;
+import com.google.template.soy.exprtree.VarDefn;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.google.template.soy.swiftsrc.restricted.SwiftExprUtils;
@@ -49,23 +64,55 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
   
   public static final String IJDATA_INTERNAL_VAR_NAME = "__ijData";
 
-  /** How a key access should behave if a key is not in the structure. */
-  private enum NotFoundBehavior {
-    /** Return {@code None} if the key is not in the structure. */
-    RETURN_NONE,
-    /** Throw an exception if the key is not in the structure. */
-    THROW
-  }
+  public static final SwiftExpr DATA = new SwiftExpr(DATA_INTERNAL_VAR_NAME, Integer.MAX_VALUE);
+  
+  public static final SwiftExpr IJDATA = new SwiftExpr(IJDATA_INTERNAL_VAR_NAME, Integer.MAX_VALUE);
 
-  /** If a key should be coerced to a string before a key access. */
-  private enum CoerceKeyToString {
-    /**
-     * Coerce the key to a string. This is mostly useful for keys that are the {@link
-     * com.google.template.soy.data.UnsanitizedString} type.
-     */
-    YES,
-    /** Do not coerce the key to a string. */
-    NO
+  private static class NotFoundBehavior {
+    private static final NotFoundBehavior RETURN_NONE = new NotFoundBehavior(Type.RETURN_NONE);
+    private static final NotFoundBehavior THROW = new NotFoundBehavior(Type.THROW);
+
+    /** Return {@code None} if the key is not in the structure. */
+    private static NotFoundBehavior returnNone() {
+      return RETURN_NONE;
+    }
+
+    /** Throw an exception if the key is not in the structure. */
+    private static NotFoundBehavior throwException() {
+      return THROW;
+    }
+
+    /** Default to the given value if the key is not in the structure. */
+    private static NotFoundBehavior defaultValue(SwiftExpr defaultValue) {
+      return new NotFoundBehavior(defaultValue);
+    }
+
+    private enum Type {
+      RETURN_NONE,
+      THROW,
+      DEFAULT_VALUE,
+    }
+
+    private final Type type;
+    @Nullable private final SwiftExpr defaultValue;
+
+    private NotFoundBehavior(Type type) {
+      this.type = type;
+      this.defaultValue = null;
+    }
+
+    private NotFoundBehavior(SwiftExpr defaultValue) {
+      this.type = Type.DEFAULT_VALUE;
+      this.defaultValue = checkNotNull(defaultValue);
+    }
+
+    private Type getType() {
+      return type;
+    }
+
+    private SwiftExpr getDefaultValue() {
+      return defaultValue;
+    }
   }
 
   protected enum ConditionalEvaluationMode {
@@ -112,17 +159,17 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
       LocalVariableStack localVarExprs,
       SwiftValueFactoryImpl pluginValueFactory,
       ErrorReporter errorReporter) {
-    this(localVarExprs, errorReporter, pluginValueFactory, ConditionalEvaluationMode.NORMAL);
+    this(localVarExprs, pluginValueFactory, errorReporter, ConditionalEvaluationMode.NORMAL);
   }
 
   TranslateToSwiftExprVisitor(
       LocalVariableStack localVarExprs,
-      ErrorReporter errorReporter,
       SwiftValueFactoryImpl pluginValueFactory,
+      ErrorReporter errorReporter,
       ConditionalEvaluationMode conditionalEvaluationMode) {
     this.localVarExprs = localVarExprs;
-    this.errorReporter = errorReporter;
     this.pluginValueFactory = pluginValueFactory;
+    this.errorReporter = errorReporter;
     this.conditionalEvaluationMode = conditionalEvaluationMode;
   }
 
@@ -192,6 +239,47 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
   }
 
   @Override
+  protected SwiftExpr visitListComprehensionNode(ListComprehensionNode node) {
+
+    // Visit the originalListExpr in: [transformExpr for $foo in originalListExpr if filterExpr].
+    SwiftExpr originalListExpr = visit(node.getListExpr());
+
+    // Build a unique name for the iterator variable ($foo in this example), and push a local var
+    // frame for its scope.
+    String baseListIterVarName = node.getListIterVar().name();
+    String uniqueListIterVarName =
+        String.format("%sListComprehensions%d", baseListIterVarName, node.getNodeId());
+    localVarExprs.pushFrame();
+    localVarExprs.addVariable(
+        baseListIterVarName, new SwiftExpr(uniqueListIterVarName, Integer.MAX_VALUE));
+    String uniqueIndexVarName = null;
+    if (node.getIndexVar() != null) {
+      String baseIndexVarName = node.getIndexVar().name();
+      uniqueIndexVarName =
+          String.format("%sListComprehensions%d", baseIndexVarName, node.getNodeId());
+      localVarExprs.addVariable(
+          baseIndexVarName, new SwiftExpr(uniqueIndexVarName, Integer.MAX_VALUE));
+    }
+
+    // Now we can visit the transformExpr and filterExpr (if present).
+    SwiftExpr itemTransformExpr = visit(node.getListItemTransformExpr());
+    SwiftExpr filterExpr = node.getFilterExpr() == null ? null : visit(node.getFilterExpr());
+
+    // Build the full list comprehension expr.
+    SwiftExpr comprehensionExpr =
+        SwiftExprUtils.genSwiftListComprehensionExpr(
+            originalListExpr,
+            itemTransformExpr,
+            filterExpr,
+            uniqueListIterVarName,
+            uniqueIndexVarName);
+
+    localVarExprs.popFrame();
+
+    return comprehensionExpr;
+  }
+
+  @Override
   protected SwiftExpr visitMapLiteralNode(MapLiteralNode node) {
     Preconditions.checkArgument(node.numChildren() % 2 == 0);
     Map<SwiftExpr, SwiftExpr> dict = new LinkedHashMap<>();
@@ -207,121 +295,158 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
 
   @Override
   protected SwiftExpr visitVarRefNode(VarRefNode node) {
-    SwiftExpr expr = visitNullSafeNode(node);
-
-    OperatorNode opNode = node.getNearestAncestor(OperatorNode.class);
-    // FIXME should ternary operator be included
-    if (opNode == null || (opNode.getOperator() == Operator.NOT || opNode.getOperator() == Operator.AND || opNode.getOperator() == Operator.OR )) {
-      switch (conditionalEvaluationMode) {
-        case CONDITIONAL:
-          expr = new SwiftExpr(expr.getText() + ".notNull", expr.getPrecedence());
-          break;
-        case CONDITIONAL_NOT:
-          expr = new SwiftExpr(expr.getText() + ".notNull", expr.getPrecedence());
-          break;
-        default:
+    if (node.getDefnDecl().kind() == VarDefn.Kind.STATE) {
+      throw new AssertionError(); // should have been desugared
+    } else if (node.isInjected()) {
+      // Case 1: Injected data reference.
+      return new SwiftExpr(
+          genCodeForLiteralKeyAccess(IJDATA, node.getNameWithoutLeadingDollar()),
+          Integer.MAX_VALUE);
+    } else {
+      SwiftExpr translation = localVarExprs.getVariableExpression(node.getNameWithoutLeadingDollar());
+      if (translation != null) {
+        // Case 2: In-scope local var.
+        return new SwiftExpr(translation.getText(), Integer.MAX_VALUE);
+      } else {
+        // Case 3: Data reference.
+        NotFoundBehavior notFoundBehavior = NotFoundBehavior.throwException();
+        if (node.getDefnDecl().kind() == VarDefn.Kind.PARAM
+            && ((TemplateParam) node.getDefnDecl()).hasDefault()) {
+          // This evaluates the default value at every access of a parameter with a default
+          // value. This could be made more performant by only evaluating the default value
+          // once at the beginning of the template. But the Swift backend is minimally
+          // supported so this is fine.
+          SwiftExpr defaultValue = visit(((TemplateParam) node.getDefnDecl()).defaultValue());
+          notFoundBehavior = NotFoundBehavior.defaultValue(defaultValue);
+        }
+        return new SwiftExpr(
+            genCodeForLiteralKeyAccess(DATA, node.getNameWithoutLeadingDollar(), notFoundBehavior),
+            Integer.MAX_VALUE);
       }
     }
-
-    return expr;
   }
 
   @Override
   protected SwiftExpr visitDataAccessNode(DataAccessNode node) {
-    SwiftExpr expr = visitNullSafeNode(node);
-    return expr;
+    // All null safe accesses should've already been converted to NullSafeAccessNodes.
+    checkArgument(!node.isNullSafe());
+    // First recursively visit base expression.
+    SwiftExpr base = visit(node.getBaseExprChild());
+    return new SwiftExpr(visitDataAccessNode(node, base), Integer.MAX_VALUE);
   }
 
-  private SwiftExpr visitNullSafeNode(ExprNode node) {
+  private SwiftExpr visitDataAccessNode(
+      DataAccessNode dataAccess,
+      StringBuilder nullSafetyPrefix,
+      SwiftExpr base,
+      boolean nullSafe,
+      boolean hasAssertNonNull) {
+    // Generate null safety check for base expression.
+    if (nullSafe) {
+      // FIXME: change it to 'if let' expression
+      nullSafetyPrefix.append("None if ").append(base.getText()).append(" is None else ");
+    }
+    SwiftExpr result = new SwiftExpr(visitDataAccessNode(dataAccess, base), Integer.MAX_VALUE);
+    if (hasAssertNonNull) {
+      result = assertNotNull(result);
+    }
+    return result;
+  }
+
+  private String visitDataAccessNode(DataAccessNode dataAccess, SwiftExpr base) {
+    // Generate access to field
+    if (dataAccess.getKind() == ExprNode.Kind.FIELD_ACCESS_NODE) {
+      FieldAccessNode fieldAccess = (FieldAccessNode) dataAccess;
+      return genCodeForFieldAccess(
+          fieldAccess, fieldAccess.getBaseExprChild().getType(), base, fieldAccess.getFieldName());
+    } else if (dataAccess.getKind() == ExprNode.Kind.METHOD_CALL_NODE) {
+      MethodCallNode methodCall = (MethodCallNode) dataAccess;
+      return genCodeForMethodCall(methodCall, base);
+    } else {
+      ItemAccessNode itemAccess = (ItemAccessNode) dataAccess;
+      Kind baseKind = itemAccess.getBaseExprChild().getType().getKind();
+      SwiftExpr keyExpr = visit(itemAccess.getKeyExprChild());
+      switch (baseKind) {
+        case LIST:
+          return genCodeForKeyAccess(base, keyExpr, NotFoundBehavior.returnNone());
+        case UNKNOWN:
+          errorReporter.report(
+              itemAccess.getKeyExprChild().getSourceLocation(),
+              UNTYPED_BRACKET_ACCESS_NOT_SUPPORTED);
+          // fall through
+        case MAP:
+        case UNION:
+          return genCodeForKeyAccess(base, keyExpr, NotFoundBehavior.returnNone());
+        case LEGACY_OBJECT_MAP:
+        case RECORD:
+          return genCodeForKeyAccess(base, keyExpr, NotFoundBehavior.throwException());
+        default:
+          throw new AssertionError("illegal item access on " + baseKind);
+      }
+    }
+  }
+
+  @Override
+  protected SwiftExpr visitNullSafeAccessNode(NullSafeAccessNode nullSafeAccessNode) {
     StringBuilder nullSafetyPrefix = new StringBuilder();
-    String refText = visitNullSafeNodeRecurse(node, nullSafetyPrefix);
+
+    SwiftExpr access = visit(nullSafeAccessNode.getBase());
+    ExprNode dataAccess = nullSafeAccessNode.getDataAccess();
+    while (dataAccess.getKind() == ExprNode.Kind.NULL_SAFE_ACCESS_NODE) {
+      NullSafeAccessNode node = (NullSafeAccessNode) dataAccess;
+      access =
+          accumulateDataAccess(
+              (DataAccessNode) node.getBase(),
+              access,
+              nullSafetyPrefix,
+              /* hasAssertNonNull= */ false);
+      dataAccess = node.getDataAccess();
+    }
+    access =
+        accumulateDataAccessTail((AccessChainComponentNode) dataAccess, access, nullSafetyPrefix);
 
     if (nullSafetyPrefix.length() == 0) {
-      return new SwiftExpr(refText, Integer.MAX_VALUE);
+      return access;
     } else {
       return new SwiftExpr(
-          nullSafetyPrefix + refText, SwiftExprUtils.swiftPrecedenceForOperator(Operator.CONDITIONAL));
+          nullSafetyPrefix + access.getText(),
+          SwiftExprUtils.swiftPrecedenceForOperator(Operator.CONDITIONAL));
     }
   }
 
-  private String visitNullSafeNodeRecurse(ExprNode node, StringBuilder nullSafetyPrefix) {
-    switch (node.getKind()) {
-      case VAR_REF_NODE:
-        {
-        	// FIXME fix returning string to '!= nil' or '== nil' in case of conditional evaluation
-        	// also check if NOT operator is a parent
-          VarRefNode varRef = (VarRefNode) node;
-          if (varRef.isInjected()) {
-            // Case 1: Injected data reference.
-            return genCodeForLiteralKeyAccess(IJDATA_INTERNAL_VAR_NAME, varRef.getName());
-          } else {
-        	  	// FIXME take care of proper handling of local vars if needed
-            SwiftExpr translation = localVarExprs.getVariableExpression(varRef.getName());
-            if (translation != null) {
-              // Case 2: In-scope local var.
-              return translation.getText();
-            } else {
-              // Case 3: Data reference.
-              return genCodeForLiteralKeyAccess(DATA_INTERNAL_VAR_NAME, varRef.getName());
-            }
-          }
-        }
-
-      case FIELD_ACCESS_NODE:
-      case ITEM_ACCESS_NODE:
-        {
-          DataAccessNode dataAccess = (DataAccessNode) node;
-          // First recursively visit base expression.
-          String refText =
-              visitNullSafeNodeRecurse(dataAccess.getBaseExprChild(), nullSafetyPrefix);
-
-          // Generate null safety check for base expression.
-          if (dataAccess.isNullSafe()) {
-        	  	// FIXME
-            nullSafetyPrefix.append("None if ").append(refText).append(" is None else ");
-          }
-
-          // Generate access to field
-          if (node.getKind() == ExprNode.Kind.FIELD_ACCESS_NODE) {
-            FieldAccessNode fieldAccess = (FieldAccessNode) node;
-            return genCodeForFieldAccess(
-                fieldAccess,
-                fieldAccess.getBaseExprChild().getType(),
-                refText,
-                fieldAccess.getFieldName());
-          } else {
-            ItemAccessNode itemAccess = (ItemAccessNode) node;
-            Kind baseKind = itemAccess.getBaseExprChild().getType().getKind();
-            SwiftExpr keySwiftExpr = visit(itemAccess.getKeyExprChild());
-            switch (baseKind) {
-              case LIST:
-                return genCodeForKeyAccess(
-                    refText, keySwiftExpr, NotFoundBehavior.RETURN_NONE, CoerceKeyToString.NO);
-              case UNKNOWN:
-                errorReporter.report(
-                    itemAccess.getKeyExprChild().getSourceLocation(),
-                    UNTYPED_BRACKET_ACCESS_NOT_SUPPORTED);
-                // fall through
-              case MAP:
-              case UNION:
-                return genCodeForKeyAccess(
-                    refText, keySwiftExpr, NotFoundBehavior.RETURN_NONE, CoerceKeyToString.YES);
-              case LEGACY_OBJECT_MAP:
-              case RECORD:
-                return genCodeForKeyAccess(
-                    refText, keySwiftExpr, NotFoundBehavior.THROW, CoerceKeyToString.YES);
-              default:
-                throw new AssertionError("illegal item access on " + baseKind);
-            }
-          }
-        }
-
-      default:
-        {
-          SwiftExpr value = visit(node);
-          return SwiftExprUtils.maybeProtect(value, Integer.MAX_VALUE).getText();
-        }
+  private SwiftExpr accumulateDataAccess(
+      DataAccessNode dataAccessNode,
+      SwiftExpr base,
+      StringBuilder nullSafetyPrefix,
+      boolean hasAssertNonNull) {
+    boolean nullSafe = true;
+    if (dataAccessNode.getBaseExprChild() instanceof DataAccessNode) {
+      base =
+          accumulateDataAccess(
+              (DataAccessNode) dataAccessNode.getBaseExprChild(),
+              base,
+              nullSafetyPrefix,
+              /* hasAssertNonNull= */ false);
+      nullSafe = false;
     }
+    return visitDataAccessNode(dataAccessNode, nullSafetyPrefix, base, nullSafe, hasAssertNonNull);
+  }
+
+  private SwiftExpr accumulateDataAccessTail(
+      AccessChainComponentNode dataAccessNode, SwiftExpr base, StringBuilder nullSafetyPrefix) {
+    boolean hasAssertNonNull = false;
+    if (dataAccessNode.getKind() == ExprNode.Kind.ASSERT_NON_NULL_OP_NODE) {
+      AssertNonNullOpNode assertNonNull = (AssertNonNullOpNode) dataAccessNode;
+      dataAccessNode = (AccessChainComponentNode) assertNonNull.getChild(0);
+      hasAssertNonNull = true;
+    }
+    return accumulateDataAccess(
+        (DataAccessNode) dataAccessNode, base, nullSafetyPrefix, hasAssertNonNull);
+  }
+
+  @Override
+  protected SwiftExpr visitGlobalNode(GlobalNode node) {
+    return visit(node.getValue());
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -341,7 +466,7 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
       default:
         break;
     }
-    
+
     return genSwiftExprUsingSoySyntax(node, opToOverride);
   }
 
@@ -457,7 +582,7 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
   }
 
   private SwiftExpr visitForEachFunction(FunctionNode node, String suffix) {
-    String varName = ((VarRefNode) node.getChild(0)).getName();
+    String varName = ((VarRefNode) node.getChild(0)).getNameWithoutLeadingDollar();
     return localVarExprs.getVariableExpression(varName + suffix);
   }
 
@@ -539,14 +664,14 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
    *
    * @param key the String literal value to be used as a key
    */
-  private static String genCodeForLiteralKeyAccess(String containerExpr, String key) {
-    return genCodeForKeyAccess(
-        containerExpr,
-        new SwiftStringExpr("\"" + key + "\""),
-        NotFoundBehavior.THROW,
-        CoerceKeyToString.NO);
+  private static String genCodeForLiteralKeyAccess(SwiftExpr containerExpr, String key) {
+    return genCodeForLiteralKeyAccess(containerExpr, key, NotFoundBehavior.throwException());
   }
 
+  private static String genCodeForLiteralKeyAccess(
+      SwiftExpr containerExpr, String key, NotFoundBehavior notFoundBehavior) {
+    return genCodeForKeyAccess(containerExpr, new SwiftStringExpr("\"" + key + "\""), notFoundBehavior);
+  }
 
   /**
    * Generates the code for key access given the name of a variable to be used as a key, e.g. {@code
@@ -557,22 +682,24 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
    * @param coerceKeyToString Whether or not the key should be coerced to a string.
    */
   private static String genCodeForKeyAccess(
-      String containerExpr,
+      SwiftExpr containerExpr,
       SwiftExpr key,
-      NotFoundBehavior notFoundBehavior,
-      CoerceKeyToString coerceKeyToString) {
-    if (coerceKeyToString == CoerceKeyToString.YES) {
-      // FIXME: key -> key.coerceToString
-      key = new SwiftFunctionExprBuilder("runtime.maybe_coerce_key_to_string").addArg(key).asSwiftExpr();
+      NotFoundBehavior notFoundBehavior) {
+    switch (notFoundBehavior.getType()) {
+      case RETURN_NONE:
+        return new SwiftFunctionExprBuilder("runtime.key_safe_data_access")
+            .addArg(containerExpr)
+            .addArg(key)
+            .build();
+      case THROW:
+        return new SwiftFunctionExprBuilder(containerExpr.getText() + ".get").addArg(key).build();
+      case DEFAULT_VALUE:
+        return new SwiftFunctionExprBuilder(containerExpr.getText() + ".get")
+            .addArg(key)
+            .addArg(notFoundBehavior.getDefaultValue())
+            .build();
     }
-    if (notFoundBehavior == NotFoundBehavior.RETURN_NONE) {
-      return new SwiftFunctionExprBuilder("runtime.key_safe_data_access")
-          .addArg(new SwiftExpr(containerExpr, Integer.MAX_VALUE))
-          .addArg(key)
-          .build();
-    } else {
-      return new SwiftFunctionExprBuilder(containerExpr + ".get").addArg(key).build();
-    }
+    throw new AssertionError(notFoundBehavior.getType());
   }
 
   /**
@@ -585,13 +712,59 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
    * @param fieldName the field name
    */
   private String genCodeForFieldAccess(
-      ExprNode node, SoyType baseType, String containerExpr, String fieldName) {
+      ExprNode node, SoyType baseType, SwiftExpr containerExpr, String fieldName) {
     if (baseType != null && baseType.getKind() == SoyType.Kind.PROTO) {
-    	  // TODO - optional protobuf support
       errorReporter.report(node.getSourceLocation(), PROTO_ACCESS_NOT_SUPPORTED);
       return ".ERROR";
     }
     return genCodeForLiteralKeyAccess(containerExpr, fieldName);
+  }
+
+  private String genCodeForMethodCall(MethodCallNode methodCallNode, SwiftExpr containerExpr) {
+    Preconditions.checkArgument(methodCallNode.isMethodResolved());
+    SoyMethod method = methodCallNode.getSoyMethod();
+
+    // Never allow a null method receiver.
+    containerExpr = assertNotNull(containerExpr);
+
+    if (method instanceof BuiltinMethod) {
+      switch ((BuiltinMethod) method) {
+        case BIND:
+          return new SwiftFunctionExprBuilder("runtime.bind_template_params")
+              .addArg(containerExpr)
+              .addArg(visit(methodCallNode.getChild(1)))
+              .asSwiftExpr()
+              .getText();
+        case GET_EXTENSION:
+        case HAS_PROTO_FIELD:
+          errorReporter.report(
+              methodCallNode.getAccessSourceLocation(),
+              SOY_SWIFT_SRC_FUNCTION_NOT_FOUND,
+              methodCallNode.getMethodName());
+          return ".ERROR";
+      }
+    } else if (method instanceof SoySourceFunctionMethod) {
+      SoySourceFunction function = ((SoySourceFunctionMethod) method).getImpl();
+      if (function instanceof SoySwiftSourceFunction) {
+        List<SwiftExpr> args = new ArrayList<>();
+        args.add(containerExpr);
+        methodCallNode.getParams().forEach(n -> args.add(visit(n)));
+        return pluginValueFactory
+            .applyFunction(
+                methodCallNode.getSourceLocation(),
+                methodCallNode.getMethodName().identifier(),
+                (SoySwiftSourceFunction) function,
+                args)
+            .getText();
+      } else {
+        errorReporter.report(
+            methodCallNode.getAccessSourceLocation(),
+            SOY_SWIFT_SRC_FUNCTION_NOT_FOUND,
+            methodCallNode.getMethodName());
+        return ".ERROR";
+      }
+    }
+    throw new AssertionError();
   }
 
   /**

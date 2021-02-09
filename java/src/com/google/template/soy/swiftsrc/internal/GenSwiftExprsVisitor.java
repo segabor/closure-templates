@@ -99,7 +99,7 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
 
   @Override
   public List<SwiftExpr> exec(SoyNode node) {
-    Preconditions.checkArgument(isComputableAsSwiftExprVisitor.exec(node));
+    // FIXME Preconditions.checkArgument(isComputableAsSwiftExprVisitor.exec(node));
     swiftExprs = new ArrayList<>();
     visit(node);
     return swiftExprs;
@@ -110,7 +110,7 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
    * itself.
    */
   List<SwiftExpr> execOnChildren(ParentSoyNode<?> node) {
-    // Preconditions.checkArgument(isComputableAsPyExprVisitor.execOnChildren(node));
+    // FIXME Preconditions.checkArgument(isComputableAsSwiftExprVisitor.execOnChildren(node));
 	  swiftExprs = new ArrayList<>();
     visitChildren(node);
     return swiftExprs;
@@ -254,7 +254,7 @@ public class GenSwiftExprsVisitor extends AbstractSoyNodeVisitor<List<SwiftExpr>
     GenSwiftExprsVisitor genSwiftExprsVisitor =
         genSwiftExprsVisitorFactory.create(localVarExprs, errorReporter);
     TranslateToSwiftExprVisitor translator =
-        new TranslateToSwiftExprVisitor(localVarExprs, errorReporter, pluginValueFactory, ConditionalEvaluationMode.CONDITIONAL);
+        new TranslateToSwiftExprVisitor(localVarExprs, pluginValueFactory, errorReporter, ConditionalEvaluationMode.CONDITIONAL);
 
     StringBuilder swiftExprTextSb = new StringBuilder();
 
