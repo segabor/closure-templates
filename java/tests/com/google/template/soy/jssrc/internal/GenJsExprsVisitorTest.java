@@ -103,7 +103,8 @@ public final class GenJsExprsVisitorTest {
 
     String soyNodeCode = JOINER.join("{@param boo : string}", "{map('a': 'b', $boo: 'c')[$boo]}");
     String expectedGenCode =
-        "/** @type {!soy.map.Map<string,string>} */ (new Map()).set(soy.$$checkNotNull('a'),"
+        "/** @type {!soy.map.Map<string,string>} */ (new"
+            + " Map()).set(soy.$$checkNotNull('a'),"
             + " 'b').set(soy.$$checkNotNull(opt_data.boo), 'c').get(opt_data.boo);";
     assertGeneratedChunks(soyNodeCode, expectedGenCode);
   }
@@ -188,16 +189,15 @@ public final class GenJsExprsVisitorTest {
   @Test
   public void testCall() {
     assertGeneratedChunks(
-        "{call some.func data=\"all\" /}", "some.func(/** @type {?} */ (opt_data), opt_ijData);");
+        "{call some.func data=\"all\" /}", "some.func(/** @type {?} */ (opt_data), $ijData);");
 
     String soyNodeCode = JOINER.join("{@param boo : ?}", "{call some.func data=\"$boo.foo\" /}");
-    assertGeneratedChunks(
-        soyNodeCode, "some.func(/** @type {?} */ (opt_data.boo.foo), opt_ijData);");
+    assertGeneratedChunks(soyNodeCode, "some.func(/** @type {?} */ (opt_data.boo.foo), $ijData);");
 
     soyNodeCode =
         JOINER.join("{@param moo : ?}", "{call some.func}", "  {param goo: $moo /}", "{/call}");
     assertGeneratedChunks(
-        soyNodeCode, "some.func(/** @type {?} */ ({goo: opt_data.moo}), opt_ijData);");
+        soyNodeCode, "some.func(/** @type {?} */ ({goo: opt_data.moo}), $ijData);");
 
     soyNodeCode =
         JOINER.join(
@@ -206,7 +206,7 @@ public final class GenJsExprsVisitorTest {
             "  {param goo kind=\"text\"}Blah{/param}",
             "{/call}");
     assertGeneratedChunks(
-        soyNodeCode, "some.func(soy.$$assignDefaults({goo: 'Blah'}, opt_data.boo), opt_ijData);");
+        soyNodeCode, "some.func(soy.$$assignDefaults({goo: 'Blah'}, opt_data.boo), $ijData);");
   }
 
   @Test
@@ -225,7 +225,7 @@ public final class GenJsExprsVisitorTest {
             "{/call}");
     expectedJsExprText =
         "some.func(/** @type {?} */ ({goo: "
-            + "'{' + (gooData8 != null) + '} is ' + gooData8.moo}), opt_ijData);";
+            + "'{' + (gooData8 != null) + '} is ' + gooData8.moo}), $ijData);";
     assertGeneratedChunks(soyNodeCode, expectedJsExprText);
   }
 
