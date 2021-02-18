@@ -46,6 +46,9 @@ maven_install(
         "com.google.common.html.types:types:1.0.7",
         "com.google.errorprone:error_prone_annotations:2.4.0",
         "com.google.escapevelocity:escapevelocity:0.9.1",
+        "com.google.flogger:flogger:0.5.1",
+        "com.google.flogger:flogger-system-backend:0.5.1",
+        "com.google.flogger:google-extensions:0.5.1",
         "com.google.guava:guava:29.0-jre",
         maven.artifact(
             "com.google.guava",
@@ -78,12 +81,6 @@ maven_install(
         "net.java.dev.javacc:javacc:6.1.2",
         "org.apache.ant:ant:1.10.9",
         "org.json:json:20160212",
-        maven.artifact(
-            "org.mozilla",
-            "rhino",
-            "1.7.11",
-            testonly = True,
-        ),
         "org.ow2.asm:asm:7.0",
         "org.ow2.asm:asm-commons:7.0",
         "org.ow2.asm:asm-tree:7.0",
