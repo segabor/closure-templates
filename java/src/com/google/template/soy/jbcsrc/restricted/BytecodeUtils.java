@@ -49,6 +49,7 @@ import com.google.template.soy.jbcsrc.shared.CompiledTemplate;
 import com.google.template.soy.jbcsrc.shared.LargeStringConstantFactory;
 import com.google.template.soy.jbcsrc.shared.Names;
 import com.google.template.soy.jbcsrc.shared.RenderContext;
+import com.google.template.soy.jbcsrc.shared.StackFrame;
 import com.google.template.soy.logging.LoggableElementMetadata;
 import java.io.Closeable;
 import java.lang.invoke.MethodHandles;
@@ -82,10 +83,8 @@ public final class BytecodeUtils {
   public static final Type LOGGING_ADVISING_BUILDER_TYPE =
       Type.getType(LoggingAdvisingAppendable.BufferingAppendable.class);
   public static final Type COMPILED_TEMPLATE_TYPE = Type.getType(CompiledTemplate.class);
-  public static final Type COMPILED_TEMPLATE_FACTORY_TYPE =
-      Type.getType(CompiledTemplate.Factory.class);
-  public static final Type COMPILED_TEMPLATE_FACTORY_VALUE_TYPE =
-      Type.getType(CompiledTemplate.FactoryValue.class);
+  public static final Type COMPILED_TEMPLATE_TEMPLATE_VALUE_TYPE =
+      Type.getType(CompiledTemplate.TemplateValue.class);
   public static final Type CONTENT_KIND_TYPE = Type.getType(ContentKind.class);
   public static final Type CLOSEABLE_TYPE = Type.getType(Closeable.class);
   public static final Type DIR_TYPE = Type.getType(Dir.class);
@@ -119,6 +118,7 @@ public final class BytecodeUtils {
   public static final Type BOXED_BOOLEAN_TYPE = Type.getType(Boolean.class);
   public static final Type LOGGABLE_ELEMENT_METADATA_TYPE =
       Type.getType(LoggableElementMetadata.class);
+  public static final Type STACK_FRAME_TYPE = Type.getType(StackFrame.class);
 
   public static final Method CLASS_INIT = Method.getMethod("void <clinit>()");
   public static final Method NULLARY_INIT = Method.getMethod("void <init>()");

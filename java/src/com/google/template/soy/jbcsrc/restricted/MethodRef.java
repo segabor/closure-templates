@@ -63,6 +63,7 @@ import com.google.template.soy.jbcsrc.runtime.JbcSrcRuntime;
 import com.google.template.soy.jbcsrc.shared.CompiledTemplate;
 import com.google.template.soy.jbcsrc.shared.LegacyFunctionAdapter;
 import com.google.template.soy.jbcsrc.shared.RenderContext;
+import com.google.template.soy.jbcsrc.shared.StackFrame;
 import com.google.template.soy.logging.SoyLogger;
 import com.google.template.soy.shared.internal.SharedRuntime;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
@@ -101,7 +102,13 @@ public abstract class MethodRef {
       create(Boolean.class, "toString", boolean.class).asCheap().asNonNullable();
 
   public static final MethodRef COMPILED_TEMPLATE_RENDER =
-      create(CompiledTemplate.class, "render", LoggingAdvisingAppendable.class, RenderContext.class)
+      create(
+              CompiledTemplate.class,
+              "render",
+              SoyRecord.class,
+              SoyRecord.class,
+              LoggingAdvisingAppendable.class,
+              RenderContext.class)
           .asNonNullable();
 
   public static final MethodRef DICT_IMPL_FOR_PROVIDER_MAP =
@@ -286,7 +293,7 @@ public abstract class MethodRef {
       create(
           JbcSrcRuntime.class,
           "bindTemplateParams",
-          CompiledTemplate.FactoryValue.class,
+          CompiledTemplate.TemplateValue.class,
           SoyRecord.class);
 
   public static final MethodRef RUNTIME_CALL_LEGACY_FUNCTION =
@@ -410,7 +417,7 @@ public abstract class MethodRef {
       create(SharedRuntime.class, "times", SoyValue.class, SoyValue.class).asNonNullable();
 
   public static final MethodRef RUNTIME_UNEXPECTED_STATE_ERROR =
-      create(JbcSrcRuntime.class, "unexpectedStateError", int.class).asNonNullable();
+      create(JbcSrcRuntime.class, "unexpectedStateError", StackFrame.class).asNonNullable();
 
   public static final MethodRef SOY_LIST_AS_JAVA_LIST =
       create(SoyList.class, "asJavaList").asNonNullable();
@@ -445,13 +452,8 @@ public abstract class MethodRef {
   public static final MethodRef SOY_VALUE_STRING_VALUE =
       create(SoyValue.class, "stringValue").asCheap().asNonNullable();
 
-  public static final MethodRef COMPILED_TEMPLATE_FACTORY_VALUE_CREATE_TEMPLATE =
-      create(
-              CompiledTemplate.FactoryValue.class,
-              "createTemplate",
-              SoyRecord.class,
-              SoyRecord.class)
-          .asNonNullable();
+  public static final MethodRef COMPILED_TEMPLATE_GET_TEMPLATE =
+      create(CompiledTemplate.TemplateValue.class, "getTemplate").asNonNullable();
 
   public static final MethodRef SOY_VALUE_PROVIDER_RENDER_AND_RESOLVE =
       create(
