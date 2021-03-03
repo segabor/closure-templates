@@ -670,8 +670,11 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
     jsType = JsType.forIncrementalDomState(stateVar.type());
     ImmutableList.Builder<Statement> setStateMethodStatements = ImmutableList.builder();
     Optional<Expression> typeAssertion =
-        jsType.getSoyTypeAssertion(
-            id(stateVar.name()), stateVar.name(), templateTranslationContext.codeGenerator());
+        jsType.getSoyParamTypeAssertion(
+            id(stateVar.name()),
+            stateVar.name(),
+            /* paramKind= */ "@state",
+            templateTranslationContext.codeGenerator());
     if (typeAssertion.isPresent()) {
       setStateMethodStatements.add(typeAssertion.get().asStatement());
     }
@@ -722,8 +725,11 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
     // We can assert the presence of the injected param if it being called.
     Optional<Expression> typeAssertion =
         isInjected
-            ? jsType.getSoyTypeAssertion(
-                value, param.name(), templateTranslationContext.codeGenerator())
+            ? jsType.getSoyParamTypeAssertion(
+                value,
+                param.name(),
+                /* paramKind= */ "@inject",
+                templateTranslationContext.codeGenerator())
             : Optional.empty();
     return MethodDeclaration.create(
         "get" + accessorSuffix,
@@ -922,19 +928,29 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
     }
 
     String keyVariable = "_keyVariable" + staticsCounter++;
+    RenderUnitNode renderUnitNode = node.getNearestAncestor(RenderUnitNode.class);
+    boolean delegatesToTemplate = false;
+    if (renderUnitNode instanceof TemplateNode) {
+      TemplateNode template = (TemplateNode) renderUnitNode;
+      delegatesToTemplate =
+          template.getHtmlElementMetadata().getIsHtmlElement()
+              && !template.getHtmlElementMetadata().getFinalCallee().isEmpty();
+    }
     if (shouldPushKey) {
       if (node.getKeyExpr() != null) {
         getJsCodeBuilder()
             .append(INCREMENTAL_DOM_PUSH_MANUAL_KEY.call(translateExpr(node.getKeyExpr())));
       } else {
-        getJsCodeBuilder()
-            .append(
-                VariableDeclaration.builder(keyVariable)
-                    .setRhs(
-                        INCREMENTAL_DOM_PUSH_KEY.call(
-                            JsRuntime.XID.call(
-                                Expression.stringLiteral(node.getTemplateCallKey()))))
-                    .build());
+        if (!delegatesToTemplate) {
+          getJsCodeBuilder()
+              .append(
+                  VariableDeclaration.builder(keyVariable)
+                      .setRhs(
+                          INCREMENTAL_DOM_PUSH_KEY.call(
+                              JsRuntime.XID.call(
+                                  Expression.stringLiteral(node.getTemplateCallKey()))))
+                      .build());
+        }
       }
     }
     // TODO: In reality, the CALL_X functions are really just IDOM versions of the related
@@ -948,7 +964,7 @@ public final class GenIncrementalDomCodeVisitor extends GenJsCodeVisitor {
     if (shouldPushKey) {
       if (node.getKeyExpr() != null) {
         getJsCodeBuilder().append(INCREMENTAL_DOM_POP_MANUAL_KEY.call());
-      } else {
+      } else if (!delegatesToTemplate) {
         getJsCodeBuilder().append(INCREMENTAL_DOM_POP_KEY.call(Expression.id(keyVariable)));
       }
     }

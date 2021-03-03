@@ -43,6 +43,7 @@ import com.google.template.soy.basicfunctions.ConcatListsFunction;
 import com.google.template.soy.basicfunctions.ConcatMapsMethod;
 import com.google.template.soy.basicfunctions.KeysFunction;
 import com.google.template.soy.basicfunctions.LegacyObjectMapToMapFunction;
+import com.google.template.soy.basicfunctions.ListReverseMethod;
 import com.google.template.soy.basicfunctions.ListSliceMethod;
 import com.google.template.soy.basicfunctions.MapEntriesMethod;
 import com.google.template.soy.basicfunctions.MapKeysFunction;
@@ -1059,8 +1060,9 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
               ListType.of(
                   RecordType.of(
                       ImmutableMap.of("key", type.getKeyType(), "value", type.getValueType()))));
-        } else if (sourceFunction instanceof ListSliceMethod) {
-          // list<T>.slice(...) returns list<T>
+        } else if (sourceFunction instanceof ListSliceMethod
+            || sourceFunction instanceof ListReverseMethod) {
+          // list<T>.slice(...) and list<T>.reverse() return list<T>
           node.setType(node.getBaseExprChild().getType());
         } else if (sourceFunction instanceof NumberListSortMethod) {
           // list<T>.sort() returns list<T>
@@ -2093,11 +2095,6 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
           break;
         case PROTO_INIT:
           visitProtoInitFunction(node);
-          break;
-        case TEMPLATE:
-          // Any TEMPLATE that reaches here without having been rewritten to TemplateLiteralNode has
-          // had some error reported already.
-          node.setType(UnknownType.getInstance());
           break;
       }
     }

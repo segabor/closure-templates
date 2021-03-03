@@ -162,6 +162,11 @@ Returns a sublist of a list from index `from` inclusive to index `to` exclusive.
 Negative indices are supported and match the
 [JavaScript spec](https://developer.mozilla.org/en/docs/Web/JavaScript/Reference/Global_Objects/Array/slice).
 
+### `list.reverse()` {#list-any_reverse}
+
+Reverses a shallow copy of the list and returns it. The original list passed is
+not modified.
+
 ### `list.join(separator)` {#join} {#list-string|int_join}
 
 Joins a list of strings or integers with a string separator.
@@ -534,7 +539,7 @@ already bound to the template type may not be bound again.
 
 {template example}
   {call foo}
-    {param fn: template(bar).bind(record(i2: 'Hello')) /}
+    {param fn: bar.bind(record(i2: 'Hello')) /}
   {/call}
 {/template}
 ```
@@ -553,7 +558,7 @@ already bound to the template type may not be bound again.
 {/template}
 
 {template example}
-  <{foo(fn: template(bar).bind(record(i2: 'Hello')))} />
+  <{foo(fn: bar.bind(record(i2: 'Hello')))} />
 {/template}
 ```
 

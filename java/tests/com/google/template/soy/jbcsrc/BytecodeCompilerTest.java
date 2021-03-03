@@ -52,7 +52,6 @@ import com.google.template.soy.data.SoyList;
 import com.google.template.soy.data.SoyRecord;
 import com.google.template.soy.data.SoyValue;
 import com.google.template.soy.data.SoyValueConverterUtility;
-import com.google.template.soy.data.internal.BasicParamStore;
 import com.google.template.soy.data.internal.ListImpl;
 import com.google.template.soy.data.internal.ParamStore;
 import com.google.template.soy.data.restricted.IntegerData;
@@ -145,7 +144,7 @@ public class BytecodeCompilerTest {
                 .join(
                     "{delpackage AlternateSecretFeature}",
                     "{namespace ns3 requirecss=\"ns.bar\"}",
-                    "import {helper} from 'ns3.soy';",
+                    "import {helper} from 'ns4.soy';",
                     "",
                     "/** */",
                     "{deltemplate myApp.myDelegate}", // implementation in AlternateSecretFeature
@@ -159,7 +158,7 @@ public class BytecodeCompilerTest {
         SoyFileSupplier.Factory.create(
             Joiner.on("\n")
                 .join(
-                    "{namespace ns3}",
+                    "{namespace ns4}",
                     "",
                     "/** */",
                     "{template .helper}",
@@ -167,7 +166,7 @@ public class BytecodeCompilerTest {
                     "  {$boo}",
                     "{/template}",
                     ""),
-            SourceFilePath.create("ns3.soy"));
+            SourceFilePath.create("ns4.soy"));
     SoyFileSetParser parser =
         SoyFileSetParserBuilder.forSuppliers(
                 soyFileContent1, soyFileContent2, soyFileContent3, soyFileContent4)
@@ -384,7 +383,7 @@ public class BytecodeCompilerTest {
             "Boo: {$boo}{\\n}",
             "{/template}",
             "");
-    ParamStore params = new BasicParamStore(2);
+    ParamStore params = new ParamStore(2);
     params.setField("foo", StringData.forValue("foo"));
     assertThat(render(templates, params, "ns.callerDataAll")).isEqualTo("Foo: foo\nBoo: null\n");
     params.setField("boo", StringData.forValue("boo"));
@@ -394,8 +393,8 @@ public class BytecodeCompilerTest {
         .asList()
         .containsExactly("ns.callee");
 
-    params = new BasicParamStore(2);
-    params.setField("rec", new BasicParamStore(2).setField("foo", StringData.forValue("foo")));
+    params = new ParamStore(2);
+    params.setField("rec", new ParamStore(2).setField("foo", StringData.forValue("foo")));
     assertThat(render(templates, params, "ns.callerDataExpr")).isEqualTo("Foo: foo\nBoo: null\n");
     ((ParamStore) params.getField("rec")).setField("boo", StringData.forValue("boo"));
     assertThat(render(templates, params, "ns.callerDataExpr")).isEqualTo("Foo: foo\nBoo: boo\n");
@@ -403,14 +402,14 @@ public class BytecodeCompilerTest {
         .asList()
         .containsExactly("ns.callee");
 
-    params = new BasicParamStore(2);
+    params = new ParamStore(2);
     params.setField("p1", StringData.forValue("foo"));
     assertThat(render(templates, params, "ns.callerParams")).isEqualTo("Foo: foo\nBoo: a1b\n");
     assertThat(getTemplateMetadata(templates, "ns.callerParams").callees())
         .asList()
         .containsExactly("ns.callee");
 
-    params = new BasicParamStore(2);
+    params = new ParamStore(2);
     params.setField("p1", StringData.forValue("foo"));
     params.setField("boo", StringData.forValue("boo"));
     assertThat(render(templates, params, "ns.callerParamsAndData"))
@@ -1317,7 +1316,7 @@ public class BytecodeCompilerTest {
                 "loader2.soy",
                 Joiner.on("\n")
                     .join(
-                        "{namespace loader1}",
+                        "{namespace loader1.b}",
                         "{template .publicTemplate2}",
                         "L1T2",
                         "{/template}")));
@@ -1444,8 +1443,7 @@ public class BytecodeCompilerTest {
                         "import {publicTemplate1} from 'loader1.soy';",
                         "{template .publicTemplate}",
                         "{@param renderTemplate: bool = true}",
-                        "{let $tpl: $renderTemplate ? template(publicTemplate1) :"
-                            + " dummyTemplate /}",
+                        "{let $tpl: $renderTemplate ? publicTemplate1 : dummyTemplate /}",
                         "L2T",
                         "{sp}{call $tpl /}",
                         "{sp}{call $tpl /}",
@@ -1531,6 +1529,9 @@ public class BytecodeCompilerTest {
   private static CompilingClassLoader createCompilingClassLoader(
       SoyFileSetParser parser, ParseResult parseResult) {
     return new CompilingClassLoader(
-        parseResult.fileSet(), parser.soyFileSuppliers(), parser.typeRegistry());
+        parseResult.registry(),
+        parseResult.fileSet(),
+        parser.soyFileSuppliers(),
+        parser.typeRegistry());
   }
 }
