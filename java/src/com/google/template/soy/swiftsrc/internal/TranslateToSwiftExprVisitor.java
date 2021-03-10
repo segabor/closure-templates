@@ -571,7 +571,6 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
         return NONE;
       case MSG_WITH_ID:
       case REMAINDER:
-      case TEMPLATE:
         // should have been removed earlier in the compiler
         throw new AssertionError();
       case PROTO_INIT:

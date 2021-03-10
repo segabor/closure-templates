@@ -29,6 +29,11 @@ import com.google.template.soy.plugin.python.restricted.PythonPluginContext;
 import com.google.template.soy.plugin.python.restricted.PythonValue;
 import com.google.template.soy.plugin.python.restricted.PythonValueFactory;
 import com.google.template.soy.plugin.python.restricted.SoyPythonSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SoySwiftSourceFunction;
+import com.google.template.soy.plugin.swift.restricted.SwiftPluginContext;
+import com.google.template.soy.plugin.swift.restricted.SwiftValue;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory;
+import com.google.template.soy.plugin.swift.restricted.SwiftValueFactory.RuntimeNamespace;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyMethodSignature;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
@@ -46,7 +51,7 @@ import java.util.List;
     value = {@Signature(returnType = "list<any>")})
 @SoyPureFunction
 public class ListReverseMethod
-    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction {
+    implements SoyJavaSourceFunction, SoyJavaScriptSourceFunction, SoyPythonSourceFunction, SoySwiftSourceFunction {
 
   @Override
   public JavaScriptValue applyForJavaScriptSource(
@@ -58,6 +63,12 @@ public class ListReverseMethod
   public PythonValue applyForPythonSource(
       PythonValueFactory factory, List<PythonValue> args, PythonPluginContext context) {
     return factory.global("runtime.list_reverse").call(args.get(0));
+  }
+
+  @Override
+  public SwiftValue applyForSwiftSource(SwiftValueFactory factory, List<SwiftValue> args,
+      SwiftPluginContext context) {
+    return factory.runtime(RuntimeNamespace.Lists, "reversed", true).call(args.get(0));
   }
 
   // lazy singleton pattern, allows other backends to avoid the work.
