@@ -44,13 +44,13 @@ import com.google.template.soy.swiftsrc.restricted.SwiftExpr;
 import com.google.template.soy.swiftsrc.restricted.SwiftExprUtils;
 
 public class GenSwiftCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
-  private static final SoyErrorKind NON_NAMESPACED_TEMPLATE =
-      SoyErrorKind.of("Called template does not reside in a namespace.");
 
   /** The options configuration for this run. */
+  @SuppressWarnings("unused")
   private final SoySwiftSrcOptions swiftSrcOptions;
 
   /** The namespace manifest for all current and dependent sources. */
+  @SuppressWarnings("unused")
   private final ImmutableMap<String, String> namespaceManifest;
 
   @VisibleForTesting protected SwiftCodeBuilder swiftCodeBuilder;

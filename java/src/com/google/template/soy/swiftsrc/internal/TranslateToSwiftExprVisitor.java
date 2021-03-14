@@ -140,6 +140,8 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
   private static final SwiftExpr ERROR =
       new SwiftExpr("raise Exception('Soy compilation failed')", Integer.MAX_VALUE);
 
+  private static final SwiftExpr FALSE_EXPR = new SwiftExpr("false", Integer.MAX_VALUE);
+
   private static final SwiftExpr NONE = new SwiftExpr("nil", Integer.MAX_VALUE);
 
   private final LocalVariableStack localVarExprs;
@@ -558,9 +560,8 @@ public final class TranslateToSwiftExprVisitor extends AbstractReturningExprNode
         // this is a no-op in python
         return visit(node.getChild(0));
       case DEBUG_SOY_TEMPLATE_INFO:
-        // 'debugSoyTemplateInfo' is used for inpsecting soy template info from rendered pages.
-        // Always resolve to false since there is no plan to support this feature in PySrc.
-        return new SwiftExpr("false", Integer.MAX_VALUE);
+        // TODO: make it switchable?
+        return FALSE_EXPR;
       case LEGACY_DYNAMIC_TAG:
       case UNKNOWN_JS_GLOBAL:
         throw new UnsupportedOperationException(
