@@ -25,7 +25,6 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.io.Files;
 import com.google.common.io.Resources;
 import com.google.template.soy.SoyUtils;
-import com.google.template.soy.base.internal.TriState;
 import com.google.template.soy.data.internalutils.InternalValueUtils;
 import com.google.template.soy.data.restricted.PrimitiveData;
 import java.io.File;
@@ -39,15 +38,6 @@ import java.util.Map;
  */
 public final class SoyGeneralOptions implements Cloneable {
 
-  /** Whether to allow external calls (calls to undefined templates). Null if not explicitly set. */
-  private TriState allowExternalCalls = TriState.UNSET;
-
-  /**
-   * Whether to require external templates to be imported (rather than referenced via fqn or aliased
-   * namespaces).
-   */
-  private boolean requireTemplateImports = false;
-
   /** Map from compile-time global name to value. */
   private ImmutableMap<String, PrimitiveData> compileTimeGlobals;
 
@@ -57,8 +47,6 @@ public final class SoyGeneralOptions implements Cloneable {
   public SoyGeneralOptions() {}
 
   private SoyGeneralOptions(SoyGeneralOptions orig) {
-    this.allowExternalCalls = orig.allowExternalCalls;
-    this.requireTemplateImports = orig.requireTemplateImports;
     this.compileTimeGlobals = orig.compileTimeGlobals;
     this.experimentalFeatures = ImmutableSet.copyOf(orig.experimentalFeatures);
   }
@@ -74,42 +62,6 @@ public final class SoyGeneralOptions implements Cloneable {
     return experimentalFeatures;
   }
 
-  /**
-   * Sets whether to allow external calls (calls to undefined templates).
-   *
-   * @param allowExternalCalls The value to set.
-   */
-  public SoyGeneralOptions setAllowExternalCalls(boolean allowExternalCalls) {
-    this.allowExternalCalls = TriState.from(allowExternalCalls);
-    return this;
-  }
-
-  /**
-   * Returns whether to allow external calls (calls to undefined templates). If this option was
-   * never explicitly set, then returns {@link TriState#UNSET}.
-   */
-  public TriState allowExternalCalls() {
-    return allowExternalCalls;
-  }
-
-  /**
-   * Sets whether to require external templates to be imported (rather than referenced via fqn or
-   * aliased namespaces).
-   *
-   * @param requireTemplateImports The value to set.
-   */
-  public SoyGeneralOptions setRequireTemplateImports(boolean requireTemplateImports) {
-    this.requireTemplateImports = requireTemplateImports;
-    return this;
-  }
-
-  /**
-   * Returns whether to require external templates to be imported (rather than referenced via fqn or
-   * aliased namespaces).
-   */
-  public boolean getRequireTemplateImports() {
-    return this.requireTemplateImports;
-  }
 
   /**
    * Sets the map from compile-time global name to value.
@@ -203,7 +155,6 @@ public final class SoyGeneralOptions implements Cloneable {
   @Override
   public final String toString() {
     return MoreObjects.toStringHelper(this)
-        .add("allowExternalCalls", allowExternalCalls)
         .add("compileTimeGlobals", compileTimeGlobals)
         .add("experimentalFeatures", experimentalFeatures)
         .toString();

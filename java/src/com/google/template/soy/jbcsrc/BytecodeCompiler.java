@@ -36,13 +36,13 @@ import com.google.template.soy.jbcsrc.shared.CompiledTemplates;
 import com.google.template.soy.jbcsrc.shared.Names;
 import com.google.template.soy.plugin.java.internal.PluginAnalyzer;
 import com.google.template.soy.plugin.java.restricted.SoyJavaSourceFunction;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateDelegateNode;
 import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateNode;
-import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.TemplateType;
 import java.io.IOException;
@@ -65,7 +65,7 @@ public final class BytecodeCompiler {
    *     have been reported to the error reporter.
    */
   public static Optional<CompiledTemplates> compile(
-      final TemplateRegistry registry,
+      final FileSetMetadata registry,
       final SoyFileSetNode fileSet,
       ErrorReporter reporter,
       ImmutableMap<SourceFilePath, SoyFileSupplier> filePathsToSuppliers,
@@ -80,7 +80,7 @@ public final class BytecodeCompiler {
                             == TemplateType.TemplateKind.DELTEMPLATE)
                 .map(TemplateMetadata::getTemplateName)
                 .collect(toImmutableSet()),
-            new CompilingClassLoader(registry, fileSet, filePathsToSuppliers, typeRegistry));
+            new CompilingClassLoader(fileSet, filePathsToSuppliers, typeRegistry));
     if (reporter.errorsSince(checkpoint)) {
       return Optional.empty();
     }
@@ -94,12 +94,10 @@ public final class BytecodeCompiler {
    * <p>If errors are encountered, the error reporter will be updated and we will return. The
    * contents of any data written to the sink at that point are undefined.
    *
-   * @param registry All the templates to compile
    * @param reporter The error reporter
    * @param sink The output sink to write the JAR to.
    */
   public static void compileToJar(
-      TemplateRegistry registry,
       SoyFileSetNode fileSet,
       ErrorReporter reporter,
       SoyTypeRegistry typeRegistry,
@@ -113,7 +111,6 @@ public final class BytecodeCompiler {
       Map<String, PluginRuntimeInstanceInfo.Builder> pluginInstances = new TreeMap<>();
 
       compileTemplates(
-          registry,
           fileSet,
           reporter,
           typeRegistry,
@@ -238,7 +235,6 @@ public final class BytecodeCompiler {
   }
 
   private static <T, E extends Throwable> T compileTemplates(
-      TemplateRegistry templateRegistry,
       SoyFileSetNode fileSet,
       ErrorReporter errorReporter,
       SoyTypeRegistry typeRegistry,
@@ -247,19 +243,13 @@ public final class BytecodeCompiler {
     JavaSourceFunctionCompiler javaSourceFunctionCompiler =
         new JavaSourceFunctionCompiler(typeRegistry, errorReporter);
     for (SoyFileNode file : fileSet.getChildren()) {
-      for (TemplateNode template : file.getTemplates()) {
-        TemplateCompiler templateCompiler =
-            new TemplateCompiler(
-                templateRegistry,
-                CompiledTemplateMetadata.create(templateRegistry.getMetadata(template)),
-                template,
-                javaSourceFunctionCompiler);
-        for (ClassData clazz : templateCompiler.compile()) {
-          if (Flags.DEBUG) {
-            clazz.checkClass();
-          }
-          listener.onCompile(clazz);
+      for (ClassData clazz : new SoyFileCompiler(file, javaSourceFunctionCompiler).compile()) {
+        if (Flags.DEBUG) {
+          clazz.checkClass();
         }
+        listener.onCompile(clazz);
+      }
+      for (TemplateNode template : file.getTemplates()) {
         if (template instanceof TemplateDelegateNode) {
           listener.onCompileDelTemplate(template.getTemplateName());
         } else {

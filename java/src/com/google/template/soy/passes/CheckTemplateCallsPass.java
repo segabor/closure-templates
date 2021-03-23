@@ -38,12 +38,12 @@ import com.google.template.soy.soytree.CallNode;
 import com.google.template.soy.soytree.CallParamContentNode;
 import com.google.template.soy.soytree.CallParamNode;
 import com.google.template.soy.soytree.CallParamValueNode;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateNode;
-import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.types.SanitizedType;
 import com.google.template.soy.types.SoyType;
@@ -57,6 +57,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * This compiler pass runs several checks on {@code CallNode}s.
@@ -74,6 +75,7 @@ import java.util.Set;
  *
  * <p>Note: This pass requires that the ResolveExpressionTypesPass has already been run.
  */
+@RunAfter(FinalizeTemplateRegistryPass.class)
 final class CheckTemplateCallsPass implements CompilerFileSetPass {
 
   static final SoyErrorKind ARGUMENT_TYPE_MISMATCH =
@@ -100,14 +102,18 @@ final class CheckTemplateCallsPass implements CompilerFileSetPass {
   /** The error reporter that is used in this compiler pass. */
   private final ErrorReporter errorReporter;
 
-  CheckTemplateCallsPass(ErrorReporter errorReporter) {
+  private final Supplier<FileSetMetadata> templateRegistryFull;
+
+  CheckTemplateCallsPass(
+      ErrorReporter errorReporter, Supplier<FileSetMetadata> templateRegistryFull) {
     this.errorReporter = errorReporter;
+    this.templateRegistryFull = templateRegistryFull;
   }
 
   @Override
   public Result run(ImmutableList<SoyFileNode> sourceFiles, IdGenerator idGenerator) {
+    CheckCallsHelper helper = new CheckCallsHelper(templateRegistryFull.get());
     for (SoyFileNode file : sourceFiles) {
-      CheckCallsHelper helper = new CheckCallsHelper(file.getTemplateRegistry());
       for (TemplateNode template : file.getTemplates()) {
         for (CallBasicNode callNode :
             SoyTreeUtils.getAllNodesOfType(template, CallBasicNode.class)) {
@@ -126,13 +132,13 @@ final class CheckTemplateCallsPass implements CompilerFileSetPass {
   private final class CheckCallsHelper {
 
     /** Registry of all templates in the Soy tree. */
-    private final TemplateRegistry templateRegistry;
+    private final FileSetMetadata fileSetMetadata;
 
     /** Map of all template parameters, both explicit and implicit, organized by template. */
     private final Map<TemplateType, TemplateParamTypes> paramTypesMap = new HashMap<>();
 
-    CheckCallsHelper(TemplateRegistry registry) {
-      this.templateRegistry = registry;
+    CheckCallsHelper(FileSetMetadata registry) {
+      this.fileSetMetadata = registry;
     }
 
     void checkCall(TemplateNode callerTemplate, CallBasicNode node) {
@@ -176,7 +182,7 @@ final class CheckTemplateCallsPass implements CompilerFileSetPass {
 
     void checkCall(TemplateNode callerTemplate, CallDelegateNode node) {
       ImmutableList<TemplateMetadata> potentialCallees =
-          templateRegistry
+          fileSetMetadata
               .getDelTemplateSelector()
               .delTemplateNameToValues()
               .get(node.getDelCalleeName());
@@ -336,7 +342,7 @@ final class CheckTemplateCallsPass implements CompilerFileSetPass {
       // types are in agreement - that will be done when it's this template's
       // turn to be analyzed as a caller.
       IndirectParamsInfo ipi =
-          new IndirectParamsCalculator(templateRegistry).calculateIndirectParams(callee);
+          new IndirectParamsCalculator(fileSetMetadata).calculateIndirectParams(callee);
       for (String indirectParamName : ipi.indirectParamTypes.keySet()) {
         if (paramTypes.params.containsKey(indirectParamName)) {
           continue;
@@ -420,7 +426,7 @@ final class CheckTemplateCallsPass implements CompilerFileSetPass {
           continue;
         }
         if (ipi == null) {
-          ipi = new IndirectParamsCalculator(templateRegistry).calculateIndirectParams(callee);
+          ipi = new IndirectParamsCalculator(fileSetMetadata).calculateIndirectParams(callee);
           // If the callee has unknown indirect params then we can't validate that this isn't one
           // of them. So just give up.
           if (ipi.mayHaveIndirectParamsInExternalCalls

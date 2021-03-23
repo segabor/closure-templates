@@ -72,10 +72,10 @@ import com.google.template.soy.exprtree.ExprNode.PrimitiveNode;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.FieldAccessNode;
 import com.google.template.soy.exprtree.FloatNode;
-import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.exprtree.IntegerNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
+import com.google.template.soy.exprtree.MapLiteralFromListNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
 import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.NullNode;
@@ -3061,7 +3061,7 @@ private ConstNode ConstStmt() :
 {
   tagBegin = <CONST_OPEN>
   {
-    exported = tagBegin.image.startsWith("export ");
+    exported = tagBegin.image.startsWith("{export ");
   }
 
   try {
@@ -3426,7 +3426,9 @@ private CallNode CallStmt() :
     } catch (ParseException e) {
       tagClose = reportTemplateBodyErrorAndSkipTo(e, CMD_SELF_CLOSE, CMD_CLOSE_CALL);
       if (calleeExpr == null && calleeName == null) {
-        calleeExpr = TemplateLiteralNode.forGlobal(new GlobalNode(Identifier.create(".error", createSrcLoc(tagBegin))));
+        SourceLocation loc = createSrcLoc(tagBegin);
+        calleeExpr = TemplateLiteralNode.forVarRef(
+           new VarRefNode("$error", loc, null));
       }
     }
 
@@ -4295,29 +4297,40 @@ private ExprNode VarRefOrFunctionCallLike() :
   }
 }
 
-/** Parses a map literal: {@code map('key': 'value', $key: $value)} */
+/** Parses a map literal or a list to map constructor:
+ *  {@code map('key': 'value', $key: $value)} or {@code map($list)}
+ */
 private ExprNode MapLiteral(Identifier ident) :
 {
-  ExprNode key, val;
+  ExprNode key = null, val;
   Token closeParen;
   ImmutableMap.Builder<ExprNode, ExprNode> kvPairs = ImmutableMap.builder();
+  boolean fromList = false;
 }
 {
   [
     key = Expr()
-    <COLON>
-    val = Expr()
-    { kvPairs.put(key, val); }
-    (
-      // Disambiguate with a trailing comma
-      LOOKAHEAD( { getToken(1).kind == COMMA && getToken(2).kind != RPAREN } )
-      <COMMA>
-      key = Expr()
+    {
+      fromList = true;
+    }
+    [
       <COLON>
       val = Expr()
-      { kvPairs.put(key, val); }
-    )*
-    [ <COMMA> ]  // trailing comma
+      {
+        kvPairs.put(key, val);
+        fromList = false;
+      }
+      (
+        // Disambiguate with a trailing comma
+        LOOKAHEAD( { getToken(1).kind == COMMA && getToken(2).kind != RPAREN } )
+        <COMMA>
+        key = Expr()
+        <COLON>
+        val = Expr()
+        { kvPairs.put(key, val); }
+      )*
+      [ <COMMA> ]  // trailing comma
+    ]
   ]
   closeParen = <RPAREN>
   {
@@ -4326,7 +4339,7 @@ private ExprNode MapLiteral(Identifier ident) :
     // (Function calls and map literals are usually distinguished by their parameter syntax
     // (positional vs. named), but that's not helpful when there are no params.)
     SourceLocation srcLoc = ident.location().extend(createSrcLoc(closeParen));
-    return new MapLiteralNode(ident, kvPairs.build(), srcLoc);
+    return fromList ? new MapLiteralFromListNode(ident, key, srcLoc, nodeIdGen.genId()) : new MapLiteralNode(ident, kvPairs.build(), srcLoc);
   }
 }
 

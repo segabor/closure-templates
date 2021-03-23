@@ -21,6 +21,7 @@ import static com.google.template.soy.base.SourceLocation.Point.UNKNOWN_POINT;
 import static com.google.template.soy.error.ErrorReporter.exploding;
 import static java.util.stream.Collectors.toMap;
 
+import com.google.common.collect.ImmutableCollection;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -42,6 +43,7 @@ import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.plugin.restricted.SoySourceFunction;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.HtmlAttributeNode;
 import com.google.template.soy.soytree.HtmlAttributeValueNode;
 import com.google.template.soy.soytree.HtmlAttributeValueNode.Quotes;
@@ -49,7 +51,6 @@ import com.google.template.soy.soytree.HtmlOpenTagNode;
 import com.google.template.soy.soytree.IfCondNode;
 import com.google.template.soy.soytree.IfElseNode;
 import com.google.template.soy.soytree.IfNode;
-import com.google.template.soy.soytree.ImportsContext.ImportsTemplateRegistry;
 import com.google.template.soy.soytree.LetContentNode;
 import com.google.template.soy.soytree.LetValueNode;
 import com.google.template.soy.soytree.PrintNode;
@@ -70,13 +71,13 @@ import com.google.template.soy.types.SoyTypes;
 import com.google.template.soy.types.StringType;
 import com.google.template.soy.types.TemplateType;
 import com.google.template.soy.types.ast.NamedTypeNode;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Consumer;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -91,6 +92,7 @@ import java.util.stream.Collectors;
   SoyElementPass.class // Uses HtmlElementMetadataP
 })
 @RunBefore({
+  FinalizeTemplateRegistryPass.class, // Mutates template metadata
   SoyElementCompositionPass.class,
   AutoescaperPass.class // since it inserts print directives
 })
@@ -136,28 +138,48 @@ final class ElementAttributePass implements CompilerFileSetPass {
 
   private final ErrorReporter errorReporter;
   private final PluginResolver pluginResolver;
+  private final Supplier<FileSetMetadata> templateRegistryFromDeps;
 
-  ElementAttributePass(ErrorReporter errorReporter, PluginResolver pluginResolver) {
+  ElementAttributePass(
+      ErrorReporter errorReporter,
+      PluginResolver pluginResolver,
+      Supplier<FileSetMetadata> templateRegistryFromDeps) {
     this.errorReporter = errorReporter;
     this.pluginResolver = pluginResolver;
+    this.templateRegistryFromDeps = templateRegistryFromDeps;
   }
 
   @Override
   public Result run(ImmutableList<SoyFileNode> sourceFiles, IdGenerator idGenerator) {
+    // Collect all elements in this compilation first. This cache will be used to look up elements,
+    // followed by the secondary cache libRegistry, which includes all elements from deps.
+    ImmutableMap<String, TemplateNode> allAstElements =
+        sourceFiles.stream()
+            .flatMap(fn -> fn.getTemplates().stream())
+            .filter(
+                t ->
+                    !(t instanceof TemplateDelegateNode)
+                        && t.getTemplateContentKind() instanceof ElementContentKind
+                        && t.getHtmlElementMetadata() != null)
+            .collect(toImmutableMap(TemplateNode::getTemplateName, t -> t));
+
     for (SoyFileNode file : sourceFiles) {
-      run(file, idGenerator);
+      run(file, allAstElements, idGenerator);
     }
+
+    checkRootElementTagNames(allAstElements.values());
+
     return Result.CONTINUE;
   }
 
-  public void run(SoyFileNode file, IdGenerator nodeIdGen) {
+  private void run(
+      SoyFileNode file, ImmutableMap<String, TemplateNode> allAstElements, IdGenerator nodeIdGen) {
     checkAttributeTypes(file);
 
-    Set<TemplateNode> delegatingElementsWithAllAttrs = new HashSet<>();
-    Map<String, TemplateNode> allElementsThisCompile = new HashMap<>();
+    ImmutableList.Builder<TemplateNode> delegatingElementsWithAllAttrs = ImmutableList.builder();
 
     // Rewrite all @attribute values in root elements.
-    SoyTreeUtils.allNodesOfType(file, TemplateNode.class)
+    file.getTemplates().stream()
         .filter(
             t ->
                 t.getTemplateContentKind() instanceof ElementContentKind
@@ -169,13 +191,11 @@ final class ElementAttributePass implements CompilerFileSetPass {
                     t.getOpenTagLocation(), DELTEMPLATE_USING_ELEMENT_CONTENT_KIND);
                 return;
               }
-              allElementsThisCompile.put(t.getTemplateName(), t);
-              processTemplate(
-                  t, nodeIdGen::genId, delegatingElementsWithAllAttrs, file.getTemplateRegistry());
+              processTemplate(t, nodeIdGen::genId, delegatingElementsWithAllAttrs::add);
             });
 
     // All other @attributes (outside of root elements) are illegal.
-    SoyTreeUtils.allNodesOfType(file, TemplateNode.class)
+    file.getTemplates().stream()
         .filter(t -> t.getHtmlElementMetadata() != null && getDelegateCall(t).isEmpty())
         .forEach(
             t ->
@@ -189,16 +209,12 @@ final class ElementAttributePass implements CompilerFileSetPass {
                                 ATTRIBUTE_PARAM_NOT_ALLOWED,
                                 attr.getStaticKey())));
 
-    if (!delegatingElementsWithAllAttrs.isEmpty()) {
-      updateReservedAttributesForDelegateCalls(
-          delegatingElementsWithAllAttrs, allElementsThisCompile, file.getTemplateRegistry());
-    }
-
-    checkRootElementTagNames(allElementsThisCompile);
+    updateReservedAttributesForDelegateCalls(
+        delegatingElementsWithAllAttrs.build(), allAstElements);
   }
 
   private <T extends Node> void checkAttributeTypes(SoyFileNode file) {
-    SoyTreeUtils.allNodesOfType(file, TemplateNode.class)
+    file.getTemplates().stream()
         .flatMap(t -> t.getHeaderParams().stream())
         .filter(p -> p instanceof AttrParam)
         .map(AttrParam.class::cast)
@@ -215,8 +231,7 @@ final class ElementAttributePass implements CompilerFileSetPass {
   private void processTemplate(
       TemplateNode templateNode,
       Supplier<Integer> id,
-      Set<TemplateNode> delegatingElementsWithAllAttrs,
-      ImportsTemplateRegistry templateRegistry) {
+      Consumer<TemplateNode> delegatingElementsWithAllAttrs) {
     ImmutableMap<String, AttrParam> attrs =
         templateNode.getAllParams().stream()
             .filter(p -> p instanceof AttrParam)
@@ -383,9 +398,7 @@ final class ElementAttributePass implements CompilerFileSetPass {
     if (templateNode.getAllowExtraAttributes()) {
       templateNode.setReservedAttributes(foundNormalAttr.build());
       if (iAmAnElementCallingAnElement) {
-        delegatingElementsWithAllAttrs.add(templateNode);
-      } else {
-        templateRegistry.updateTemplate(templateNode);
+        delegatingElementsWithAllAttrs.accept(templateNode);
       }
 
       TemplateParam attrsParam =
@@ -507,9 +520,7 @@ final class ElementAttributePass implements CompilerFileSetPass {
   }
 
   private void updateReservedAttributesForDelegateCalls(
-      Set<TemplateNode> templates,
-      Map<String, TemplateNode> localTemplateLookup,
-      ImportsTemplateRegistry templateRegistry) {
+      ImmutableList<TemplateNode> templates, ImmutableMap<String, TemplateNode> allAstElements) {
 
     Map<String, String> templateFqnCall =
         templates.stream()
@@ -525,50 +536,46 @@ final class ElementAttributePass implements CompilerFileSetPass {
         throw new IllegalArgumentException("Cyclical graph: " + templateFqnCall);
       }
       for (Map.Entry<String, String> leaf : leaves) {
-        TemplateNode caller = localTemplateLookup.get(leaf.getKey());
-        TemplateNode callee = localTemplateLookup.get(leaf.getValue());
+        TemplateNode callee = allAstElements.get(leaf.getValue());
         ImmutableSet<String> reservedAttr;
         if (callee != null) {
           reservedAttr = callee.getReservedAttributes();
         } else {
           reservedAttr =
-              templateRegistry
+              templateRegistryFromDeps
+                  .get()
                   .getBasicTemplateOrElement(leaf.getValue())
                   .getTemplateType()
                   .getReservedAttributes();
         }
+        TemplateNode caller = allAstElements.get(leaf.getKey());
         caller.setReservedAttributes(
             ImmutableSet.<String>builder()
                 .addAll(caller.getReservedAttributes())
                 .addAll(reservedAttr)
                 .build());
-        templateRegistry.updateTemplate(caller);
         templateFqnCall.remove(leaf.getKey());
       }
     }
   }
 
-  private void checkRootElementTagNames(Map<String, TemplateNode> elements) {
-    for (Map.Entry<String, TemplateNode> entry : elements.entrySet()) {
-      ElementContentKind contentKind =
-          (ElementContentKind) entry.getValue().getTemplateContentKind();
+  private void checkRootElementTagNames(ImmutableCollection<TemplateNode> elements) {
+    for (TemplateNode node : elements) {
+      ElementContentKind contentKind = (ElementContentKind) node.getTemplateContentKind();
       String expectedTagName = contentKind.getTagName();
       // html<?> matches anything
       if (expectedTagName.isEmpty()) {
         continue;
       }
 
-      String tag = entry.getValue().getHtmlElementMetadata().getTag();
-      if (!"?".equals(tag)) {
-        if (!expectedTagName.equals(tag)) {
-          TagName tagName = getElementOpen(entry.getValue()).get().getTagName();
-
-          if (tagName.isStatic()) {
-            errorReporter.report(tagName.getTagLocation(), ROOT_TAG_KIND_MISMATCH, expectedTagName);
-          } else {
-            errorReporter.report(
-                tagName.getTagLocation(), DELEGATE_KIND_MISMATCH, expectedTagName, tag);
-          }
+      String tag = node.getHtmlElementMetadata().getTag();
+      if (!"?".equals(tag) && !expectedTagName.equals(tag)) {
+        TagName tagName = getElementOpen(node).get().getTagName();
+        if (tagName.isStatic()) {
+          errorReporter.report(tagName.getTagLocation(), ROOT_TAG_KIND_MISMATCH, expectedTagName);
+        } else {
+          errorReporter.report(
+              tagName.getTagLocation(), DELEGATE_KIND_MISMATCH, expectedTagName, tag);
         }
       }
     }

@@ -35,9 +35,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.util.concurrent.ListenableFuture;
 import com.google.template.soy.SoyFileSetParser;
-import com.google.template.soy.SoyFileSetParser.CompilationUnitAndKind;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
-import com.google.template.soy.TemplateMetadataSerializer;
 import com.google.template.soy.base.SourceFilePath;
 import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.base.internal.SoyFileSupplier;
@@ -64,6 +62,7 @@ import com.google.template.soy.jbcsrc.api.SoySauce;
 import com.google.template.soy.jbcsrc.api.SoySauceBuilder;
 import com.google.template.soy.jbcsrc.shared.CompiledTemplate;
 import com.google.template.soy.jbcsrc.shared.CompiledTemplates;
+import com.google.template.soy.jbcsrc.shared.Names;
 import com.google.template.soy.jbcsrc.shared.RenderContext;
 import com.google.template.soy.jbcsrc.shared.TemplateMetadata;
 import com.google.template.soy.plugin.java.restricted.JavaPluginContext;
@@ -71,14 +70,15 @@ import com.google.template.soy.plugin.java.restricted.JavaValue;
 import com.google.template.soy.plugin.java.restricted.JavaValueFactory;
 import com.google.template.soy.plugin.java.restricted.SoyJavaSourceFunction;
 import com.google.template.soy.shared.SoyCssRenamingMap;
-import com.google.template.soy.shared.SoyGeneralOptions;
 import com.google.template.soy.shared.restricted.Signature;
 import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyJavaFunction;
 import com.google.template.soy.soytree.CallDelegateNode;
+import com.google.template.soy.soytree.FileSetMetadata;
+import com.google.template.soy.soytree.Metadata.CompilationUnitAndKind;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
-import com.google.template.soy.soytree.TemplateRegistry;
+import com.google.template.soy.soytree.TemplateMetadataSerializer;
 import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import java.io.IOException;
 import java.lang.reflect.Method;
@@ -494,7 +494,7 @@ public class BytecodeCompilerTest {
   }
 
   private static TemplateMetadata getTemplateMetadata(CompiledTemplates templates, String name) {
-    return templates.getTemplateData(name).templateClass().getAnnotation(TemplateMetadata.class);
+    return templates.getTemplateData(name).templateMethod().getAnnotation(TemplateMetadata.class);
   }
 
   private String render(CompiledTemplates templates, SoyRecord params, String name)
@@ -948,19 +948,23 @@ public class BytecodeCompilerTest {
   @Test
   public void testBasicFunctionality() {
     // make sure we don't break standard reflection access
-    Class<?> templateClass =
-        TemplateTester.compileTemplateBody("hello world").getTemplateData("ns.foo").templateClass();
+    Method templateMethod =
+        TemplateTester.compileTemplateBody("hello world")
+            .getTemplateData("ns.foo")
+            .templateMethod();
 
-    assertThat(templateClass.getName()).isEqualTo("com.google.template.soy.jbcsrc.gen.ns.foo");
-    assertThat(templateClass.getSimpleName()).isEqualTo("foo");
+    assertThat(templateMethod.toString())
+        .isEqualTo(
+            "public static com.google.template.soy.jbcsrc.shared.CompiledTemplate"
+                + " com.google.template.soy.jbcsrc.gen.ns.foo()");
+    assertThat(templateMethod.getName()).isEqualTo("foo");
+    assertThat(templateMethod.getDeclaringClass().getSimpleName()).isEqualTo("ns");
 
-    TemplateMetadata templateMetadata = templateClass.getAnnotation(TemplateMetadata.class);
+    TemplateMetadata templateMetadata = templateMethod.getAnnotation(TemplateMetadata.class);
     assertThat(templateMetadata.contentKind()).isEqualTo(ContentKind.HTML);
     assertThat(templateMetadata.injectedParams()).isEmpty();
     assertThat(templateMetadata.callees()).isEmpty();
     assertThat(templateMetadata.delCallees()).isEmpty();
-
-    assertThat(templateClass.getDeclaredClasses()).isEmpty();
   }
 
   @Test
@@ -971,7 +975,7 @@ public class BytecodeCompilerTest {
     CompiledTemplate template = templateData.template();
     assertThat(template).isSameInstanceAs(templates.getTemplate("ns.foo"));
 
-    Method templateMethod = templateData.templateClass().getMethod("template");
+    Method templateMethod = templateData.templateMethod();
     assertThat(template).isSameInstanceAs(templateMethod.invoke(null));
     assertThat(template).isSameInstanceAs(templateMethod.invoke(null));
   }
@@ -1079,14 +1083,14 @@ public class BytecodeCompilerTest {
     SoyFileSetParser parser = SoyFileSetParserBuilder.forFileContents(soyFileContent1).build();
     ParseResult parseResult = parser.parse();
     SoyFileSetNode soyTree = parseResult.fileSet();
-    TemplateRegistry templateRegistry = parseResult.registry();
+    FileSetMetadata fileSetMetadata = parseResult.registry();
     // apply an escaping directive to the callsite, just like the autoescaper would
     CallDelegateNode cdn =
         SoyTreeUtils.getAllNodesOfType(soyTree.getChild(0), CallDelegateNode.class).get(0);
     cdn.setEscapingDirectives(ImmutableList.of(new EscapeHtmlDirective()));
     CompiledTemplates templates =
         BytecodeCompiler.compile(
-                templateRegistry,
+                fileSetMetadata,
                 soyTree,
                 ErrorReporter.exploding(),
                 parser.soyFileSuppliers(),
@@ -1260,8 +1264,10 @@ public class BytecodeCompilerTest {
   }
 
   private static int getTemplateLineNumber(String templateName, Throwable t) {
+    String className = Names.javaClassNameFromSoyTemplateName(templateName);
+    String methodName = Names.renderMethodNameFromSoyTemplateName(templateName);
     for (StackTraceElement ste : t.getStackTrace()) {
-      if (ste.getClassName().endsWith(templateName) && ste.getMethodName().equals("render")) {
+      if (className.equals(ste.getClassName()) && methodName.equals(ste.getMethodName())) {
         return ste.getLineNumber();
       }
     }
@@ -1302,7 +1308,7 @@ public class BytecodeCompilerTest {
                 "loader1.soy",
                 Joiner.on("\n")
                     .join(
-                        "{namespace loader1}",
+                        "{namespace loader1.a}",
                         "import {publicTemplate2} from 'loader2.soy';",
                         "{template .publicTemplate1}",
                         "L1T1",
@@ -1325,7 +1331,6 @@ public class BytecodeCompilerTest {
     CompilationUnitAndKind dependency1 =
         CompilationUnitAndKind.create(
             SoyFileKind.DEP,
-            SourceFilePath.create("foo.soy"),
             TemplateMetadataSerializer.compilationUnitFromFileSet(
                 parseResult1.fileSet(), parseResult1.registry()));
 
@@ -1335,7 +1340,7 @@ public class BytecodeCompilerTest {
                 "loader1.soy",
                 Joiner.on("\n")
                     .join(
-                        "{namespace loader1}",
+                        "{namespace loader1.a}",
                         "{template .publicTemplate1}",
                         "L1T1 RECOMPILED",
                         "{/template}")));
@@ -1368,8 +1373,8 @@ public class BytecodeCompilerTest {
     assertThat(delegatingClassLoader1.loadedClasses()).containsNoDuplicates();
     assertThat(delegatingClassLoader1.loadedClasses().elementSet())
         .containsExactly(
-            "com.google.template.soy.jbcsrc.gen.loader1.publicTemplate1",
-            "com.google.template.soy.jbcsrc.gen.loader2.publicTemplate");
+            "com.google.template.soy.jbcsrc.gen.loader1.a",
+            "com.google.template.soy.jbcsrc.gen.loader2");
 
     DelegatingClassLoader delegatingClassLoader2 =
         new DelegatingClassLoader(loader1Recompiled, loader2);
@@ -1380,8 +1385,8 @@ public class BytecodeCompilerTest {
     assertThat(delegatingClassLoader1.loadedClasses()).containsNoDuplicates();
     assertThat(delegatingClassLoader1.loadedClasses().elementSet())
         .containsExactly(
-            "com.google.template.soy.jbcsrc.gen.loader1.publicTemplate1",
-            "com.google.template.soy.jbcsrc.gen.loader2.publicTemplate");
+            "com.google.template.soy.jbcsrc.gen.loader1.a",
+            "com.google.template.soy.jbcsrc.gen.loader2");
   }
 
   @Test
@@ -1415,7 +1420,6 @@ public class BytecodeCompilerTest {
     CompilationUnitAndKind dependency1 =
         CompilationUnitAndKind.create(
             SoyFileKind.DEP,
-            SourceFilePath.create("foo.soy"),
             TemplateMetadataSerializer.compilationUnitFromFileSet(
                 parseResult1.fileSet(), parseResult1.registry()));
 
@@ -1461,8 +1465,8 @@ public class BytecodeCompilerTest {
     assertThat(delegatingClassLoader1.loadedClasses()).containsNoDuplicates();
     assertThat(delegatingClassLoader1.loadedClasses().elementSet())
         .containsExactly(
-            "com.google.template.soy.jbcsrc.gen.loader1.publicTemplate1",
-            "com.google.template.soy.jbcsrc.gen.loader2.publicTemplate");
+            "com.google.template.soy.jbcsrc.gen.loader1",
+            "com.google.template.soy.jbcsrc.gen.loader2");
 
     DelegatingClassLoader delegatingClassLoader2 =
         new DelegatingClassLoader(loader1Recompiled, loader2);
@@ -1473,8 +1477,8 @@ public class BytecodeCompilerTest {
     assertThat(delegatingClassLoader1.loadedClasses()).containsNoDuplicates();
     assertThat(delegatingClassLoader1.loadedClasses().elementSet())
         .containsExactly(
-            "com.google.template.soy.jbcsrc.gen.loader1.publicTemplate1",
-            "com.google.template.soy.jbcsrc.gen.loader2.publicTemplate");
+            "com.google.template.soy.jbcsrc.gen.loader1",
+            "com.google.template.soy.jbcsrc.gen.loader2");
   }
 
   private static class DelegatingClassLoader extends ClassLoader {
@@ -1491,9 +1495,9 @@ public class BytecodeCompilerTest {
     @Override
     public Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
       Class<?> clazz;
-      if (name.startsWith("com.google.template.soy.jbcsrc.gen.loader1.")) {
+      if (name.startsWith("com.google.template.soy.jbcsrc.gen.loader1")) {
         clazz = loader1.loadClass(name, resolve);
-      } else if (name.startsWith("com.google.template.soy.jbcsrc.gen.loader2.")) {
+      } else if (name.startsWith("com.google.template.soy.jbcsrc.gen.loader2")) {
         clazz = loader2.loadClass(name, resolve);
       } else {
         throw new ClassNotFoundException("Unexpected class to be loaded: " + name);
@@ -1522,14 +1526,12 @@ public class BytecodeCompilerTest {
             .collect(Collectors.toList());
     return SoyFileSetParserBuilder.forSuppliers(files)
         .addCompilationUnits(dependencies)
-        .options(new SoyGeneralOptions().setAllowExternalCalls(false))
         .build();
   }
 
   private static CompilingClassLoader createCompilingClassLoader(
       SoyFileSetParser parser, ParseResult parseResult) {
     return new CompilingClassLoader(
-        parseResult.registry(),
         parseResult.fileSet(),
         parser.soyFileSuppliers(),
         parser.typeRegistry());

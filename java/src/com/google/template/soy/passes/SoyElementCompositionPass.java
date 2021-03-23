@@ -41,6 +41,7 @@ import com.google.template.soy.soytree.CallParamContentNode;
 import com.google.template.soy.soytree.CallParamNode;
 import com.google.template.soy.soytree.CallParamValueNode;
 import com.google.template.soy.soytree.CommandTagAttribute;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.HtmlAttributeNode;
 import com.google.template.soy.soytree.HtmlAttributeValueNode;
 import com.google.template.soy.soytree.HtmlContext;
@@ -60,7 +61,6 @@ import com.google.template.soy.soytree.SoyNode.StandaloneNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TagName;
 import com.google.template.soy.soytree.TemplateNode;
-import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.defn.AttrParam;
 import com.google.template.soy.types.NullType;
 import com.google.template.soy.types.SanitizedType.AttributesType;
@@ -79,6 +79,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import javax.annotation.Nullable;
 
@@ -89,7 +90,7 @@ import javax.annotation.Nullable;
  * nodes that name HTML tags.
  */
 @RunBefore(AutoescaperPass.class /* Creates trusted_resource_uri params. */)
-@RunAfter(ResolveExpressionTypesPass.class)
+@RunAfter({ResolveExpressionTypesPass.class, FinalizeTemplateRegistryPass.class})
 final class SoyElementCompositionPass implements CompilerFileSetPass {
 
   private static final SoyErrorKind ILLEGAL_CHILD =
@@ -103,11 +104,15 @@ final class SoyElementCompositionPass implements CompilerFileSetPass {
 
   private final ErrorReporter errorReporter;
   private final ImmutableList<? extends SoyPrintDirective> printDirectives;
+  private final Supplier<FileSetMetadata> templateRegistryFull;
 
   SoyElementCompositionPass(
-      ErrorReporter errorReporter, ImmutableList<? extends SoyPrintDirective> printDirectives) {
+      ErrorReporter errorReporter,
+      ImmutableList<? extends SoyPrintDirective> printDirectives,
+      Supplier<FileSetMetadata> templateRegistryFull) {
     this.errorReporter = errorReporter;
     this.printDirectives = printDirectives;
+    this.templateRegistryFull = templateRegistryFull;
   }
 
   @Override
@@ -124,16 +129,12 @@ final class SoyElementCompositionPass implements CompilerFileSetPass {
   public void run(SoyFileNode file, IdGenerator nodeIdGen) {
     for (TemplateNode template : SoyTreeUtils.getAllNodesOfType(file, TemplateNode.class)) {
       for (HtmlTagNode tagNode : SoyTreeUtils.getAllNodesOfType(template, HtmlTagNode.class)) {
-        process(template, tagNode, nodeIdGen, file.getTemplateRegistry());
+        process(template, tagNode, nodeIdGen);
       }
     }
   }
 
-  private void process(
-      TemplateNode template,
-      HtmlTagNode tagNode,
-      IdGenerator nodeIdGen,
-      TemplateRegistry registry) {
+  private void process(TemplateNode template, HtmlTagNode tagNode, IdGenerator nodeIdGen) {
     TagName name = tagNode.getTagName();
     if (name.isStatic()) {
       return;
@@ -145,7 +146,11 @@ final class SoyElementCompositionPass implements CompilerFileSetPass {
 
     if (tagNode instanceof HtmlOpenTagNode) {
       ContextualAutoescaper.annotateAndRewriteHtmlTag(
-          (HtmlOpenTagNode) tagNode, registry, nodeIdGen, errorReporter, printDirectives);
+          (HtmlOpenTagNode) tagNode,
+          templateRegistryFull.get(),
+          nodeIdGen,
+          errorReporter,
+          printDirectives);
     }
 
     Preconditions.checkState(tagNode.getTaggedPairs().size() <= 1);
@@ -286,6 +291,8 @@ final class SoyElementCompositionPass implements CompilerFileSetPass {
     if (attributesNode != null && attributesNode.numChildren() > 0) {
       call.addChild(attributesNode);
     }
+
+    ResolveTemplateNamesPass.updateTemplateLiteralsStaticCallProperty(call);
   }
 
   private void maybeConsumeAttribute(

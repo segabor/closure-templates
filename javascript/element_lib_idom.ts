@@ -5,13 +5,13 @@
 
 import './skiphandler';
 
-import {assert} from 'goog:goog.asserts';  // from //third_party/javascript/closure/asserts
+import {assert, assertExists} from 'goog:goog.asserts';  // from //third_party/javascript/closure/asserts
+import IDisposable from 'goog:goog.disposable.IDisposable'; // from //third_party/javascript/closure/disposable:idisposable
 import {IjData} from 'goog:goog.soy';  // from //third_party/javascript/closure/soy
 import SanitizedContentKind from 'goog:goog.soy.data.SanitizedContentKind'; // from //third_party/javascript/closure/soy:data
 import {Logger} from 'goog:soy.velog';  // from //javascript/template/soy:soyutils_velog
-import * as incrementaldom from 'incrementaldom';  // from //third_party/javascript/incremental_dom:incrementaldom
 
-import {IncrementalDomRenderer, patchOuter, SKIP_TOKEN} from './api_idom';
+import {IncrementalDomRenderer, patchOuter} from './api_idom';
 import {isTaggedForSkip} from './global';
 
 /** Function that executes Idom instructions */
@@ -30,7 +30,8 @@ function getSkipHandler(el: HTMLElement) {
 
 
 /** Base class for a Soy element. */
-export abstract class SoyElement<TData extends {}|null, TInterface extends {}> {
+export abstract class SoyElement<TData extends {}|null, TInterface extends {}>
+    implements IDisposable {
   // Node in which this object is stashed.
   private node: HTMLElement|null = null;
   private skipHandler:
@@ -42,8 +43,23 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}> {
   // Marker so that future element accesses can find this Soy element from the
   // DOM
   key: string = '';
+  private logGraft = false;
+  private disposed = false;
 
   constructor(protected data: TData, protected ijData?: IjData) {}
+
+  /** @override */
+  dispose() {
+    if (!this.disposed) {
+      this.disposed = true;
+      this.unsetLifecycleHooks();
+    }
+  }
+
+  /** @override */
+  isDisposed() {
+    return this.disposed;
+  }
 
   /**
    * Sets the Logger instance to use for renders of this SoyElement. If `render`
@@ -66,6 +82,11 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}> {
   protected shouldSyncState() {
     return this.syncState;
   }
+  setLogGraft(logGraft: boolean) {
+    this.logGraft = logGraft;
+  }
+
+  protected syncStateFromData(data: TData) {}
 
   /**
    * Patches the current dom node.
@@ -93,7 +114,7 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}> {
     this.skipHandler = null;
     try {
       patchOuter(this.node!, () => {
-        if (this.logger) {
+        if (this.logger && this.logGraft) {
           this.logger.logGraft(this.node!, () => {
             this.renderInternal(renderer, this.data!);
           });
@@ -111,32 +132,11 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}> {
   }
 
   /**
-   * Replaces the next open call such that it executes Soy element runtime
-   * and then replaces itself with the old variant. This relies on compile
-   * time validation that the Soy element contains a single open/close tag.
-   */
-  queueSoyElement(renderer: IncrementalDomRenderer, data: TData) {
-    const oldOpen = renderer.open;
-    renderer.open = (nameOrCtor: string, key = ''): HTMLElement|void => {
-      const el = incrementaldom.open(nameOrCtor, renderer.getNewKey(key));
-      renderer.open = oldOpen;
-      const maybeSkip = this.handleSoyElementRuntime(el, data);
-      if (!maybeSkip) {
-        renderer.visit(el);
-        return el;
-      }
-      // This token is passed to ./api_idom.maybeSkip to indicate skipping.
-      return SKIP_TOKEN as HTMLElement;
-    };
-  }
-
-  /**
    * Handles synchronization between the Soy element stashed in the DOM and
    * new data to decide if skipping should happen. Invoked when rendering the
    * open element of a template.
    */
-  protected handleSoyElementRuntime(node: HTMLElement|undefined, data: TData):
-      boolean {
+  handleSoyElementRuntime(node: HTMLElement|undefined, data: TData): boolean {
     /**
      * This is null because it is possible that no DOM has been generated
      * for this Soy element
@@ -147,6 +147,9 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}> {
     }
     this.node = node;
     node.__soy = this as unknown as SoyElement<{}, {}>;
+    if (this.shouldSyncState()) {
+      this.syncStateFromData(data);
+    }
     const maybeSkipHandler = this.skipHandler || getSkipHandler(node);
     const newNode = new (
         this.constructor as
@@ -187,6 +190,14 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}> {
     }
     this.data = newNode.data;
     return false;
+  }
+
+  unsetLifecycleHooks() {
+    this.skipHandler = null;
+    this.patchHandler = null;
+    const node = assertExists(this.node);
+    node.__soy_skip_handler = undefined;
+    node.__soy_patch_handler = undefined;
   }
 
   /**

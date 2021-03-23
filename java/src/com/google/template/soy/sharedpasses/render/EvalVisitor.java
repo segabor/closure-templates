@@ -34,6 +34,7 @@ import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.Iterables;
 import com.google.errorprone.annotations.ForOverride;
+import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.data.SoyDataException;
 import com.google.template.soy.data.SoyLegacyObjectMap;
@@ -74,6 +75,7 @@ import com.google.template.soy.exprtree.ItemAccessNode;
 import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.ListComprehensionNode.ComprehensionVarDefn;
 import com.google.template.soy.exprtree.ListLiteralNode;
+import com.google.template.soy.exprtree.MapLiteralFromListNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
 import com.google.template.soy.exprtree.MethodCallNode;
 import com.google.template.soy.exprtree.NullNode;
@@ -117,8 +119,6 @@ import com.google.template.soy.shared.internal.BuiltinMethod;
 import com.google.template.soy.shared.restricted.SoyJavaFunction;
 import com.google.template.soy.shared.restricted.SoyMethod;
 import com.google.template.soy.shared.restricted.SoySourceFunctionMethod;
-import com.google.template.soy.soytree.ConstNode;
-import com.google.template.soy.soytree.defn.ConstVar;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.types.MapType;
 import com.google.template.soy.types.SoyProtoType;
@@ -341,6 +341,51 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
     return SoyMapImpl.forProviderMap(map);
   }
 
+  @Override
+  protected SoyValue visitMapLiteralFromListNode(MapLiteralFromListNode node) {
+    ExprNode listExpr = node.getListExpr();
+    SoyValue listValue = visit(listExpr);
+    checkMapFromListConstructorCondition(
+        listValue instanceof SoyList, node.getListExpr().getSourceLocation(), listValue, null);
+
+    Map<SoyValue, SoyValueProvider> map = new HashMap<>();
+    List<? extends SoyValueProvider> list = ((SoyList) listValue).asJavaList();
+    for (int i = 0; i < list.size(); i++) {
+      SoyValue recordEntry = list.get(i).resolve();
+      checkMapFromListConstructorCondition(
+          recordEntry instanceof SoyRecord, node.getListExpr().getSourceLocation(), recordEntry, i);
+
+      ImmutableMap<String, SoyValueProvider> record = ((SoyRecord) recordEntry).recordAsMap();
+      checkMapFromListConstructorCondition(
+          record.keySet().equals(MapLiteralFromListNode.MAP_RECORD_FIELDS),
+          node.getListExpr().getSourceLocation(),
+          recordEntry,
+          i);
+
+      map.put(
+          record.get(MapLiteralFromListNode.KEY_STRING).resolve(),
+          record.get(MapLiteralFromListNode.VALUE_STRING));
+    }
+
+    return SoyMapImpl.forProviderMap(map);
+  }
+
+  private void checkMapFromListConstructorCondition(
+      boolean condition, SourceLocation sourceLocation, SoyValue list, Integer index) {
+    if (!condition) {
+      String exceptionString =
+          String.format(
+              "Error constructing map in %s. Expected a list where each item is a record of 'key',"
+                  + " 'value' pairs. Found: %s",
+              sourceLocation, list);
+      if (index != null) {
+        exceptionString += String.format(" at index %d", index);
+      }
+
+      throw RenderException.create(exceptionString);
+    }
+  }
+
   // -----------------------------------------------------------------------------------------------
   // Implementations for data references.
 
@@ -348,9 +393,6 @@ public class EvalVisitor extends AbstractReturningExprNodeVisitor<SoyValue> {
   protected SoyValue visitVarRefNode(VarRefNode node) {
     if (node.getDefnDecl().kind() == VarDefn.Kind.STATE) {
       throw new AssertionError(); // should have been desugared
-    } else if (node.getDefnDecl().kind() == VarDefn.Kind.CONST) {
-      ConstNode def = env.lookupConst(((ConstVar) node.getDefnDecl()));
-      return visit(def.getExpr());
     } else {
       SoyValue value = env.getVar(node.getDefnDecl());
       if (node.getDefnDecl().kind() == VarDefn.Kind.PARAM

@@ -51,6 +51,7 @@ import static com.google.template.soy.jssrc.internal.JsRuntime.XID;
 import static com.google.template.soy.jssrc.internal.JsRuntime.extensionField;
 import static com.google.template.soy.jssrc.internal.JsRuntime.protoConstructor;
 import static com.google.template.soy.passes.ContentSecurityPolicyNonceInjectionPass.CSP_NONCE_VARIABLE_NAME;
+import static com.google.template.soy.passes.ContentSecurityPolicyNonceInjectionPass.CSP_STYLE_NONCE_VARIABLE_NAME;
 
 import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
@@ -77,6 +78,7 @@ import com.google.template.soy.exprtree.IntegerNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
 import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
+import com.google.template.soy.exprtree.MapLiteralFromListNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
 import com.google.template.soy.exprtree.MethodCallNode;
 import com.google.template.soy.exprtree.NullNode;
@@ -192,6 +194,9 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
       SoyErrorKind.of(
           "Function ''{0}'' implemented by ''{1}'' does not have a JavaScript implementation.");
 
+  private static final SoyErrorKind SOY_JS_SRC_BAD_LIST_TO_MAP_CONSTRUCTOR =
+      SoyErrorKind.of("List to map constructor encloses ''{0}'', which is not a list.");
+
   /**
    * The current replacement JS expressions for the local variables (and foreach-loop special
    * functions) current in scope.
@@ -229,7 +234,8 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
       // to set it. So, instead of generating opt_ij_data.csp_nonce, we generate opt_ij_data &&
       // opt_ij_data.csp_nonce.
       // TODO(lukes): we only need to generate this logic if there aren't any other ij params
-      if (paramName.equals(CSP_NONCE_VARIABLE_NAME)) {
+      if (paramName.equals(CSP_NONCE_VARIABLE_NAME)
+          || paramName.equals(CSP_STYLE_NONCE_VARIABLE_NAME)) {
         return IJ_DATA.and(IJ_DATA.dotAccess(paramName), codeGenerator);
       }
       source = IJ_DATA;
@@ -399,6 +405,38 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
     return map;
   }
 
+  @Override
+  protected Expression visitMapLiteralFromListNode(MapLiteralFromListNode node) {
+    // Generate the code "new Map(list.map(dummyVar => [dummyVar.key, dummyVar.value]))"
+    // corresponding to the input "map(list)"
+    Expression list = visit(node.getListExpr());
+    SoyType listType = node.getListExpr().getType();
+    if (!(listType instanceof ListType)) {
+      errorReporter.report(node.getSourceLocation(), SOY_JS_SRC_BAD_LIST_TO_MAP_CONSTRUCTOR, list);
+      return Expression.constructMap();
+    }
+    if (listType.equals(ListType.EMPTY_LIST)) {
+      // If the list is empty, trying to infer the type of the dummyVar is futile. So we create a
+      // special case and directly return an empty list.
+      return Expression.constructMap();
+    }
+
+    String dummyVar = "list_to_map_constructor_" + node.getNodeId();
+    JsDoc doc =
+        JsDoc.builder()
+            .addParam(dummyVar, jsTypeFor(((ListType) listType).getElementType()).typeExpr())
+            .build();
+
+    Expression body =
+        Expression.arrayLiteral(
+            Arrays.asList(
+                id(dummyVar).dotAccess(MapLiteralFromListNode.KEY_STRING),
+                id(dummyVar).dotAccess(MapLiteralFromListNode.VALUE_STRING)));
+
+    Expression nestedList = list.dotAccess("map").call(arrowFunction(doc, body));
+    return Expression.constructMap(nestedList);
+  }
+
   private Expression genMapKeyCode(ExprNode keyNode) {
     return visit(keyNode);
   }
@@ -408,16 +446,21 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
 
   @Override
   protected Expression visitVarRefNode(VarRefNode node) {
+    if (node.getDefnDecl().kind() == VarDefn.Kind.IMPORT_VAR) {
+      // TODO(b/177245767): implement
+      return LITERAL_NULL;
+    }
+
     Expression translation = variableMappings.maybeGet(node.getName());
     if (translation != null) {
       // Case 1: In-scope local var.
       return translation;
-    } else {
-      // Case 2: Data reference.
-      // TODO(lukes): I believe this case is only present for state vars in jssrc, everything else
-      // should hit the above.
-      return genCodeForParamAccess(node.getNameWithoutLeadingDollar(), node.getDefnDecl());
     }
+
+    // Case 2: Data reference.
+    // TODO(lukes): I believe this case is only present for state vars in jssrc, everything else
+    // should hit the above.
+    return genCodeForParamAccess(node.getNameWithoutLeadingDollar(), node.getDefnDecl());
   }
 
   @Override
@@ -1018,9 +1061,6 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
     // defined in this file.
     Expression templateLiteral =
         Expression.dottedIdNoRequire(templateAliases.get(node.getResolvedName()));
-    // Skip checks for the common case of synthetic template literals.
-    return node.isSynthetic()
-        ? templateLiteral
-        : MARK_TEMPLATE.call(templateLiteral, Expression.stringLiteral(node.getResolvedName()));
+    return MARK_TEMPLATE.call(templateLiteral, Expression.stringLiteral(node.getResolvedName()));
   }
 }

@@ -50,8 +50,6 @@ public class SoyToSwiftSrcCompiler extends AbstractSoyCompiler {
 
   @Override
   protected void compile(SoyFileSet.Builder sfsBuilder) throws IOException {
-    // Disallow external call entirely in Swift.
-    sfsBuilder.setAllowExternalCalls(false);
     SoyFileSet sfs = sfsBuilder.build();
     // Load the manifest if available.
     // TODO

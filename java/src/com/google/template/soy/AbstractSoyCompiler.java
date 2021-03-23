@@ -324,8 +324,6 @@ public abstract class AbstractSoyCompiler {
       sfsBuilder.disableOptimizer();
     }
 
-    sfsBuilder.setRequireTemplateImports(experimentalFeatures.contains("requireTemplateImports"));
-
     compile(sfsBuilder);
     timer.stop();
     // Unless the build is faster than 1 second, issue a warning if more than half of the build is
@@ -418,7 +416,6 @@ public abstract class AbstractSoyCompiler {
       try {
         sfsBuilder.addCompilationUnit(
             depKind,
-            SourceFilePath.create(depFile.getPath()),
             cache.read(depFile, CacheLoaders.COMPILATION_UNIT_LOADER, soyCompilerFileReader));
       } catch (IOException e) {
         throw new CommandLineError(

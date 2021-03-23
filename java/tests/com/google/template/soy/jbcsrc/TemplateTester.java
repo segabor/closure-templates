@@ -62,11 +62,11 @@ import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.shared.restricted.SoyJavaFunction;
 import com.google.template.soy.shared.restricted.SoyJavaPrintDirective;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
+import com.google.template.soy.soytree.FileSetMetadata;
+import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateMetadata;
-import com.google.template.soy.soytree.TemplateNode;
-import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.testing.SoyFileSetParserBuilder;
 import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.SoyTypeRegistryBuilder;
@@ -372,16 +372,13 @@ public final class TemplateTester {
 
         // N.B. we are reproducing some of BytecodeCompiler here to make it easier to look at
         // intermediate data structures.
-        TemplateRegistry registry = parseResult.registry();
+        FileSetMetadata registry = parseResult.registry();
 
-        TemplateNode templateNode =
-            SoyTreeUtils.getAllNodesOfType(fileSet, TemplateNode.class).get(0);
-        String templateName = templateNode.getTemplateName();
+        SoyFileNode fileNode = fileSet.getChild(0);
+        String templateName = fileNode.getTemplates().get(0).getTemplateName();
         classData =
-            new TemplateCompiler(
-                    registry,
-                    CompiledTemplateMetadata.create(TemplateMetadata.fromTemplate(templateNode)),
-                    templateNode,
+            new SoyFileCompiler(
+                    fileNode,
                     new JavaSourceFunctionCompiler(typeRegistry, ErrorReporter.exploding()))
                 .compile();
         checkClasses(classData);

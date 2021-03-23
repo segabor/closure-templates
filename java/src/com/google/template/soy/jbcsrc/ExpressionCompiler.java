@@ -53,6 +53,7 @@ import com.google.template.soy.exprtree.ItemAccessNode;
 import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.ListComprehensionNode.ComprehensionVarDefn;
 import com.google.template.soy.exprtree.ListLiteralNode;
+import com.google.template.soy.exprtree.MapLiteralFromListNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
 import com.google.template.soy.exprtree.MethodCallNode;
 import com.google.template.soy.exprtree.NullNode;
@@ -105,6 +106,7 @@ import com.google.template.soy.shared.restricted.SoySourceFunctionMethod;
 import com.google.template.soy.soytree.ForNonemptyNode;
 import com.google.template.soy.soytree.SoyNode.LocalVarNode;
 import com.google.template.soy.soytree.defn.ConstVar;
+import com.google.template.soy.soytree.defn.ImportedVar;
 import com.google.template.soy.soytree.defn.LocalVar;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.types.ListType;
@@ -569,6 +571,16 @@ final class ExpressionCompiler {
       return SoyExpression.forSoyValue(node.getType(), soyDict);
     }
 
+    @Override
+    protected final SoyExpression visitMapLiteralFromListNode(MapLiteralFromListNode node) {
+      // Unimplemented. Return an empty map for now.
+      List<Expression> keys = new ArrayList<>();
+      List<Expression> values = new ArrayList<>();
+      Expression soyDict =
+          MethodRef.MAP_IMPL_FOR_PROVIDER_MAP.invoke(BytecodeUtils.newHashMap(keys, values));
+      return SoyExpression.forSoyValue(node.getType(), soyDict);
+    }
+
     // Comparison operators
 
     @Override
@@ -964,6 +976,12 @@ final class ExpressionCompiler {
     }
 
     // Let vars
+
+    @Override
+    SoyExpression visitImportedVar(VarRefNode node, ImportedVar c) {
+      // TODO(b/177245767): implement
+      return SoyExpression.NULL;
+    }
 
     @Override
     SoyExpression visitConstVar(VarRefNode varRef, ConstVar c) {
@@ -1628,13 +1646,13 @@ final class ExpressionCompiler {
         case LOCAL_VAR:
         case STATE:
         case CONST:
+        case IMPORT_VAR:
           return false;
         case UNDECLARED:
-        case IMPORT_VAR:
         case TEMPLATE:
           break;
       }
-      throw new AssertionError();
+      throw new AssertionError(node.getDefnDecl().kind());
     }
 
     @Override
@@ -1682,6 +1700,11 @@ final class ExpressionCompiler {
 
     @Override
     protected Boolean visitMapLiteralNode(MapLiteralNode node) {
+      return areAllChildrenConstant(node);
+    }
+
+    @Override
+    protected Boolean visitMapLiteralFromListNode(MapLiteralFromListNode node) {
       return areAllChildrenConstant(node);
     }
 
@@ -1772,6 +1795,11 @@ final class ExpressionCompiler {
 
     @Override
     protected Boolean visitListComprehensionNode(ListComprehensionNode node) {
+      return true;
+    }
+
+    @Override
+    protected Boolean visitMapLiteralFromListNode(MapLiteralFromListNode node) {
       return true;
     }
 

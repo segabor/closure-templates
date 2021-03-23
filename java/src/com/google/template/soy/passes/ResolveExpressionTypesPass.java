@@ -30,11 +30,13 @@ import com.google.common.base.Preconditions;
 import com.google.common.cache.CacheBuilder;
 import com.google.common.cache.CacheLoader;
 import com.google.common.cache.LoadingCache;
+import com.google.common.collect.HashBasedTable;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableListMultimap;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableMultimap;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Table;
 import com.google.template.soy.base.SourceFilePath;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.IdGenerator;
@@ -76,6 +78,7 @@ import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
 import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
+import com.google.template.soy.exprtree.MapLiteralFromListNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
 import com.google.template.soy.exprtree.MethodCallNode;
 import com.google.template.soy.exprtree.NullNode;
@@ -101,6 +104,7 @@ import com.google.template.soy.exprtree.OperatorNodes.TimesOpNode;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.TemplateLiteralNode;
+import com.google.template.soy.exprtree.VarDefn;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.exprtree.VeLiteralNode;
 import com.google.template.soy.logging.LoggingFunction;
@@ -119,10 +123,14 @@ import com.google.template.soy.shared.restricted.TypedSoyFunction;
 import com.google.template.soy.soyparse.SoyFileParser;
 import com.google.template.soy.soytree.AbstractSoyNodeVisitor;
 import com.google.template.soy.soytree.ConstNode;
+import com.google.template.soy.soytree.FileMetadata;
+import com.google.template.soy.soytree.FileMetadata.Constant;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.ForNonemptyNode;
 import com.google.template.soy.soytree.IfCondNode;
 import com.google.template.soy.soytree.IfElseNode;
 import com.google.template.soy.soytree.IfNode;
+import com.google.template.soy.soytree.ImportNode;
 import com.google.template.soy.soytree.LetContentNode;
 import com.google.template.soy.soytree.LetValueNode;
 import com.google.template.soy.soytree.PrintNode;
@@ -134,6 +142,7 @@ import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.SwitchCaseNode;
 import com.google.template.soy.soytree.SwitchDefaultNode;
 import com.google.template.soy.soytree.SwitchNode;
+import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.defn.ImportedVar;
 import com.google.template.soy.soytree.defn.LocalVar;
@@ -156,6 +165,9 @@ import com.google.template.soy.types.SoyType.Kind;
 import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.SoyTypes;
 import com.google.template.soy.types.StringType;
+import com.google.template.soy.types.TemplateImportType;
+import com.google.template.soy.types.TemplateModuleImportType;
+import com.google.template.soy.types.TemplateType;
 import com.google.template.soy.types.UnionType;
 import com.google.template.soy.types.UnknownType;
 import com.google.template.soy.types.VeDataType;
@@ -172,13 +184,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 import javax.annotation.Nullable;
 
-/**
- * Visitor which resolves all expression types.
- *
- */
-public final class ResolveExpressionTypesPass implements CompilerFilePass {
+/** Visitor which resolves all expression types. */
+public final class ResolveExpressionTypesPass implements CompilerFileSetPass.TopologicallyOrdered {
+  // Constant type resolution requires topological ordering of inputs.
 
   // Keep in alphabetical order.
   private static final SoyErrorKind BAD_FOREACH_TYPE =
@@ -187,6 +198,10 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
   private static final SoyErrorKind BAD_KEY_TYPE = SoyErrorKind.of("Bad key type {0} for {1}.");
   private static final SoyErrorKind BAD_LIST_COMP_TYPE =
       SoyErrorKind.of("Bad list comprehension type. {0} has type: {1}, but should be a list.");
+  private static final SoyErrorKind BAD_MAP_LITERAL_FROM_LIST_TYPE =
+      SoyErrorKind.of(
+          "Bad list to map constructor. {0} has type: {1}, but should be a list of records with 2"
+              + " fields named key and value.");
 
   private static final SoyErrorKind BRACKET_ACCESS_NOT_SUPPORTED =
       SoyErrorKind.of("Type {0} does not support bracket access.");
@@ -310,8 +325,14 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
 
   private final ValidatedLoggingConfig loggingConfig;
   private final SoyMethod.Registry methodRegistry;
+  private final Supplier<FileSetMetadata> templateRegistryFromDeps;
   /** Cached map that converts a string representation of types to actual soy types. */
   private final Map<Signature, ResolvedSignature> signatureMap = new HashMap<>();
+
+  private final ResolveTypesExprVisitor exprVisitor =
+      new ResolveTypesExprVisitor(/* inferringParam=*/ false);
+  private final ResolveTypesExprVisitor paramInfExprVisitor =
+      new ResolveTypesExprVisitor(/* inferringParam=*/ true);
 
   /** Current set of type substitutions. */
   private TypeSubstitution substitutions;
@@ -321,26 +342,47 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
   private TypeNodeConverter pluginTypeConverter;
   private final PluginResolver.Mode pluginResolutionMode;
   private ImmutableMap<String, ImportedVar> importIndex;
+  private ImmutableMap<String, TemplateType> allTemplateTypes;
+  private ConstantsTypeIndex constantsTypeLookup;
 
   ResolveExpressionTypesPass(
       ErrorReporter errorReporter,
       ValidatedLoggingConfig loggingConfig,
-      PluginResolver pluginResolver) {
+      PluginResolver pluginResolver,
+      Supplier<FileSetMetadata> templateRegistryFromDeps) {
     this.errorReporter = errorReporter;
     this.loggingConfig = loggingConfig;
     this.pluginResolutionMode =
         pluginResolver == null
             ? PluginResolver.Mode.REQUIRE_DEFINITIONS
             : pluginResolver.getPluginResolutionMode();
+    this.templateRegistryFromDeps = templateRegistryFromDeps;
     this.methodRegistry =
         new CompositeMethodRegistry(
             ImmutableList.of(BuiltinMethod.REGISTRY, new PluginMethodRegistry(pluginResolver)));
+    this.exprEquivalence = new ExprEquivalence();
   }
 
   @Override
-  public void run(SoyFileNode file, IdGenerator nodeIdGen) {
-    substitutions = null; // make sure substitutions don't leak across files
-    exprEquivalence = new ExprEquivalence();
+  public Result run(ImmutableList<SoyFileNode> sourceFiles, IdGenerator idGenerator) {
+    CollectTemplateTypesVisitor templateTypesVisitor = new CollectTemplateTypesVisitor();
+    Map<String, TemplateType> allTemplateTypesBuilder = new HashMap<>();
+    for (SoyFileNode sourceFile : sourceFiles) {
+      prepFile(sourceFile);
+      allTemplateTypesBuilder.putAll(templateTypesVisitor.exec(sourceFile));
+    }
+    this.allTemplateTypes = ImmutableMap.copyOf(allTemplateTypesBuilder);
+    this.constantsTypeLookup = new ConstantsTypeIndex(templateRegistryFromDeps);
+
+    for (SoyFileNode sourceFile : sourceFiles) {
+      prepFile(sourceFile);
+      new TypeAssignmentSoyVisitor().exec(sourceFile);
+    }
+    return Result.CONTINUE;
+  }
+
+  private void prepFile(SoyFileNode file) {
+    substitutions = null;
     typeRegistry = file.getSoyTypeRegistry();
     importIndex =
         file.getImports().stream()
@@ -351,10 +393,81 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
             .setTypeRegistry(typeRegistry)
             .setSystemExternal(true)
             .build();
-    new TypeAssignmentSoyVisitor().exec(file);
+  }
+
+  /**
+   * A quick first subpass to determine the template type for all templates in every file the file
+   * set being compiled.
+   */
+  private final class CollectTemplateTypesVisitor
+      extends AbstractSoyNodeVisitor<Map<String, TemplateType>> {
+
+    private Map<String, TemplateType> types;
+
+    @Override
+    public Map<String, TemplateType> exec(SoyNode node) {
+      types = new HashMap<>();
+      visit(node);
+      return types;
+    }
+
+    @Override
+    protected void visitTemplateNode(TemplateNode node) {
+      // We only need to visit params for which we will infer the type from the default value. These
+      // params have a default value and no type declaration. Because we never infer types from
+      // template types this is safe to do without regards to topological ordering of calls.
+      node.getHeaderParams().stream()
+          .filter(headerVar -> headerVar.defaultValue() != null && headerVar.getTypeNode() == null)
+          .forEach(
+              headerVar -> {
+                headerVar.getTypeNode();
+                paramInfExprVisitor.exec(headerVar.defaultValue());
+                headerVar.setType(headerVar.defaultValue().getRoot().getType());
+              });
+
+      // These template types only contain the information from passes that run before this. There
+      // is currently nothing that guarantees that a subsequent pass doesn't mutate the TemplateNode
+      // in such a way as the TemplateType changes.
+      types.put(node.getTemplateName(), TemplateMetadata.buildTemplateType(node));
+    }
+
+    @Override
+    protected void visitSoyFileNode(SoyFileNode node) {
+      node.getTemplates().forEach(this::visit);
+    }
   }
 
   private final class TypeAssignmentSoyVisitor extends AbstractSoyNodeVisitor<Void> {
+
+    @Override
+    protected void visitImportNode(ImportNode node) {
+      for (ImportedVar var : node.getIdentifiers()) {
+        // We need to resolve constant import types.
+        resolveNestedTypes(var, node.getModuleType());
+      }
+    }
+
+    private void resolveNestedTypes(ImportedVar var, SoyType parentType) {
+      if (parentType != null && !var.hasType()) {
+        SoyType newType = UnknownType.getInstance();
+        if (parentType.getKind() == Kind.TEMPLATE_MODULE) {
+          // This must be a nested constant import. A nested template would have its type set.
+          SoyType constantType =
+              constantsTypeLookup.get(
+                  ((TemplateModuleImportType) parentType).getPath(), var.getSymbol());
+          if (constantType != null) {
+            newType = constantType;
+          }
+        }
+        var.setType(newType);
+      }
+      if (!var.hasType()) {
+        return;
+      }
+      for (String type : var.getNestedTypes()) {
+        resolveNestedTypes(var.nested(type), var.type());
+      }
+    }
 
     @Override
     protected void visitTemplateNode(TemplateNode node) {
@@ -365,6 +478,10 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       // value parameter, which won't work because it's looking up the type of the parameter when it
       // hasn't been inferred yet.  So report an error and override the type to be the errortype
       for (TemplateHeaderVarDefn headerVar : headerVars) {
+        // TODO(lukes): there are more non-sensical declarations than just 'null'
+        if (headerVar.getTypeNode() != null && NullType.getInstance().equals(headerVar.type())) {
+          errorReporter.report(headerVar.getTypeNode().sourceLocation(), EXPLICIT_NULL);
+        }
         if (headerVar.defaultValue() == null) {
           continue;
         }
@@ -404,44 +521,31 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         }
       }
 
-      for (TemplateHeaderVarDefn headerVar : headerVars) {
-        // TODO(lukes): there are more non-sensical declarations than just 'null'
-        if (headerVar.getTypeNode() != null && NullType.getInstance().equals(headerVar.type())) {
-          errorReporter.report(headerVar.getTypeNode().sourceLocation(), EXPLICIT_NULL);
-        }
-        if (headerVar.defaultValue() != null) {
-          new ResolveTypesExprVisitor(
-                  /* isDefaultInitializerForInferredParam=*/ headerVar.getTypeNode() == null, node)
-              .exec(headerVar.defaultValue());
-          SoyType actualType = headerVar.defaultValue().getRoot().getType();
-          if (headerVar.getTypeNode() != null) {
-            SoyType declaredType = headerVar.type();
-            // Validation for template types happens later, it's intentional that it is not
-            // assignable at this stage in parsing.
-            if (!(SoyTypes.transitivelyContainsKind(declaredType, SoyType.Kind.TEMPLATE)
-                && SoyTypes.transitivelyContainsKind(
-                    actualType, SoyType.Kind.NAMED_TEMPLATE, Kind.TEMPLATE_TYPE))) {
-              if (!declaredType.isAssignableFromStrict(actualType)) {
-                actualType =
-                    RuntimeTypeCoercion.maybeCoerceType(
-                        headerVar.defaultValue().getRoot(), SoyTypes.expandUnions(declaredType));
-              }
-              if (!declaredType.isAssignableFromStrict(actualType)) {
-                errorReporter.report(
-                    headerVar.defaultValue().getSourceLocation(),
-                    DECLARED_DEFAULT_TYPE_MISMATCH,
-                    headerVar.name(),
-                    actualType,
-                    declaredType);
-              }
-            }
-          } else {
-            // in this case the declaredType is inferred from the initializer expression, so just
-            // assign
-            headerVar.setType(actualType);
-          }
-        }
-      }
+      // Now visit header params for which we have both a default value and a declared type. This
+      // is just to check for type conflicts. We can't do this in CollectTemplateTypesVisitor
+      // because the default value may in fact be a template literal.
+      node.getHeaderParams().stream()
+          .filter(headerVar -> headerVar.defaultValue() != null && headerVar.getTypeNode() != null)
+          .forEach(
+              headerVar -> {
+                exprVisitor.exec(headerVar.defaultValue());
+                SoyType actualType = headerVar.defaultValue().getRoot().getType();
+
+                SoyType declaredType = headerVar.type();
+                if (!declaredType.isAssignableFromStrict(actualType)) {
+                  actualType =
+                      RuntimeTypeCoercion.maybeCoerceType(
+                          headerVar.defaultValue().getRoot(), SoyTypes.expandUnions(declaredType));
+                }
+                if (!declaredType.isAssignableFromStrict(actualType)) {
+                  errorReporter.report(
+                      headerVar.defaultValue().getSourceLocation(),
+                      DECLARED_DEFAULT_TYPE_MISMATCH,
+                      headerVar.name(),
+                      actualType,
+                      declaredType);
+                }
+              });
 
       for (ExprRootNode expr : node.getExprList()) {
         if (expr.getType() != null) {
@@ -449,8 +553,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         }
         // any other expression in a template declaration
         // currently this is just variant expressions, but might be other things in the future.
-        new ResolveTypesExprVisitor(/* isDefaultInitializerForInferredParam=*/ false, node)
-            .exec(expr);
+        exprVisitor.exec(expr);
       }
 
       visitChildren(node);
@@ -465,6 +568,9 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
     protected void visitConstNode(ConstNode node) {
       visitSoyNode(node);
       node.getVar().setType(node.getExpr().getType());
+      // Store the type of this constant in the index so that imports of this constant in other
+      // files (topologically processed) can have their type set in #visitImportNode.
+      constantsTypeLookup.put(node);
     }
 
     @Override
@@ -618,8 +724,6 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
   }
 
   private void visitExpressions(ExprHolderNode node) {
-    ResolveTypesExprVisitor exprVisitor =
-        new ResolveTypesExprVisitor(/* isDefaultInitializerForInferredParam=*/ false, node);
     for (ExprRootNode expr : node.getExprList()) {
       exprVisitor.exec(expr);
     }
@@ -689,17 +793,10 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
      * <p>When inferring types, some values are not legal because they create ambiguity. null and
      * the empty collection literals all have this behavior.
      */
-    final boolean isDefaultInitializerForInferredParam;
+    final boolean inferringParam;
 
-    /**
-     * The ExprHolderNode of the expression. Used to get the SoyFileNode when visiting
-     * ProtoInitNodes to resolve the aliased fields.
-     */
-    final SoyNode exprHolderNode;
-
-    ResolveTypesExprVisitor(boolean isDefaultInitializerForInferredParam, SoyNode exprHolderNode) {
-      this.isDefaultInitializerForInferredParam = isDefaultInitializerForInferredParam;
-      this.exprHolderNode = exprHolderNode;
+    ResolveTypesExprVisitor(boolean inferringParam) {
+      this.inferringParam = inferringParam;
     }
 
     private final AbstractExprNodeVisitor<Void> checkAllTypesAssignedVisitor =
@@ -756,7 +853,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
     @Override
     protected void visitPrimitiveNode(PrimitiveNode node) {
       // We don't do anything here because primitive nodes already have type information.
-      if (isDefaultInitializerForInferredParam && node.getKind() == ExprNode.Kind.NULL_NODE) {
+      if (inferringParam && node.getKind() == ExprNode.Kind.NULL_NODE) {
         errorReporter.report(node.getSourceLocation(), AMBIGUOUS_INFERRED_TYPE, "a 'null' literal");
       }
     }
@@ -771,7 +868,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       }
       // Special case for empty list.
       if (elementTypes.isEmpty()) {
-        if (isDefaultInitializerForInferredParam) {
+        if (inferringParam) {
           errorReporter.report(node.getSourceLocation(), AMBIGUOUS_INFERRED_TYPE, "an empty list");
         }
         node.setType(ListType.EMPTY_LIST);
@@ -846,7 +943,7 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       checkState(numChildren % 2 == 0);
       if (numChildren == 0) {
         node.setType(MapType.EMPTY_MAP);
-        if (isDefaultInitializerForInferredParam) {
+        if (inferringParam) {
           errorReporter.report(node.getSourceLocation(), AMBIGUOUS_INFERRED_TYPE, "an empty map");
         }
         return;
@@ -885,8 +982,81 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       tryApplySubstitution(node);
     }
 
+    private boolean isListOfKeyValueRecords(SoyType type) {
+      if (!(type instanceof ListType)) {
+        return false;
+      }
+      ListType listType = (ListType) type;
+
+      if (!(listType.getElementType() instanceof RecordType)) {
+        return false;
+      }
+      RecordType recordType = (RecordType) listType.getElementType();
+
+      return ImmutableSet.copyOf(recordType.getMemberNames())
+          .equals(MapLiteralFromListNode.MAP_RECORD_FIELDS);
+    }
+
+    @Override
+    protected void visitMapLiteralFromListNode(MapLiteralFromListNode node) {
+      // Resolve the listExpr in "map(listExpr)".
+      visit(node.getListExpr());
+      if (node.getListExpr().getType().equals(ListType.EMPTY_LIST)) {
+        node.setType(MapType.EMPTY_MAP);
+        if (inferringParam) {
+          errorReporter.report(node.getSourceLocation(), AMBIGUOUS_INFERRED_TYPE, "an empty map");
+        }
+        return;
+      }
+
+      if (!isListOfKeyValueRecords(node.getListExpr().getType())) {
+        errorReporter.report(
+            node.getListExpr().getSourceLocation(),
+            BAD_MAP_LITERAL_FROM_LIST_TYPE,
+            node.getListExpr().toSourceString(),
+            node.getListExpr().getType());
+        node.setType(MapType.EMPTY_MAP);
+        return;
+      }
+
+      SoyType keyType =
+          ((RecordType) ((ListType) node.getListExpr().getType()).getElementType())
+              .getMemberType(MapLiteralFromListNode.KEY_STRING);
+      SoyType valueType =
+          ((RecordType) ((ListType) node.getListExpr().getType()).getElementType())
+              .getMemberType(MapLiteralFromListNode.VALUE_STRING);
+      if (!MapType.isAllowedKeyType(keyType)) {
+        errorReporter.report(node.getSourceLocation(), MapType.BAD_MAP_KEY_TYPE, keyType);
+      }
+      // TODO: Catch duplicate keys whenever possible. This is important to support when we make the
+      // map from list constructor syntax less clunky (e.g. by supporting tuples, see b/182212609).
+      node.setType(typeRegistry.getOrCreateMapType(keyType, valueType));
+      tryApplySubstitution(node);
+    }
+
     @Override
     protected void visitVarRefNode(VarRefNode varRef) {
+      // Only resolve template types after CollectTemplateTypesVisitor has run. Param type inference
+      // should not need this.
+      if (allTemplateTypes != null) {
+        VarDefn defn = varRef.getDefnDecl();
+        if (defn != null && defn.hasType() && defn.type().getKind() == Kind.TEMPLATE_TYPE) {
+          TemplateImportType templateType = (TemplateImportType) defn.type();
+          if (templateType.getBasicTemplateType() == null) {
+            String fqn = templateType.getName();
+            TemplateMetadata metadataFromLib =
+                templateRegistryFromDeps.get().getBasicTemplateOrElement(fqn);
+            if (metadataFromLib != null) {
+              // Type is available from deps.
+              templateType.setBasicTemplateType(metadataFromLib.getTemplateType());
+            } else {
+              // Type is available from CollectTemplateTypesVisitor.
+              templateType.setBasicTemplateType(allTemplateTypes.get(fqn));
+            }
+          }
+        }
+      }
+
       SoyType newType = getTypeSubstitution(varRef);
       if (newType != null) {
         varRef.setSubstituteType(newType);
@@ -1690,13 +1860,22 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
       // we don't have enough information to resolve the type at the time this pass is run. For
       // example, two templates may have each other as default parameters, which would create a
       // circular dependency for the type resolution.
-      if (isDefaultInitializerForInferredParam) {
+      if (inferringParam) {
         errorReporter.report(
             node.getSourceLocation(), TEMPLATE_TYPE_PARAMETERS_CANNOT_USE_INFERRED_TYPES);
+        // Placeholder type to prevent further confusing errors.
+        node.setType(UnknownType.getInstance());
+        return;
       }
-      // Template literal nodes are instantiated with a temporary type because we don't have enough
-      // information to give them a type at the time this pass is run -- we need to know the
-      // signature of the referenced template. The type is resolved and checked in a later pass.
+
+      visitChildren(node);
+
+      SoyType existingType = node.getType();
+      if (existingType.getKind() == Kind.TEMPLATE_TYPE) {
+        TemplateType basicType = ((TemplateImportType) existingType).getBasicTemplateType();
+        node.setType(
+            Preconditions.checkNotNull(basicType, "No type for %s", node.getResolvedName()));
+      }
     }
 
     private void visitComparisonOpNode(AbstractOperatorNode node) {
@@ -1869,7 +2048,6 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         case FLOAT:
         case TRUSTED_RESOURCE_URI:
         case MAP:
-        case NAMED_TEMPLATE:
         case PROTO_ENUM:
         case TEMPLATE:
         case VE:
@@ -1982,7 +2160,6 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
         case RECORD:
         case PROTO:
         case PROTO_ENUM:
-        case NAMED_TEMPLATE:
         case TEMPLATE:
         case VE:
         case VE_DATA:
@@ -2610,6 +2787,36 @@ public final class ResolveExpressionTypesPass implements CompilerFilePass {
                 }
               });
       return builder.build();
+    }
+  }
+
+  private static class ConstantsTypeIndex {
+    private final Supplier<FileSetMetadata> deps;
+    private final Table<SourceFilePath, String, ConstNode> sources = HashBasedTable.create();
+
+    public ConstantsTypeIndex(Supplier<FileSetMetadata> deps) {
+      this.deps = deps;
+    }
+
+    @Nullable
+    SoyType get(SourceFilePath path, String name) {
+      ConstNode fromSources = sources.get(path, name);
+      if (fromSources != null) {
+        return fromSources.getVar().type();
+      }
+      FileMetadata fromDeps = deps.get().getFile(path);
+      if (fromDeps != null) {
+        Constant c = fromDeps.getConstant(name);
+        if (c != null) {
+          return c.getType();
+        }
+      }
+      return null;
+    }
+
+    void put(ConstNode node) {
+      SoyFileNode file = node.getNearestAncestor(SoyFileNode.class);
+      sources.put(file.getFilePath(), node.getVar().name(), node);
     }
   }
 }

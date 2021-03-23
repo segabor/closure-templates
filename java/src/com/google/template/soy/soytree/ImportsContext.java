@@ -21,10 +21,8 @@ import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.Streams.stream;
 
 import com.google.common.collect.ImmutableMap;
-import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Streams;
 import com.google.template.soy.base.internal.Identifier;
-import com.google.template.soy.soytree.TemplatesPerFile.TemplateName;
 import com.google.template.soy.types.DelegatingSoyTypeRegistry;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.SoyTypeRegistry;
@@ -40,12 +38,10 @@ import javax.annotation.Nullable;
 public final class ImportsContext {
 
   private SoyTypeRegistry typeRegistry;
-  private ImportsTemplateRegistry templateRegistry;
   private final Set<String> allImportedSymbols;
 
   public ImportsContext() {
     this.typeRegistry = null;
-    this.templateRegistry = null;
     this.allImportedSymbols = new LinkedHashSet<>();
   }
 
@@ -60,26 +56,6 @@ public final class ImportsContext {
 
   public SoyTypeRegistry getTypeRegistry() {
     return checkNotNull(typeRegistry, "Type registry has not been set yet.");
-  }
-
-  public void setTemplateRegistry(ImportsTemplateRegistry templateRegistry) {
-    checkState(
-        this.templateRegistry == null,
-        "Template registry is already set; use overrideTemplateRegistry if you're sure you want to"
-            + " override.");
-    this.templateRegistry = templateRegistry;
-  }
-
-  public void overrideTemplateRegistry(ImportsTemplateRegistry templateRegistry) {
-    this.templateRegistry = templateRegistry;
-  }
-
-  public boolean hasTemplateRegistry() {
-    return this.templateRegistry != null;
-  }
-
-  public ImportsTemplateRegistry getTemplateRegistry() {
-    return checkNotNull(templateRegistry, "Template registry has not been set yet.");
   }
 
   /**
@@ -124,56 +100,6 @@ public final class ImportsContext {
                   msgAndEnumLocalToFqn.keySet().stream(), stream(super.getAllSortedTypeNames()))
               .sorted()
               .iterator();
-    }
-  }
-
-  /**
-   * A {@link TemplateRegistry} that includes imported symbols (possibly aliased) in a given file.
-   */
-  public static final class ImportsTemplateRegistry extends DelegatingTemplateRegistry {
-    // Map of import symbol (possibly aliased) to the template it refers to.
-    private final ImmutableMap<String, TemplateName> symbolToTemplateMap;
-
-    // Which file this registry is for. Used to get the delegate file set registry.
-    private final SoyFileNode file;
-
-    public ImportsTemplateRegistry(
-        SoyFileNode file, ImmutableMap<String, TemplateName> symbolToTemplateMap) {
-      this.symbolToTemplateMap = symbolToTemplateMap;
-      this.file = file;
-    }
-
-    @Override
-    public FileSetTemplateRegistry getDelegate() {
-      return fileSetRegistry();
-    }
-
-    public void updateTemplate(TemplateNode node) {
-      fileSetRegistry().updateTemplate(node);
-    }
-
-    @Override
-    public TemplateMetadata getBasicTemplateOrElement(String callTmplName) {
-      // If the template name matches an imported template symbol, return the symbol's corresponding
-      // template info.
-      if (symbolToTemplateMap.containsKey(callTmplName)) {
-        return fileSetRegistry()
-            .getBasicTemplateOrElement(symbolToTemplateMap.get(callTmplName).fullyQualifiedName());
-      }
-      // Otherwise, check the file set's template registry (which uses fully qualified names).
-      return fileSetRegistry().getBasicTemplateOrElement(callTmplName);
-    }
-
-    public ImmutableMap<String, TemplateName> getSymbolsToTemplateNamesMap() {
-      return symbolToTemplateMap;
-    }
-
-    public ImmutableSet<String> getImportedSymbols() {
-      return symbolToTemplateMap.keySet();
-    }
-
-    private FileSetTemplateRegistry fileSetRegistry() {
-      return file.getParent().getFileSetTemplateRegistry();
     }
   }
 }

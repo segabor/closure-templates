@@ -20,30 +20,30 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static java.util.stream.Collectors.joining;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
 import com.google.template.soy.base.internal.IdGenerator;
-import com.google.template.soy.base.internal.TriState;
 import com.google.template.soy.conformance.ValidatedConformanceConfig;
 import com.google.template.soy.css.CssRegistry;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.logging.ValidatedLoggingConfig;
+import com.google.template.soy.passes.CompilerFileSetPass.Result;
+import com.google.template.soy.passes.CompilerFileSetPass.TopologicallyOrdered;
 import com.google.template.soy.shared.SoyGeneralOptions;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
-import com.google.template.soy.soytree.TemplateNameRegistry;
-import com.google.template.soy.soytree.TemplateRegistry;
-import com.google.template.soy.soytree.TemplatesPerFile;
 import com.google.template.soy.types.SoyTypeRegistry;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicReference;
+import javax.annotation.Nullable;
 
 /**
  * Configures all compiler passes.
@@ -86,23 +86,32 @@ public final class PassManager {
     STOP_AFTER_PASS,
   }
 
+  /** State used for inter-pass communication, without modifying the AST. */
+  private static class AccumulatedState {
+    private FileSetMetadata fileSetMetadataFromDeps;
+    private FileSetMetadata fileSetMetadataFull;
+    private ImmutableList<SoyFileNode> topologicallyOrderedFiles;
+
+    FileSetMetadata registryFromDeps() {
+      return fileSetMetadataFromDeps;
+    }
+
+    FileSetMetadata registryFull() {
+      return fileSetMetadataFull;
+    }
+  }
+
   @VisibleForTesting final ImmutableList<CompilerFilePass> parsePasses;
-  @VisibleForTesting final ImmutableList<CompilerFileSetPass> partialTemplateRegistryPasses;
-  @VisibleForTesting final ImmutableList<CompilerFileSetPass> crossTemplateCheckingPasses;
-  private final AtomicReference<TemplateNameRegistry> templateNameRegistrySupplier;
-  private final AtomicReference<TemplateRegistry> fileSetRegistrySupplier;
+  @VisibleForTesting final ImmutableList<CompilerFileSetPass> passes;
+  private final AccumulatedState accumulatedState;
 
   private PassManager(
       ImmutableList<CompilerFilePass> parsePasses,
-      ImmutableList<CompilerFileSetPass> partialTemplateRegistryPasses,
-      ImmutableList<CompilerFileSetPass> crossTemplateCheckingPasses,
-      AtomicReference<TemplateNameRegistry> templateNameRegistrySupplier,
-      AtomicReference<TemplateRegistry> fileSetRegistrySupplier) {
+      ImmutableList<CompilerFileSetPass> passes,
+      AccumulatedState accumulatedState) {
     this.parsePasses = parsePasses;
-    this.partialTemplateRegistryPasses = partialTemplateRegistryPasses;
-    this.crossTemplateCheckingPasses = crossTemplateCheckingPasses;
-    this.templateNameRegistrySupplier = templateNameRegistrySupplier;
-    this.fileSetRegistrySupplier = fileSetRegistrySupplier;
+    this.passes = passes;
+    this.accumulatedState = accumulatedState;
     checkOrdering();
   }
 
@@ -115,51 +124,37 @@ public final class PassManager {
   /**
    * Runs passes that are needed before we can add the fileset's files to the {TemplateRegistry}.
    *
-   * @param templateNameRegistry a lightweight registry of files to template names, including the
-   *     dep files and the files in the current fileset.
-   * @param partialTemplateRegistryWithJustDeps registry of {@link TemplatesPerFile} for just the
-   *     deps (we don't have enough info yet to create the metadata for the current fileset).
+   * @param partialFileSetMetadataWithJustDeps registry of just the deps (we don't have enough info
+   *     yet to create the metadata for the current fileset).
    */
-  public CompilerFileSetPass.Result runPartialTemplateRegistryPasses(
-      SoyFileSetNode soyTree,
-      TemplateNameRegistry templateNameRegistry,
-      TemplateRegistry partialTemplateRegistryWithJustDeps) {
-    templateNameRegistrySupplier.set(templateNameRegistry);
-    fileSetRegistrySupplier.set(partialTemplateRegistryWithJustDeps);
+  public Result runPasses(
+      SoyFileSetNode soyTree, FileSetMetadata partialFileSetMetadataWithJustDeps) {
+    accumulatedState.fileSetMetadataFromDeps = partialFileSetMetadataWithJustDeps;
 
     ImmutableList<SoyFileNode> sourceFiles = ImmutableList.copyOf(soyTree.getChildren());
     IdGenerator idGenerator = soyTree.getNodeIdGenerator();
-    for (CompilerFileSetPass pass : partialTemplateRegistryPasses) {
-      CompilerFileSetPass.Result result = pass.run(sourceFiles, idGenerator);
-      if (!result.equals(CompilerFileSetPass.Result.CONTINUE)) {
-        return result;
+    for (CompilerFileSetPass pass : passes) {
+      ImmutableList<SoyFileNode> sourceFilesThisPass = sourceFiles;
+      if (pass instanceof TopologicallyOrdered) {
+        sourceFilesThisPass =
+            Preconditions.checkNotNull(accumulatedState.topologicallyOrderedFiles);
+      }
+      if (pass.run(sourceFilesThisPass, idGenerator) == Result.STOP) {
+        return Result.STOP;
       }
     }
-    return CompilerFileSetPass.Result.CONTINUE;
+    return Result.CONTINUE;
   }
 
-  /**
-   * Runs all the fileset passes including the autoescaper and optimization passes if configured.
-   */
-  public void runWholeFilesetPasses(SoyFileSetNode soyTree, TemplateRegistry templateRegistry) {
-    fileSetRegistrySupplier.set(templateRegistry);
-
-    ImmutableList<SoyFileNode> sourceFiles = ImmutableList.copyOf(soyTree.getChildren());
-    IdGenerator idGenerator = soyTree.getNodeIdGenerator();
-    for (CompilerFileSetPass pass : crossTemplateCheckingPasses) {
-      // TODO(user): Update all passes to use supplier and remove templateRegistry from params.
-      CompilerFileSetPass.Result result = pass.run(sourceFiles, idGenerator);
-      if (result == CompilerFileSetPass.Result.STOP) {
-        break;
-      }
-    }
+  @Nullable
+  public FileSetMetadata getFinalTemplateRegistry() {
+    return accumulatedState.fileSetMetadataFull;
   }
 
   /** Enforces that the current set of passes doesn't violate any annotated ordering constraints. */
   private void checkOrdering() {
     Set<Class<? extends CompilerPass>> executed = new LinkedHashSet<>();
-    for (CompilerPass pass :
-        Iterables.concat(parsePasses, partialTemplateRegistryPasses, crossTemplateCheckingPasses)) {
+    for (CompilerPass pass : Iterables.concat(parsePasses, passes)) {
       prepareToRun(executed, pass);
     }
   }
@@ -231,10 +226,7 @@ public final class PassManager {
     private final Map<Class<? extends CompilerPass>, PassContinuationRule>
         passContinuationRegistry = Maps.newHashMap();
     private boolean building;
-    private final AtomicReference<TemplateNameRegistry> templateNameRegistrySupplier =
-        new AtomicReference<>();
-    private final AtomicReference<TemplateRegistry> fileSetRegistrySupplier =
-        new AtomicReference<>();
+    private final AccumulatedState accumulatedState = new AccumulatedState();
 
     public Builder setErrorReporter(ErrorReporter errorReporter) {
       this.errorReporter = checkNotNull(errorReporter);
@@ -381,191 +373,178 @@ public final class PassManager {
       // they can examine information about dependencies.
       // TODO(b/158474755): Try to simplify this pass structure structure once we have template
       // imports.
-      ImmutableList.Builder<CompilerFileSetPass> partialTemplateRegistryPassesBuilder =
-          ImmutableList.builder();
+      PassBuilder passes = new PassBuilder();
       if (astRewrites.atLeast(AstRewrites.ALL)) {
-        addPass(
-            new ContentSecurityPolicyNonceInjectionPass(errorReporter),
-            partialTemplateRegistryPassesBuilder);
-        // Needs to come after ContentSecurityPolicyNonceInjectionPass.
-        addPass(
-            new CheckEscapingSanityFilePass(errorReporter), partialTemplateRegistryPassesBuilder);
+        passes
+            .add(new ContentSecurityPolicyNonceInjectionPass(errorReporter))
+            // Needs to come after ContentSecurityPolicyNonceInjectionPass.
+            .add(new CheckEscapingSanityFilePass(errorReporter));
       }
-      addPass(
-          new ImportsPass(
-              errorReporter,
-              options,
-              disableAllTypeChecking,
-              new ProtoImportProcessor(registry, errorReporter, disableAllTypeChecking),
-              new TemplateImportProcessor(errorReporter, templateNameRegistrySupplier::get)),
-          partialTemplateRegistryPassesBuilder);
-      addPass(new RestoreGlobalsPass(), partialTemplateRegistryPassesBuilder);
-      addPass(new RestoreCompilerChecksPass(errorReporter), partialTemplateRegistryPassesBuilder);
-      // needs to come early since it is necessary to create template metadata objects for
-      // header compilation
-      addPass(
-          new ResolveTemplateParamTypesPass(errorReporter, disableAllTypeChecking),
-          partialTemplateRegistryPassesBuilder);
+      passes
+          .add(
+              new ImportsPass(
+                  errorReporter,
+                  options,
+                  disableAllTypeChecking,
+                  new ProtoImportProcessor(registry, errorReporter, disableAllTypeChecking),
+                  new TemplateImportProcessor(errorReporter, accumulatedState::registryFromDeps)))
+          .add(
+              new FileDependencyOrderPass(
+                  errorReporter, v -> accumulatedState.topologicallyOrderedFiles = v))
+          .add(new RestoreGlobalsPass())
+          .add(new RestoreCompilerChecksPass(errorReporter))
+          // needs to come early since it is necessary to create template metadata objects for
+          // header compilation
+          .add(new ResolveTemplateParamTypesPass(errorReporter, disableAllTypeChecking));
 
       // needs to come before SoyConformancePass
-      addPass(new ResolvePluginsPass(pluginResolver), partialTemplateRegistryPassesBuilder);
+      passes.add(new ResolvePluginsPass(pluginResolver));
 
       // Must come after ResolvePluginsPass.
       if (astRewrites.atLeast(AstRewrites.ALL)) {
-        addPass(
-            new RewriteDirectivesCallableAsFunctionsPass(errorReporter),
-            partialTemplateRegistryPassesBuilder);
-        addPass(new RewriteRemaindersPass(errorReporter), partialTemplateRegistryPassesBuilder);
-        addPass(new RewriteGenderMsgsPass(errorReporter), partialTemplateRegistryPassesBuilder);
-        // Needs to come after any pass that manipulates msg placeholders.
-        addPass(
-            new CalculateMsgSubstitutionInfoPass(errorReporter),
-            partialTemplateRegistryPassesBuilder);
+        passes
+            .add(new RewriteDirectivesCallableAsFunctionsPass(errorReporter))
+            .add(new RewriteRemaindersPass(errorReporter))
+            .add(new RewriteGenderMsgsPass(errorReporter))
+            // Needs to come after any pass that manipulates msg placeholders.
+            .add(new CalculateMsgSubstitutionInfoPass(errorReporter));
       }
-      addPass(new CheckNonEmptyMsgNodesPass(errorReporter), partialTemplateRegistryPassesBuilder);
+      passes.add(new CheckNonEmptyMsgNodesPass(errorReporter));
 
       // Run before the RewriteGlobalsPass as it removes some globals.
-      addPass(new VeRewritePass(), partialTemplateRegistryPassesBuilder);
-      addPass(
-          new RewriteGlobalsPass(options.getCompileTimeGlobals()),
-          partialTemplateRegistryPassesBuilder);
-      addPass(new XidPass(errorReporter), partialTemplateRegistryPassesBuilder);
-      addPass(
-          new UnknownJsGlobalPass(allowUnknownJsGlobals, errorReporter),
-          partialTemplateRegistryPassesBuilder);
-      addPass(new ResolveNamesPass(errorReporter), partialTemplateRegistryPassesBuilder);
-      addPass(
-          new ResolveDottedImportsPass(errorReporter, registry),
-          partialTemplateRegistryPassesBuilder);
+      passes
+          .add(new VeRewritePass())
+          .add(new RewriteGlobalsPass(options.getCompileTimeGlobals()))
+          .add(new XidPass(errorReporter))
+          .add(new UnknownJsGlobalPass(allowUnknownJsGlobals, errorReporter))
+          .add(new ResolveNamesPass(errorReporter))
+          .add(new ResolveDottedImportsPass(errorReporter, registry));
       if (astRewrites.atLeast(AstRewrites.KYTHE)) {
-        addPass(new ResolveTemplateFunctionsPass(), partialTemplateRegistryPassesBuilder);
+        passes.add(new ResolveTemplateFunctionsPass());
       }
-      addPass(
-          new ResolveTemplateNamesPass(errorReporter, options.getRequireTemplateImports()),
-          partialTemplateRegistryPassesBuilder);
+      passes.add(new ResolveTemplateNamesPass(errorReporter));
+
+      // Must run after ResolveTemplateNamesPass
+      passes.add(new TemplateCallMetadataPass());
+
       if (!disableAllTypeChecking) {
         // Without type checking proto enums in variant expressions are not resolved.
-        addPass(
-            new ValidateVariantExpressionsPass(errorReporter),
-            partialTemplateRegistryPassesBuilder);
+        passes.add(new ValidateVariantExpressionsPass(errorReporter));
       }
       // needs to be after ResolveNames and MsgsPass
       if (astRewrites.atLeast(AstRewrites.ALL)) {
-        addPass(new MsgWithIdFunctionPass(errorReporter), partialTemplateRegistryPassesBuilder);
+        passes.add(new MsgWithIdFunctionPass(errorReporter));
       }
 
       // The StrictHtmlValidatorPass needs to run after ResolveNames.
-      addPass(new StrictHtmlValidationPass(errorReporter), partialTemplateRegistryPassesBuilder);
-
-      addPass(new SoyElementPass(errorReporter), partialTemplateRegistryPassesBuilder);
+      passes
+          .add(new StrictHtmlValidationPass(errorReporter))
+          .add(new SoyElementPass(errorReporter, accumulatedState::registryFromDeps));
       if (addHtmlAttributesForDebugging) {
         // needs to run after MsgsPass (so we don't mess up the auto placeholder naming algorithm)
         // and before ResolveExpressionTypesPass (since we insert expressions).
-        addPass(new AddDebugAttributesPass(), partialTemplateRegistryPassesBuilder);
+        passes.add(new AddDebugAttributesPass());
       }
-      addPass(
-          new CheckAllFunctionsResolvedPass(pluginResolver), partialTemplateRegistryPassesBuilder);
+      passes.add(new CheckAllFunctionsResolvedPass(pluginResolver));
+      if (astRewrites.atLeast(AstRewrites.ALL)) {
+        passes.add(
+            new ElementAttributePass(
+                errorReporter, pluginResolver, accumulatedState::registryFromDeps));
+      }
       if (!disableAllTypeChecking) {
-        addPass(new CheckDeclaredTypesPass(errorReporter), partialTemplateRegistryPassesBuilder);
-        // Run before ResolveExpressionTypesPass since this makes type analysis on null safe
-        // accesses simpler.
-        addPass(new NullSafeAccessPass(), partialTemplateRegistryPassesBuilder);
-
-        addPass(
-            new ResolveExpressionTypesPass(errorReporter, loggingConfig, pluginResolver),
-            partialTemplateRegistryPassesBuilder);
-        // After ResolveExpressionTypesPass because ResolveExpressionTypesPass verifies usage and
-        // types of non-null assertion operators.
-        addPass(new SimplifyAssertNonNullPass(), partialTemplateRegistryPassesBuilder);
-        addPass(new VeLogRewritePass(), partialTemplateRegistryPassesBuilder);
+        passes
+            .add(new CheckDeclaredTypesPass(errorReporter))
+            // Run before ResolveExpressionTypesPass since this makes type analysis on null safe
+            // accesses simpler.
+            .add(new NullSafeAccessPass())
+            .add(
+                new ResolveExpressionTypesPass(
+                    errorReporter,
+                    loggingConfig,
+                    pluginResolver,
+                    accumulatedState::registryFromDeps))
+            // After ResolveExpressionTypesPass because ResolveExpressionTypesPass verifies usage
+            // and types of non-null assertion operators.
+            .add(new SimplifyAssertNonNullPass())
+            .add(new VeLogRewritePass());
         // Needs to run before CheckGlobalsPass to prevent unbound global errors on the getExtension
         // parameters.
         if (!allowUnknownGlobals) {
-          addPass(new GetExtensionRewriteParamPass(), partialTemplateRegistryPassesBuilder);
+          passes.add(new GetExtensionRewriteParamPass());
         }
       }
 
-      addPass(
-          new ResolvePackageRelativeCssNamesPass(errorReporter),
-          partialTemplateRegistryPassesBuilder);
+      passes.add(new ResolvePackageRelativeCssNamesPass(errorReporter));
 
       if (!allowUnknownGlobals) {
         // Must come after RewriteGlobalsPass since that is when values are substituted.
         // We should also run after the ResolveNamesPass which checks for global/param ambiguity and
         // may issue better error messages.
-        addPass(new CheckGlobalsPass(errorReporter), partialTemplateRegistryPassesBuilder);
+        passes.add(new CheckGlobalsPass(errorReporter));
       }
-      addPass(
-          new ValidateAliasesPass(errorReporter, options, loggingConfig),
-          partialTemplateRegistryPassesBuilder);
-      addPass(
-          new KeyCommandPass(errorReporter, disableAllTypeChecking),
-          partialTemplateRegistryPassesBuilder);
-      addPass(new ValidateSkipNodesPass(errorReporter), partialTemplateRegistryPassesBuilder);
+      passes
+          .add(new ValidateAliasesPass(errorReporter, options, loggingConfig))
+          .add(new KeyCommandPass(errorReporter, disableAllTypeChecking))
+          .add(new ValidateSkipNodesPass(errorReporter));
 
       if (!disableAllTypeChecking) {
-        addPass(
-            new VeLogValidationPass(errorReporter, registry), partialTemplateRegistryPassesBuilder);
+        passes.add(new VeLogValidationPass(errorReporter, registry));
       }
       // Cross template checking passes
+
+      passes.add(
+          new FinalizeTemplateRegistryPass(
+              errorReporter,
+              accumulatedState::registryFromDeps,
+              reg -> accumulatedState.fileSetMetadataFull = reg));
 
       // Fileset passes run on all sources files and have access to a template registry so they can
       // examine information about dependencies. These are naturally more expensive and should be
       // reserved for checks that require transitive call information (or full delegate sets).
       // Notably, the results of these passes cannot be cached in the AST cache.  So minimize their
       // use.
-      ImmutableList.Builder<CompilerFileSetPass> crossTemplateCheckingPassesBuilder =
-          ImmutableList.builder();
+
       // Because conformance exits abruptly after this pass we must ensure that the AST is left in a
       // complete state. Therefore this pass should come after ResolveExpressionTypesPass and
       // others.
-      if (astRewrites.atLeast(AstRewrites.ALL)) {
-        addPass(
-            new ElementAttributePass(errorReporter, pluginResolver),
-            crossTemplateCheckingPassesBuilder);
-      }
-      addPass(
-          new SoyConformancePass(conformanceConfig, errorReporter),
-          crossTemplateCheckingPassesBuilder);
+      passes.add(new SoyConformancePass(conformanceConfig, errorReporter));
       if (!disableAllTypeChecking) {
-        addPass(
+        passes.add(
             new ResolveExpressionTypesCrossTemplatePass(
-                registry, errorReporter, astRewrites.atLeast(AstRewrites.ALL)),
-            crossTemplateCheckingPassesBuilder);
+                errorReporter, astRewrites.atLeast(AstRewrites.ALL)));
       }
-      addPass(new CheckTemplateHeaderVarsPass(errorReporter), crossTemplateCheckingPassesBuilder);
+      passes.add(new CheckTemplateHeaderVarsPass(errorReporter, accumulatedState::registryFull));
       if (!disableAllTypeChecking) {
         // Needs to come after types have been set.
-        addPass(
-            new EnforceExperimentalFeaturesPass(options.getExperimentalFeatures(), errorReporter),
-            crossTemplateCheckingPassesBuilder);
-        addPass(new CheckTemplateCallsPass(errorReporter), crossTemplateCheckingPassesBuilder);
-        addPass(
-            new ElementCheckCrossTemplatePass(errorReporter), crossTemplateCheckingPassesBuilder);
+        passes
+            .add(
+                new EnforceExperimentalFeaturesPass(
+                    options.getExperimentalFeatures(), errorReporter))
+            .add(new CheckTemplateCallsPass(errorReporter, accumulatedState::registryFull))
+            .add(new ElementCheckCrossTemplatePass(errorReporter));
         if (astRewrites.atLeast(AstRewrites.ALL)) {
-
-          addPass(
-              new SoyElementCompositionPass(errorReporter, soyPrintDirectives),
-              crossTemplateCheckingPassesBuilder);
+          passes.add(
+              new SoyElementCompositionPass(
+                  errorReporter, soyPrintDirectives, accumulatedState::registryFull));
         }
       }
-      addPass(new CallAnnotationPass(), crossTemplateCheckingPassesBuilder);
-      addPass(new CheckTemplateVisibilityPass(errorReporter), crossTemplateCheckingPassesBuilder);
-      addPass(
-          new CheckDelegatesPass(errorReporter, fileSetRegistrySupplier::get),
-          crossTemplateCheckingPassesBuilder);
-      // If disallowing external calls, perform the check.
-      if (options.allowExternalCalls() == TriState.DISABLED) {
-        addPass(new StrictDepsPass(errorReporter), crossTemplateCheckingPassesBuilder);
-      }
+      passes
+          .add(new CallAnnotationPass())
+          .add(new CheckTemplateVisibilityPass(errorReporter, accumulatedState::registryFull))
+          .add(new CheckDelegatesPass(errorReporter, accumulatedState::registryFull))
+          .add(new CheckIndirectDepsPass(errorReporter, accumulatedState::registryFull));
 
-      addPass(new CombineConsecutiveRawTextNodesPass(), crossTemplateCheckingPassesBuilder);
-      addPass(
-          new AutoescaperPass(errorReporter, soyPrintDirectives, insertEscapingDirectives),
-          crossTemplateCheckingPassesBuilder);
+      passes
+          .add(new CombineConsecutiveRawTextNodesPass())
+          .add(
+              new AutoescaperPass(
+                  errorReporter,
+                  soyPrintDirectives,
+                  insertEscapingDirectives,
+                  accumulatedState::registryFull));
       // Relies on information from the autoescaper and valid type information
       if (!disableAllTypeChecking && insertEscapingDirectives) {
-        addPass(new CheckBadContextualUsagePass(errorReporter), crossTemplateCheckingPassesBuilder);
+        passes.add(new CheckBadContextualUsagePass(errorReporter, accumulatedState::registryFull));
       }
 
       // Simplification Passes.
@@ -575,51 +554,52 @@ public final class PassManager {
       if (desugarHtmlAndStateNodes) {
         // always desugar before the end since the backends (besides incremental dom) cannot handle
         // the nodes.
-        addPass(new DesugarHtmlNodesPass(), crossTemplateCheckingPassesBuilder);
-        addPass(new DesugarStateNodesPass(), crossTemplateCheckingPassesBuilder);
+        passes.add(new DesugarHtmlNodesPass()).add(new DesugarStateNodesPass());
       }
       if (optimize) {
-        addPass(new OptimizationPass(errorReporter), crossTemplateCheckingPassesBuilder);
+        passes.add(new OptimizationPass(errorReporter));
       }
       // DesugarHtmlNodesPass may chop up RawTextNodes, and OptimizationPass may produce additional
       // RawTextNodes. Stich them back together here.
-      addPass(new CombineConsecutiveRawTextNodesPass(), crossTemplateCheckingPassesBuilder);
-      addPass(
-          new BanDuplicateNamespacesPass(errorReporter, fileSetRegistrySupplier::get),
-          crossTemplateCheckingPassesBuilder);
+      passes
+          .add(new CombineConsecutiveRawTextNodesPass())
+          .add(new BanDuplicateNamespacesPass(errorReporter, accumulatedState::registryFull));
       building = false;
       if (!passContinuationRegistry.isEmpty()) {
         throw new IllegalStateException(
             "The following continuation rules don't match any pass: " + passContinuationRegistry);
       }
-      return new PassManager(
-          createParsePasses(errorReporter),
-          partialTemplateRegistryPassesBuilder.build(),
-          crossTemplateCheckingPassesBuilder.build(),
-          templateNameRegistrySupplier,
-          fileSetRegistrySupplier);
+      return new PassManager(createParsePasses(errorReporter), passes.build(), accumulatedState);
     }
 
     /** Adds the pass as a file set pass. */
-    <T extends CompilerPass> void addPass(T pass, ImmutableList.Builder<T> builder) {
-      Class<?> passClass = pass.getClass();
-      PassContinuationRule rule = passContinuationRegistry.remove(passClass);
-      if (!building) {
-        return;
-      }
-      if (rule == null) {
-        builder.add(pass);
-        return;
-      }
-      switch (rule) {
-        case STOP_AFTER_PASS:
+    private class PassBuilder {
+      ImmutableList.Builder<CompilerFileSetPass> builder = ImmutableList.builder();
+
+      PassBuilder add(CompilerFileSetPass pass) {
+        Class<?> passClass = pass.getClass();
+        PassContinuationRule rule = passContinuationRegistry.remove(passClass);
+        if (!building) {
+          return this;
+        }
+        if (rule == null) {
           builder.add(pass);
-          // fall-through
-        case STOP_BEFORE_PASS:
-          building = false;
-          return;
+          return this;
+        }
+        switch (rule) {
+          case STOP_AFTER_PASS:
+            builder.add(pass);
+            // fall-through
+          case STOP_BEFORE_PASS:
+            building = false;
+            return this;
+        }
+        throw new AssertionError("unhandled rule: " + rule);
       }
-      throw new AssertionError("unhandled rule: " + rule);
+
+      ImmutableList<CompilerFileSetPass> build() {
+        return builder.build();
+      }
     }
   }
 

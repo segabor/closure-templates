@@ -21,26 +21,35 @@ import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.parsepasses.contextautoesc.ContextualAutoescaper;
 import com.google.template.soy.parsepasses.contextautoesc.Inferences;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.SoyFileNode;
+import java.util.function.Supplier;
 
 /** A shim around ContextualAutoescaper to make it conform to the pass interface. */
+@RunAfter(FinalizeTemplateRegistryPass.class)
 final class AutoescaperPass implements CompilerFileSetPass {
 
-  private final ContextualAutoescaper autoescaper;
   private final ErrorReporter errorReporter;
+  private final ImmutableList<? extends SoyPrintDirective> printDirectives;
   private final boolean autoescaperEnabled;
+  private final Supplier<FileSetMetadata> templateRegistryFull;
 
   AutoescaperPass(
       ErrorReporter errorReporter,
       ImmutableList<? extends SoyPrintDirective> printDirectives,
-      boolean autoescaperEnabled) {
+      boolean autoescaperEnabled,
+      Supplier<FileSetMetadata> templateRegistryFull) {
     this.errorReporter = errorReporter;
-    this.autoescaper = new ContextualAutoescaper(errorReporter, printDirectives);
+    this.printDirectives = printDirectives;
     this.autoescaperEnabled = autoescaperEnabled;
+    this.templateRegistryFull = templateRegistryFull;
   }
 
   @Override
   public Result run(ImmutableList<SoyFileNode> sourceFiles, IdGenerator idGenerator) {
+    ContextualAutoescaper autoescaper =
+        new ContextualAutoescaper(errorReporter, printDirectives, templateRegistryFull.get());
+
     // The autoescaper depends on certain amounts of template validation having been done, so we
     // can't safely run on broken trees.
     //  * that all deltemplates have compatible content kinds

@@ -13,10 +13,11 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.google.template.soy;
+package com.google.template.soy.soytree;
 
 import static com.google.common.base.Strings.emptyToNull;
 
+import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Converter;
 import com.google.common.base.Strings;
 import com.google.common.base.Supplier;
@@ -30,24 +31,6 @@ import com.google.template.soy.base.internal.TemplateContentKind;
 import com.google.template.soy.base.internal.TemplateContentKind.ElementContentKind;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
-import com.google.template.soy.soytree.CompilationUnit;
-import com.google.template.soy.soytree.ConstNode;
-import com.google.template.soy.soytree.ConstantP;
-import com.google.template.soy.soytree.DataAllCallSituationP;
-import com.google.template.soy.soytree.ParameterP;
-import com.google.template.soy.soytree.SoyFileNode;
-import com.google.template.soy.soytree.SoyFileP;
-import com.google.template.soy.soytree.SoyFileSetNode;
-import com.google.template.soy.soytree.SoyTypeP;
-import com.google.template.soy.soytree.TemplateDelegateNodeBuilder;
-import com.google.template.soy.soytree.TemplateKindP;
-import com.google.template.soy.soytree.TemplateMetadata;
-import com.google.template.soy.soytree.TemplateMetadataP;
-import com.google.template.soy.soytree.TemplateNode;
-import com.google.template.soy.soytree.TemplateNodeBuilder;
-import com.google.template.soy.soytree.TemplateRegistry;
-import com.google.template.soy.soytree.Visibility;
-import com.google.template.soy.soytree.VisibilityP;
 import com.google.template.soy.types.AnyType;
 import com.google.template.soy.types.BoolType;
 import com.google.template.soy.types.FloatType;
@@ -97,7 +80,7 @@ public final class TemplateMetadataSerializer {
   private TemplateMetadataSerializer() {}
 
   public static CompilationUnit compilationUnitFromFileSet(
-      SoyFileSetNode fileSet, TemplateRegistry registry) {
+      SoyFileSetNode fileSet, FileSetMetadata registry) {
     CompilationUnit.Builder builder = CompilationUnit.newBuilder();
     for (SoyFileNode file : fileSet.getChildren()) {
       SoyFileP.Builder fileBuilder =
@@ -109,7 +92,7 @@ public final class TemplateMetadataSerializer {
           .filter(ConstNode::isExported)
           .forEach(c -> fileBuilder.addConstants(protoFromConstant(c)));
       for (TemplateNode template : file.getTemplates()) {
-        TemplateMetadata meta = registry.getMetadata(template);
+        TemplateMetadata meta = registry.getTemplate(template);
         fileBuilder.addTemplate(protoFromTemplate(meta, file));
       }
       builder.addFile(fileBuilder.build());
@@ -117,6 +100,7 @@ public final class TemplateMetadataSerializer {
     return builder.build();
   }
 
+  @VisibleForTesting
   public static ImmutableList<TemplateMetadata> templatesFromSoyFileP(
       SoyFileP fileProto,
       SoyFileKind fileKind,
@@ -172,7 +156,7 @@ public final class TemplateMetadataSerializer {
     return builder.build();
   }
 
-  private static TemplateMetadata metadataFromProto(
+  static TemplateMetadata metadataFromProto(
       SoyFileP fileProto,
       TemplateMetadataP templateProto,
       SoyFileKind fileKind,
@@ -239,7 +223,6 @@ public final class TemplateMetadataSerializer {
                         filePath,
                         errorReporter))
                 .setIdentifierForDebugging(templateName)
-                .setInferredType(true)
                 .build())
         .setSourceLocation(new SourceLocation(SourceFilePath.create(fileProto.getFilePath())))
         .setVisibility(VISIBILITY_CONVERTER.convert(templateProto.getVisibility()))
@@ -298,7 +281,7 @@ public final class TemplateMetadataSerializer {
     }
   }
 
-  private static SoyType fromProto(
+  static SoyType fromProto(
       SoyTypeP proto,
       SoyTypeRegistry typeRegistry,
       SourceFilePath filePath,
@@ -366,9 +349,7 @@ public final class TemplateMetadataSerializer {
                 new SourceLocation(filePath), UNABLE_TO_FIND_TYPE, "proto", proto.getProto());
             return UnknownType.getInstance();
           }
-          // allow unknown to support message extraction which configures the DEFAULT_UNKNOWN type
-          // registry
-          if (type instanceof SoyProtoType || type == UnknownType.getInstance()) {
+          if (type instanceof SoyProtoType) {
             return type;
           }
           errorReporter.report(
@@ -390,9 +371,7 @@ public final class TemplateMetadataSerializer {
                 proto.getProtoEnum());
             return UnknownType.getInstance();
           }
-          // allow unknown to support message extraction which configures the DEFAULT_UNKNOWN type
-          // registry
-          if (type instanceof SoyProtoEnumType || type == UnknownType.getInstance()) {
+          if (type instanceof SoyProtoEnumType) {
             return type;
           }
           errorReporter.report(

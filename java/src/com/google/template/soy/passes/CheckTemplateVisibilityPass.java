@@ -21,25 +21,31 @@ import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.exprtree.TemplateLiteralNode;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.Visibility;
+import java.util.function.Supplier;
 
 /**
  * Visitor for checking the visibility of a template.
  *
  * @author brndn@google.com (Brendan Linn)
  */
+@RunAfter(FinalizeTemplateRegistryPass.class)
 final class CheckTemplateVisibilityPass implements CompilerFileSetPass {
 
   private static final SoyErrorKind CALLEE_NOT_VISIBLE =
       SoyErrorKind.of("{0} has {1} access in {2}.");
 
   private final ErrorReporter errorReporter;
+  private final Supplier<FileSetMetadata> templateRegistryFull;
 
-  CheckTemplateVisibilityPass(ErrorReporter errorReporter) {
+  CheckTemplateVisibilityPass(
+      ErrorReporter errorReporter, Supplier<FileSetMetadata> templateRegistryFull) {
     this.errorReporter = errorReporter;
+    this.templateRegistryFull = templateRegistryFull;
   }
 
   @Override
@@ -49,7 +55,7 @@ final class CheckTemplateVisibilityPass implements CompilerFileSetPass {
           SoyTreeUtils.getAllNodesOfType(file, TemplateLiteralNode.class)) {
         String calleeName = node.getResolvedName();
         TemplateMetadata definition =
-            file.getTemplateRegistry().getBasicTemplateOrElement(calleeName);
+            templateRegistryFull.get().getBasicTemplateOrElement(calleeName);
         if (definition != null && !isVisible(file, definition)) {
           errorReporter.report(
               node.getSourceLocation(),

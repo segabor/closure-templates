@@ -237,33 +237,6 @@ public final class CheckDelegatesPassTest {
   }
 
   @Test
-  public void testErrorBasicCallToDelegateTemplate() {
-    assertInvalidSoyFiles(
-        "'call' to delegate template 'ns1.MagicButton' (expected 'delcall').",
-        ""
-            + "{namespace ns1}\n"
-            + "\n"
-            + "/***/\n"
-            + "{template .boo}\n"
-            + "  {call .MagicButton /}\n"
-            + // basic call (should be delegate call)
-            "{/template}\n"
-            + "\n"
-            + "{deltemplate ns1.MagicButton}\n"
-            + "  {@param foo: ?}\n"
-            + "  000\n"
-            + "{/deltemplate}\n",
-        ""
-            + "{delpackage SecretFeature}\n"
-            + "{namespace ns1}\n"
-            + "\n"
-            + "{deltemplate ns1.MagicButton}\n"
-            + "  {@param foo: ?}\n"
-            + "  111 {$foo}\n"
-            + "{/deltemplate}\n");
-  }
-
-  @Test
   public void testErrorBasicDepFromNonDelpackageOnOtherDelegatePackage() {
     assertInvalidSoyFiles(
         "Found illegal call from 'ns1.boo' to 'ns2.foo', which is in a different delegate package.",
@@ -311,7 +284,7 @@ public final class CheckDelegatesPassTest {
   @Test
   public void testErrorDelegateCallToBasicTemplate() {
     assertInvalidSoyFiles(
-        "'delcall' to basic template 'ns2.foo' (expected 'call').",
+        "'delcall' to basic template defined at '2:9-2:11' (expected 'call').",
         ""
             + "{namespace ns1}\n"
             + "import {foo} from 'no-path-2';\n"

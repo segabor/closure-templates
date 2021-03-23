@@ -33,12 +33,10 @@ import com.google.common.io.ByteSource;
 import com.google.common.io.CharSink;
 import com.google.common.io.CharSource;
 import com.google.protobuf.Descriptors.GenericDescriptor;
-import com.google.template.soy.SoyFileSetParser.CompilationUnitAndKind;
 import com.google.template.soy.SoyFileSetParser.ParseResult;
 import com.google.template.soy.base.SourceFilePath;
 import com.google.template.soy.base.internal.SoyFileKind;
 import com.google.template.soy.base.internal.SoyFileSupplier;
-import com.google.template.soy.base.internal.TriState;
 import com.google.template.soy.conformance.ValidatedConformanceConfig;
 import com.google.template.soy.css.CssRegistry;
 import com.google.template.soy.error.ErrorReporter;
@@ -86,8 +84,10 @@ import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 import com.google.template.soy.shared.restricted.SoyMethodSignature;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
 import com.google.template.soy.soytree.CompilationUnit;
+import com.google.template.soy.soytree.FileSetMetadata;
+import com.google.template.soy.soytree.Metadata;
+import com.google.template.soy.soytree.Metadata.CompilationUnitAndKind;
 import com.google.template.soy.soytree.SoyFileSetNode;
-import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.swiftsrc.SoySwiftSrcOptions;
 import com.google.template.soy.swiftsrc.internal.SwiftSrcMain;
 import com.google.template.soy.tofu.SoyTofu;
@@ -101,12 +101,16 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.annotation.Nullable;
 
 /**
  * Represents a complete set of Soy files for compilation as one bundle. The files may depend on
  * each other but should not have dependencies outside of the set.
+ *
+ * <p><strong>Note that this implementation is not synchronized.</strong> If multiple threads use a
+ * SoyFileSet concurrently, it <i>must</i> be synchronized externally.
  *
  * <p>Note: Soy file (or resource) contents must be encoded in UTF-8.
  */
@@ -384,28 +388,6 @@ public final class SoyFileSet {
     }
 
     /**
-     * Sets whether to allow external calls (calls to undefined templates).
-     *
-     * @param allowExternalCalls Whether to allow external calls (calls to undefined templates).
-     * @return This builder.
-     */
-    public Builder setAllowExternalCalls(boolean allowExternalCalls) {
-      getGeneralOptions().setAllowExternalCalls(allowExternalCalls);
-      return this;
-    }
-
-    /**
-     * Requires external templates to be imported (rather than referenced via fqn or aliased
-     * namespaces).
-     *
-     * @return This builder.
-     */
-    Builder setRequireTemplateImports(boolean requireTemplateImports) {
-      getGeneralOptions().setRequireTemplateImports(requireTemplateImports);
-      return this;
-    }
-
-    /**
      * Sets experimental features. These features are unreleased and are not generally available.
      *
      * @param experimentalFeatures
@@ -521,10 +503,9 @@ public final class SoyFileSet {
       return this;
     }
 
-    Builder addCompilationUnit(
-        SoyFileKind fileKind, SourceFilePath filePath, CompilationUnit compilationUnit) {
+    Builder addCompilationUnit(SoyFileKind fileKind, CompilationUnit compilationUnit) {
       compilationUnitsBuilder.add(
-          CompilationUnitAndKind.create(fileKind, filePath, compilationUnit));
+          Metadata.CompilationUnitAndKind.create(fileKind, compilationUnit));
       return this;
     }
 
@@ -667,12 +648,26 @@ public final class SoyFileSet {
     return typeRegistry;
   }
 
+  private boolean isCompiling;
+
   /** Template pattern for any public or package visible entry point method that returns a value. */
   private <T> T entryPoint(Supplier<T> variant) {
+    synchronized (this) {
+      if (isCompiling) {
+        // TODO(lukes): upgrade to an exception
+        logger.log(
+            Level.SEVERE,
+            "concurrent use of a SoyFileSet object is undefined behavior.",
+            new Exception());
+      }
+      isCompiling = true;
+    }
     resetErrorReporter();
-    T rv;
     try {
-      rv = variant.get();
+      T rv = variant.get();
+      throwIfErrorsPresent();
+      reportWarnings();
+      return rv;
     } catch (SoyCompilationException | SoyInternalCompilerException e) {
       throw e;
     } catch (RuntimeException e) {
@@ -682,10 +677,11 @@ public final class SoyFileSet {
       } else {
         throw e;
       }
+    } finally {
+      synchronized (this) {
+        isCompiling = false;
+      }
     }
-    throwIfErrorsPresent();
-    reportWarnings();
-    return rv;
   }
 
   /** Template pattern for any public or package visible entry point method that is void. */
@@ -710,11 +706,10 @@ public final class SoyFileSet {
         () -> {
           ParseResult result = parseForGenJava();
           throwIfErrorsPresent();
-          TemplateRegistry registry = result.registry();
           SoyFileSetNode soyTree = result.fileSet();
 
           // Generate template invocation builders for the soy tree.
-          return new GenInvocationBuildersVisitor(errorReporter, javaPackage, registry)
+          return new GenInvocationBuildersVisitor(errorReporter, javaPackage, result.registry())
               .exec(soyTree);
         });
   }
@@ -736,7 +731,7 @@ public final class SoyFileSet {
           throwIfErrorsPresent();
 
           SoyFileSetNode soyTree = result.fileSet();
-          TemplateRegistry registry = result.registry();
+          FileSetMetadata registry = result.registry();
 
           // Do renaming of package-relative class names.
           return new GenerateParseInfoVisitor(javaPackage, javaClassNameSource, registry)
@@ -865,32 +860,14 @@ public final class SoyFileSet {
 
   /** Performs the parsing and extraction logic. */
   private SoyMsgBundle doExtractMsgs() {
-    // extractMsgs disables a bunch of passes since it is typically not configured with things
-    // like global definitions, type definitions, plugins, etc.
     SoyFileSetNode soyTree =
         parse(
                 passManagerBuilder()
                     .allowUnknownGlobals()
                     .allowUnknownJsGlobals()
-                    // necessary because we are using an invalid type registry, also we don't really
-                    // need to run the optimizer anyway.
+                    // Skip optimization, we could run it but it seems to be a waste of time
                     .optimize(false)
-                    .desugarHtmlAndStateNodes(false)
-                    .setTypeRegistry(SoyTypeRegistry.DEFAULT_UNKNOWN)
-                    // TODO(lukes): consider changing this to pass a null resolver instead of the
-                    // ALLOW_UNDEFINED mode
-                    .setPluginResolver(
-                        new PluginResolver(
-                            PluginResolver.Mode.ALLOW_UNDEFINED,
-                            printDirectives,
-                            soyFunctions,
-                            soySourceFunctions,
-                            soyMethods,
-                            errorReporter))
-                    .disableAllTypeChecking(),
-                // override the type registry so that the parser doesn't report errors when it
-                // can't resolve strict types
-                SoyTypeRegistry.DEFAULT_UNKNOWN)
+                    .desugarHtmlAndStateNodes(false))
             .fileSet();
     throwIfErrorsPresent();
     SoyMsgBundle bundle = new ExtractMsgsVisitor(errorReporter).exec(soyTree);
@@ -975,7 +952,6 @@ public final class SoyFileSet {
   public SoySauce compileTemplates(Map<String, Supplier<Object>> pluginInstances) {
     return entryPoint(
         () -> {
-          disallowExternalCalls();
           ServerCompilationPrimitives primitives = compileForServerRendering();
           throwIfErrorsPresent();
           return doCompileSoySauce(primitives, pluginInstances);
@@ -992,11 +968,10 @@ public final class SoyFileSet {
   void compileToJar(ByteSink jarTarget, Optional<ByteSink> srcJarTarget) {
     entryPointVoid(
         () -> {
-          disallowExternalCalls();
           ServerCompilationPrimitives primitives = compileForServerRendering();
           try {
             BytecodeCompiler.compileToJar(
-                primitives.registry, primitives.soyTree, errorReporter, typeRegistry, jarTarget);
+                primitives.soyTree, errorReporter, typeRegistry, jarTarget);
             if (srcJarTarget.isPresent()) {
               BytecodeCompiler.writeSrcJar(
                   primitives.soyTree, soyFileSuppliers, srcJarTarget.get());
@@ -1030,9 +1005,9 @@ public final class SoyFileSet {
    */
   private static final class ServerCompilationPrimitives {
     final SoyFileSetNode soyTree;
-    final TemplateRegistry registry;
+    final FileSetMetadata registry;
 
-    ServerCompilationPrimitives(TemplateRegistry registry, SoyFileSetNode soyTree) {
+    ServerCompilationPrimitives(FileSetMetadata registry, SoyFileSetNode soyTree) {
       this.registry = registry;
       this.soyTree = soyTree;
     }
@@ -1044,7 +1019,7 @@ public final class SoyFileSet {
     throwIfErrorsPresent();
 
     SoyFileSetNode soyTree = result.fileSet();
-    TemplateRegistry registry = result.registry();
+    FileSetMetadata registry = result.registry();
     // Clear the SoyDoc strings because they use unnecessary memory, unless we have a cache, in
     // which case it is pointless.
     if (cache == null) {
@@ -1053,17 +1028,6 @@ public final class SoyFileSet {
 
     throwIfErrorsPresent();
     return new ServerCompilationPrimitives(registry, soyTree);
-  }
-
-  private void disallowExternalCalls() {
-    TriState allowExternalCalls = generalOptions.allowExternalCalls();
-    if (allowExternalCalls == TriState.UNSET) {
-      generalOptions.setAllowExternalCalls(false);
-    } else if (allowExternalCalls == TriState.ENABLED) {
-      throw new IllegalStateException(
-          "SoyGeneralOptions.setAllowExternalCalls(true) is not supported with this method");
-    }
-    // otherwise, it was already explicitly set to false which is what we want.
   }
 
   /**
@@ -1093,7 +1057,7 @@ public final class SoyFileSet {
               passManagerBuilder().allowUnknownJsGlobals().desugarHtmlAndStateNodes(false);
           ParseResult result = parse(builder);
           throwIfErrorsPresent();
-          TemplateRegistry registry = result.registry();
+          FileSetMetadata registry = result.registry();
           SoyFileSetNode fileSet = result.fileSet();
           return new JsSrcMain(scopedData.enterable(), typeRegistry)
               .genJsSrc(fileSet, registry, jsSrcOptions, msgBundle, errorReporter);
@@ -1162,7 +1126,7 @@ public final class SoyFileSet {
   abstract static class HeaderResult {
     abstract SoyFileSetNode fileSet();
 
-    abstract TemplateRegistry templateRegistry();
+    abstract FileSetMetadata templateRegistry();
 
     abstract CssRegistry cssRegistry();
   }
@@ -1174,7 +1138,6 @@ public final class SoyFileSet {
   HeaderResult compileMinimallyForHeaders() {
     return entryPoint(
         () -> {
-          disallowExternalCalls();
           ParseResult parseResult =
               parse(
                   passManagerBuilder()
@@ -1200,7 +1163,7 @@ public final class SoyFileSet {
     /**
      * The template registry, will be empty if errors occurred early and it couldn't be constructed.
      */
-    public abstract Optional<TemplateRegistry> registry();
+    public abstract Optional<FileSetMetadata> registry();
 
     /** The full parsed AST. */
     public abstract SoyFileSetNode fileSet();
@@ -1215,7 +1178,6 @@ public final class SoyFileSet {
   public AnalysisResult compileForAnalysis(boolean treatErrorsAsWarnings, AstRewrites astRewrites) {
     return entryPoint(
         () -> {
-          disallowExternalCalls();
           ParseResult result =
               parse(
                   passManagerBuilder()
@@ -1323,7 +1285,7 @@ public final class SoyFileSet {
    * <p>This method should be called at the beginning of every entry point into SoyFileSet.
    */
   @VisibleForTesting
-  void resetErrorReporter() {
+  synchronized void resetErrorReporter() {
     errorReporter = ErrorReporter.create(soyFileSuppliers);
   }
 

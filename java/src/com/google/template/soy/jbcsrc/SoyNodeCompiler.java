@@ -105,7 +105,6 @@ import com.google.template.soy.soytree.SwitchCaseNode;
 import com.google.template.soy.soytree.SwitchDefaultNode;
 import com.google.template.soy.soytree.SwitchNode;
 import com.google.template.soy.soytree.TemplateNode;
-import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.VeLogNode;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.types.TemplateType;
@@ -143,7 +142,6 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
    * @param parameterLookup The variable lookup table for reading locals.
    */
   static SoyNodeCompiler create(
-      TemplateRegistry registry,
       TemplateAnalysis analysis,
       InnerClasses innerClasses,
       AppendableExpression appendableVar,
@@ -160,7 +158,6 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     ExpressionToSoyValueProviderCompiler soyValueProviderCompiler =
         ExpressionToSoyValueProviderCompiler.create(analysis, expressionCompiler, parameterLookup);
     return new SoyNodeCompiler(
-        registry,
         analysis,
         innerClasses,
         detachState,
@@ -174,7 +171,6 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
         javaSourceFunctionCompiler);
   }
 
-  final TemplateRegistry registry;
   final TemplateAnalysis analysis;
   final InnerClasses innerClasses;
   final DetachState detachState;
@@ -189,7 +185,6 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
   private Scope currentScope;
 
   SoyNodeCompiler(
-      TemplateRegistry registry,
       TemplateAnalysis analysis,
       InnerClasses innerClasses,
       DetachState detachState,
@@ -201,7 +196,6 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
       ExpressionToSoyValueProviderCompiler expressionToSoyValueProviderCompiler,
       BasicExpressionCompiler constantCompiler,
       JavaSourceFunctionCompiler javaSourceFunctionCompiler) {
-    this.registry = registry;
     this.analysis = checkNotNull(analysis);
     this.innerClasses = innerClasses;
     this.detachState = checkNotNull(detachState);
@@ -1114,9 +1108,9 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
   protected Statement visitCallBasicNode(CallBasicNode node) {
     if (node.isStaticCall()) {
       // Use invokedynamic to bind to the method.  This allows applications using complex
-      // classloader setups to have {call} commands cross classloader boundaries.
-      // TODO(lukes): we could use invokestatic for templates within the same compilation unit which
-      // would require less code and should be easier for the JVM to optimize.
+      // classloader setups to have {call} commands cross classloader boundaries.  It also enables
+      // our stubbing library to intercept all calls.
+      CompiledTemplateMetadata metadata = CompiledTemplateMetadata.create(node);
       return renderCallNode(
           node,
           new CallGenerator() {
@@ -1138,9 +1132,6 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
 
             @Override
             public Optional<DirectPositionalCallGenerator> asDirectPositionalCall() {
-              CompiledTemplateMetadata metadata =
-                  CompiledTemplateMetadata.create(
-                      registry.getBasicTemplateOrElement(node.getCalleeName()));
               if (metadata.hasPositionalSignature()) {
                 return Optional.of(
                     new DirectPositionalCallGenerator() {
@@ -1170,7 +1161,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
                                         Stream.of(node.getCalleeName()),
                                         metadata.templateType().getActualParameters().stream()
                                             .map(p -> p.getName()))
-                                    .toArray(n -> new Object[n]));
+                                    .toArray(Object[]::new));
                           }
                         };
                       }
@@ -1192,7 +1183,7 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
                           renderContext.gen(adapter);
                           adapter.visitInvokeDynamicInsn(
                               "call",
-                              CompiledTemplateMetadata.RENDER_METHOD.getDescriptor(),
+                              metadata.renderMethod().method().getDescriptor(),
                               STATIC_CALL_HANDLE,
                               node.getCalleeName());
                         }
@@ -1613,7 +1604,6 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
     return new MsgCompiler(
         detachState,
         parameterLookup,
-        fields,
         variables,
         appendableExpression,
         new PlaceholderCompiler() {
@@ -1644,7 +1634,12 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
                     node.getSourceLocation(),
                     SanitizedContentKind.TEXT);
             MsgPlaceholderNode placeholderParent = (MsgPlaceholderNode) node.getParent();
-            checkState(placeholderParent.numChildren() == 1);
+            checkState(
+                placeholderParent.numChildren() == 1,
+                "expected placeholder %s (%s) to be the only child of our parent: %s",
+                phname,
+                node,
+                placeholderParent);
             fakeLet.addChild(node); // NOTE: this removes node from placeholderParent
             placeholderParent.addChild(fakeLet);
 
@@ -1662,7 +1657,6 @@ final class SoyNodeCompiler extends AbstractReturningSoyNodeVisitor<Statement> {
   /** Returns a {@link SoyNodeCompiler} identical to this one but with an alternate appendable. */
   SoyNodeCompiler compilerWithNewAppendable(AppendableExpression appendable) {
     return new SoyNodeCompiler(
-        registry,
         analysis,
         innerClasses,
         detachState,

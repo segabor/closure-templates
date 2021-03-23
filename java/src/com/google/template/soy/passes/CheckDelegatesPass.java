@@ -26,14 +26,18 @@ import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.error.SoyErrorKind.StyleAllowance;
 import com.google.template.soy.exprtree.TemplateLiteralNode;
+import com.google.template.soy.exprtree.VarDefn;
+import com.google.template.soy.exprtree.VarDefn.Kind;
+import com.google.template.soy.passes.LocalVariablesNodeVisitor.LocalVariables;
 import com.google.template.soy.shared.internal.DelTemplateSelector;
 import com.google.template.soy.soytree.CallDelegateNode;
 import com.google.template.soy.soytree.CallParamContentNode;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateNode;
-import com.google.template.soy.soytree.TemplateRegistry;
+import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.TemplateType.Parameter;
 import java.util.Collection;
 import java.util.List;
@@ -48,19 +52,14 @@ import javax.annotation.Nullable;
  * templates, and delegate calls).
  *
  */
+@RunAfter(FinalizeTemplateRegistryPass.class)
 final class CheckDelegatesPass implements CompilerFileSetPass {
 
-  private static final SoyErrorKind CALL_TO_DELTEMPLATE =
-      SoyErrorKind.of("''call'' to delegate template ''{0}'' (expected ''delcall'').");
-  private static final SoyErrorKind DELTEMPLATE_IN_EXPRESSION =
-      SoyErrorKind.of(
-          "Delegate template `{0}` not allowed in expression; only basic templates may be used in"
-              + " expressions.");
   private static final SoyErrorKind CROSS_PACKAGE_DELCALL =
       SoyErrorKind.of(
           "Found illegal call from ''{0}'' to ''{1}'', which is in a different delegate package.");
   private static final SoyErrorKind DELCALL_TO_BASIC_TEMPLATE =
-      SoyErrorKind.of("''delcall'' to basic template ''{0}'' (expected ''call'').");
+      SoyErrorKind.of("''delcall'' to basic template defined at ''{0}'' (expected ''call'').");
   private static final SoyErrorKind DELTEMPLATES_WITH_DIFFERENT_PARAM_DECLARATIONS =
       SoyErrorKind.of(
           "Found delegate template with same name ''{0}'' but different param declarations"
@@ -77,21 +76,21 @@ final class CheckDelegatesPass implements CompilerFileSetPass {
               + "compared to the definition at {1}.");
 
   private final ErrorReporter errorReporter;
-  private final Supplier<TemplateRegistry> fileSetTemplateRegistry;
+  private final Supplier<FileSetMetadata> templateRegistryFull;
 
-  CheckDelegatesPass(
-      ErrorReporter errorReporter, Supplier<TemplateRegistry> fileSetTemplateRegistry) {
+  CheckDelegatesPass(ErrorReporter errorReporter, Supplier<FileSetMetadata> templateRegistryFull) {
     this.errorReporter = errorReporter;
-    this.fileSetTemplateRegistry = fileSetTemplateRegistry;
+    this.templateRegistryFull = templateRegistryFull;
   }
 
   @Override
   public Result run(ImmutableList<SoyFileNode> sourceFiles, IdGenerator idGenerator) {
     // Perform checks that only involve templates (uses fileset templateRegistry only, no traversal
     // and no imports context needed).
-    checkTemplates(fileSetTemplateRegistry.get().getDelTemplateSelector());
+    checkTemplates(templateRegistryFull.get().getDelTemplateSelector());
 
     for (SoyFileNode fileNode : sourceFiles) {
+      LocalVariables localVariables = LocalVariablesNodeVisitor.getFileScopeVariables(fileNode);
       for (TemplateNode template : fileNode.getTemplates()) {
         String currTemplateNameForUserMsgs = template.getTemplateNameForUserMsgs();
         String currDelPackageName = template.getDelPackageName();
@@ -99,13 +98,12 @@ final class CheckDelegatesPass implements CompilerFileSetPass {
             SoyTreeUtils.getAllNodesOfType(template, TemplateLiteralNode.class)) {
           checkTemplateLiteralNode(
               templateLiteralNode,
-              fileNode.getTemplateRegistry(),
               currDelPackageName,
               currTemplateNameForUserMsgs);
         }
         for (CallDelegateNode callNode :
             SoyTreeUtils.getAllNodesOfType(template, CallDelegateNode.class)) {
-          checkCallDelegateNode(callNode, fileNode.getTemplateRegistry());
+          checkCallDelegateNode(callNode, localVariables);
         }
       }
     }
@@ -207,22 +205,12 @@ final class CheckDelegatesPass implements CompilerFileSetPass {
 
   private void checkTemplateLiteralNode(
       TemplateLiteralNode node,
-      TemplateRegistry templateRegistry,
       @Nullable String currDelPackageName,
       String currTemplateNameForUserMsgs) {
     String calleeName = node.getResolvedName();
 
-    // Check that the callee name is not a delegate template name.
-    if (templateRegistry.getDelTemplateSelector().hasDelTemplateNamed(calleeName)) {
-      if (node.isSynthetic()) {
-        errorReporter.report(node.getSourceLocation(), CALL_TO_DELTEMPLATE, calleeName);
-      } else {
-        errorReporter.report(node.getSourceLocation(), DELTEMPLATE_IN_EXPRESSION, calleeName);
-      }
-    }
-
     // Check that the callee is either not in a delegate package or in the same delegate package.
-    TemplateMetadata callee = templateRegistry.getBasicTemplateOrElement(calleeName);
+    TemplateMetadata callee = templateRegistryFull.get().getBasicTemplateOrElement(calleeName);
     if (callee != null) {
       String calleeDelPackageName = callee.getDelPackageName();
       if (calleeDelPackageName != null && !calleeDelPackageName.equals(currDelPackageName)) {
@@ -247,13 +235,20 @@ final class CheckDelegatesPass implements CompilerFileSetPass {
     }
   }
 
-  private void checkCallDelegateNode(CallDelegateNode node, TemplateRegistry templateRegistry) {
+  private void checkCallDelegateNode(CallDelegateNode node, LocalVariables localVariables) {
     String delCalleeName = node.getDelCalleeName();
-    TemplateMetadata metadata = templateRegistry.getBasicTemplateOrElement(delCalleeName);
-    // Check that the callee name is not a basic template name.
-    if (metadata != null) {
+    VarDefn collision = localVariables.lookup(delCalleeName);
+    if (collision == null) {
+      return;
+    }
+    if (collision.kind() == Kind.TEMPLATE
+        || (collision.kind() == Kind.IMPORT_VAR
+            && collision.hasType()
+            && collision.type().getKind() == SoyType.Kind.TEMPLATE_TYPE)) {
       errorReporter.report(
-          node.getSourceLocation(), DELCALL_TO_BASIC_TEMPLATE, metadata.getTemplateName());
+          node.getSourceLocation(),
+          DELCALL_TO_BASIC_TEMPLATE,
+          collision.nameLocation().toLineColumnString());
     }
   }
 

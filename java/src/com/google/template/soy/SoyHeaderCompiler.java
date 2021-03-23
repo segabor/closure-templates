@@ -16,29 +16,18 @@
 
 package com.google.template.soy;
 
-import static com.google.common.base.Strings.nullToEmpty;
-import static com.google.common.collect.ImmutableList.toImmutableList;
 import static java.util.stream.Collectors.toList;
 
-import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.template.soy.css.CssMetadata;
 import com.google.template.soy.css.CssRegistry;
-import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.StringNode;
-import com.google.template.soy.exprtree.VarDefn;
-import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.shared.internal.BuiltinFunction;
-import com.google.template.soy.soytree.CallBasicNode;
-import com.google.template.soy.soytree.CallDelegateNode;
-import com.google.template.soy.soytree.CallNode;
-import com.google.template.soy.soytree.CallParamNode;
-import com.google.template.soy.soytree.CallParamValueNode;
 import com.google.template.soy.soytree.CompilationUnit;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
-import com.google.template.soy.soytree.SoyNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
+import com.google.template.soy.soytree.TemplateMetadataSerializer;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.templatecall.TemplateCallMetadata;
 import java.io.File;
@@ -46,7 +35,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.util.LinkedHashSet;
-import java.util.Optional;
 import java.util.Set;
 import java.util.zip.GZIPOutputStream;
 import org.kohsuke.args4j.Option;
@@ -157,83 +145,10 @@ final class SoyHeaderCompiler extends AbstractSoyCompiler {
 
     for (SoyFileNode file : fileSet.getChildren()) {
       for (TemplateNode template : file.getTemplates()) {
-        TemplateCallMetadata.Template.Builder templateMetadata =
-            TemplateCallMetadata.Template.newBuilder()
-                .setName(template.getTemplateName())
-                .setDelpackage(nullToEmpty(template.getDelPackageName()));
-
-        // TODO(b/172278368): incorporate Soy Element Composition (see
-
-        for (CallNode callNode : SoyTreeUtils.getAllNodesOfType(template, CallNode.class)) {
-          ImmutableList<TemplateCallMetadata.ParamArg> callParamArgs =
-              callNode.getChildren().stream()
-                  .map(
-                      node ->
-                          TemplateCallMetadata.ParamArg.newBuilder()
-                              .setKey(node.getKey().identifier())
-                              .setHeaderParamAlias(getHeaderParamAlias(node).orElse(""))
-                              .build())
-                  .collect(toImmutableList());
-          templateMetadata.addCalls(
-              TemplateCallMetadata.TemplateCall.newBuilder()
-                  .setDestTemplateName(getDestTemplateName(callNode))
-                  .setIsDelcall(callNode.getKind() == SoyNode.Kind.CALL_DELEGATE_NODE)
-                  .setDataArg(getDataArgStr(callNode))
-                  .addAllParamArgs(callParamArgs));
-        }
-        templateCallMetadata.addTemplates(templateMetadata.build());
+        templateCallMetadata.addTemplates(template.getTemplateCallMetadata());
       }
     }
     return templateCallMetadata.build();
-  }
-
-  /**
-   * If a call param directly references a header param var, returns the alias of the header param
-   *
-   * <p>If the call param references a local var, this will instead return an empty Optional.
-   *
-   * <p>TODO(b/179912526): resolve array and record accessor pattern (necessary to support
-   * $componentChildren)
-   *
-   * @param callParamNode Node that describes a variable referenced in a template call
-   * @return String representation of the header param, if applicable
-   */
-  private static Optional<String> getHeaderParamAlias(CallParamNode callParamNode) {
-    // only shorthand param ref syntax is supported
-    if (!(callParamNode instanceof CallParamValueNode)) {
-      return Optional.empty();
-    }
-    ExprNode possibleParamRefExpr = ((CallParamValueNode) callParamNode).getExpr().getRoot();
-    if (possibleParamRefExpr.getKind() != ExprNode.Kind.VAR_REF_NODE) {
-      // do not resolve local vars
-      // TODO(b/179912526): support record key assignment to handle $componentChildren usages
-      return Optional.empty();
-    }
-    VarDefn paramRefDef = ((VarRefNode) possibleParamRefExpr).getDefnDecl();
-    if (paramRefDef.kind() != VarDefn.Kind.PARAM) {
-      return Optional.empty();
-    }
-    return Optional.of(paramRefDef.name());
-  }
-
-  private static String getDestTemplateName(CallNode callNode) {
-    switch (callNode.getKind()) {
-      case CALL_BASIC_NODE:
-        CallBasicNode basicNode = ((CallBasicNode) callNode);
-        return basicNode.isStaticCall()
-            ? basicNode.getCalleeName()
-            : basicNode.getCalleeExpr().toSourceString();
-      case CALL_DELEGATE_NODE:
-        return ((CallDelegateNode) callNode).getDelCalleeName();
-      default:
-        throw new IllegalStateException("Unknown CallNode kind");
-    }
-  }
-
-  private static String getDataArgStr(CallNode callNode) {
-    return callNode.getDataExpr() != null
-        ? callNode.getDataExpr().toSourceString()
-        : callNode.isPassingAllData() ? "all" : "";
   }
 
   /**

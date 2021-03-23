@@ -37,6 +37,7 @@ import com.google.template.soy.exprtree.IntegerNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
 import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
+import com.google.template.soy.exprtree.MapLiteralFromListNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
 import com.google.template.soy.exprtree.MethodCallNode;
 import com.google.template.soy.exprtree.NullNode;
@@ -294,6 +295,14 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
     }
 
     return PyExprUtils.convertMapToPyExpr(dict);
+  }
+
+  @Override
+  protected PyExpr visitMapLiteralFromListNode(MapLiteralFromListNode node) {
+    PyExpr listExpr = visit(node.getListExpr());
+    String varName = String.format("MapComprehension%d", node.getNodeId());
+    return PyExprUtils.genPyMapLiteralFromListExpr(
+        listExpr, varName, MapLiteralFromListNode.KEY_STRING, MapLiteralFromListNode.VALUE_STRING);
   }
 
   // -----------------------------------------------------------------------------------------------
@@ -825,8 +834,7 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
     return NONE;
   }
 
-  @Override
-  protected PyExpr visitTemplateLiteralNode(TemplateLiteralNode node) {
+  PyExpr getCalleeExpr(TemplateLiteralNode node) {
     String name;
     TemplateNode template = getTemplateIfInSameFile(node);
     if (template != null) {
@@ -836,13 +844,16 @@ public final class TranslateToPyExprVisitor extends AbstractReturningExprNodeVis
       int secondToLastDotIndex = resolvedName.lastIndexOf('.', resolvedName.lastIndexOf('.') - 1);
       name = resolvedName.substring(secondToLastDotIndex + 1);
     }
-    PyExpr calleeExpr = new PyExpr(name, Integer.MAX_VALUE);
-    return node.isSynthetic()
-        ? calleeExpr
-        : new PyFunctionExprBuilder("runtime.create_template_type")
-            .addArg(calleeExpr)
-            .addArg(new PyStringExpr("'" + node.getResolvedName() + "'"))
-            .asPyExpr();
+    return new PyExpr(name, Integer.MAX_VALUE);
+  }
+
+  @Override
+  protected PyExpr visitTemplateLiteralNode(TemplateLiteralNode node) {
+    PyExpr calleeExpr = getCalleeExpr(node);
+    return new PyFunctionExprBuilder("runtime.create_template_type")
+        .addArg(calleeExpr)
+        .addArg(new PyStringExpr("'" + node.getResolvedName() + "'"))
+        .asPyExpr();
   }
 
   @Nullable

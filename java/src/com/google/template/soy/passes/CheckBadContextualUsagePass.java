@@ -29,19 +29,22 @@ import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
 import com.google.template.soy.soytree.CallNode;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.HtmlContext;
+import com.google.template.soy.soytree.Metadata;
 import com.google.template.soy.soytree.PrintDirectiveNode;
 import com.google.template.soy.soytree.PrintNode;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.TemplateNode;
-import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.types.AnyType;
 import com.google.template.soy.types.SanitizedType;
 import com.google.template.soy.types.SoyType;
 import java.util.List;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 /** Checks if HTML is printed only from HTML context. */
+@RunAfter(FinalizeTemplateRegistryPass.class)
 final class CheckBadContextualUsagePass implements CompilerFileSetPass {
 
   private static final SoyErrorKind CALLS_HTML_FROM_NON_HTML =
@@ -78,20 +81,23 @@ final class CheckBadContextualUsagePass implements CompilerFileSetPass {
       SoyErrorKind.of("In trusted_resource_uri context, only trusted_resource_uri can be called.");
 
   private final ErrorReporter errorReporter;
+  private final Supplier<FileSetMetadata> templateRegistryFull;
 
-  CheckBadContextualUsagePass(ErrorReporter errorReporter) {
+  CheckBadContextualUsagePass(
+      ErrorReporter errorReporter, Supplier<FileSetMetadata> templateRegistryFull) {
     this.errorReporter = errorReporter;
+    this.templateRegistryFull = templateRegistryFull;
   }
 
   @Override
   public Result run(ImmutableList<SoyFileNode> sourceFiles, IdGenerator idGenerator) {
     for (SoyFileNode fileNode : sourceFiles) {
-      TemplateRegistry registry = fileNode.getTemplateRegistry();
       for (TemplateNode template : fileNode.getTemplates()) {
         for (CallNode node : getAllNodesOfType(template, CallNode.class)) {
-          checkCallNode(node, registry, SanitizedContentKind.HTML, CALLS_HTML_FROM_NON_HTML);
-          checkCallNode(node, registry, SanitizedContentKind.CSS, CALLS_CSS_FROM_NON_CSS);
-          Optional<SanitizedContentKind> calleeContentKind = registry.getCallContentKind(node);
+          checkCallNode(node, SanitizedContentKind.HTML, CALLS_HTML_FROM_NON_HTML);
+          checkCallNode(node, SanitizedContentKind.CSS, CALLS_CSS_FROM_NON_CSS);
+          Optional<SanitizedContentKind> calleeContentKind =
+              Metadata.getCallContentKind(templateRegistryFull.get(), node);
           if (isTrustedResourceUri(node.getEscapingDirectives())
               && calleeContentKind.isPresent()
               && calleeContentKind.get() != SanitizedContentKind.TRUSTED_RESOURCE_URI) {
@@ -120,12 +126,10 @@ final class CheckBadContextualUsagePass implements CompilerFileSetPass {
           SanitizedContentKind.CSS, HtmlContext.CSS);
 
   private void checkCallNode(
-      CallNode node,
-      TemplateRegistry registry,
-      SanitizedContentKind contentKind,
-      SoyErrorKind errorKind) {
+      CallNode node, SanitizedContentKind contentKind, SoyErrorKind errorKind) {
     if (!ALLOWED_CONTEXTS.containsEntry(contentKind, node.getHtmlContext())) {
-      Optional<SanitizedContentKind> calleeContentKind = registry.getCallContentKind(node);
+      Optional<SanitizedContentKind> calleeContentKind =
+          Metadata.getCallContentKind(templateRegistryFull.get(), node);
       if (calleeContentKind.orElse(null) == contentKind) {
         errorReporter.report(node.getSourceLocation(), errorKind);
       }

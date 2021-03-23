@@ -42,6 +42,7 @@ import com.google.template.soy.soytree.defn.AttrParam;
 import com.google.template.soy.soytree.defn.TemplateHeaderVarDefn;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.soytree.defn.TemplateStateVar;
+import com.google.template.soy.templatecall.TemplateCallMetadata;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.TemplateImportType;
 import java.util.Collection;
@@ -295,6 +296,9 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
   /** Additional metadata for serialization and verification across templates. */
   private HtmlElementMetadataP templateMetadata = null;
 
+  /** Serialized container for template calls, used for template traversal. */
+  private TemplateCallMetadata.Template templateCallMetadata = null;
+
   // TODO(b/19406885): Remove.
   private final String commandText;
 
@@ -375,6 +379,7 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
     this.commandText = orig.commandText;
     this.openTagLocation = orig.openTagLocation;
     this.templateMetadata = orig.templateMetadata;
+    this.templateCallMetadata = orig.templateCallMetadata;
     this.attributes =
         orig.attributes.stream().map(c -> c.copy(copyState)).collect(toImmutableList());
     this.allowExtraAttributesLoc = orig.allowExtraAttributesLoc;
@@ -582,8 +587,16 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
     this.templateMetadata = metadata;
   }
 
+  public void addTemplateCallMetadata(TemplateCallMetadata.Template callMetadata) {
+    this.templateCallMetadata = callMetadata;
+  }
+
   public HtmlElementMetadataP getHtmlElementMetadata() {
     return templateMetadata;
+  }
+
+  public TemplateCallMetadata.Template getTemplateCallMetadata() {
+    return templateCallMetadata;
   }
 
   /** Returns the injected params from template header. */
@@ -718,11 +731,8 @@ public abstract class TemplateNode extends AbstractBlockCommandNode
   public VarDefn asVarDefn() {
     TemplateVarDefn tmp = varDefn;
     if (tmp == null) {
-      tmp =
-          new TemplateVarDefn(
-              getLocalTemplateSymbol(),
-              getTemplateNameLocation(),
-              TemplateImportType.create(getTemplateName()));
+      TemplateImportType importType = TemplateImportType.create(getTemplateName());
+      tmp = new TemplateVarDefn(getLocalTemplateSymbol(), getTemplateNameLocation(), importType);
       varDefn = tmp;
     }
     return tmp;

@@ -21,10 +21,12 @@ import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.passes.IndirectParamsCalculator.IndirectParamsInfo;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.defn.TemplateHeaderVarDefn;
+import java.util.function.Supplier;
 
 /**
  * Pass for checking that in each template there is no ambiguity between inject parameters and
@@ -32,6 +34,7 @@ import com.google.template.soy.soytree.defn.TemplateHeaderVarDefn;
  *
  * <p>TODO(lukes): rename this pass? find another place for this functionality
  */
+@RunAfter(FinalizeTemplateRegistryPass.class)
 public final class CheckTemplateHeaderVarsPass implements CompilerFileSetPass {
 
   private static final SoyErrorKind INJECTED_PARAM_COLLISION =
@@ -40,16 +43,20 @@ public final class CheckTemplateHeaderVarsPass implements CompilerFileSetPass {
               + " ''{1}''.");
 
   private final ErrorReporter errorReporter;
+  private final Supplier<FileSetMetadata> templateRegistryFull;
 
-  CheckTemplateHeaderVarsPass(ErrorReporter errorReporter) {
+  CheckTemplateHeaderVarsPass(
+      ErrorReporter errorReporter, Supplier<FileSetMetadata> templateRegistryFull) {
     this.errorReporter = errorReporter;
+    this.templateRegistryFull = templateRegistryFull;
   }
 
   @Override
   public Result run(ImmutableList<SoyFileNode> sourceFiles, IdGenerator idGenerator) {
+    IndirectParamsCalculator ipc = new IndirectParamsCalculator(templateRegistryFull.get());
     for (SoyFileNode fileNode : sourceFiles) {
       for (TemplateNode templateNode : fileNode.getTemplates()) {
-        checkTemplate(templateNode, new IndirectParamsCalculator(fileNode.getTemplateRegistry()));
+        checkTemplate(templateNode, ipc);
       }
     }
     return Result.CONTINUE;

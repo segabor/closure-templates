@@ -49,6 +49,7 @@ import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.shared.internal.gencode.GeneratedFile;
 import com.google.template.soy.shared.internal.gencode.JavaGenerationUtils;
 import com.google.template.soy.soytree.AbstractSoyNodeVisitor;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyFileSetNode;
 import com.google.template.soy.soytree.SoyNode;
@@ -56,7 +57,6 @@ import com.google.template.soy.soytree.SoyTreeUtils;
 import com.google.template.soy.soytree.TemplateDelegateNode;
 import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateNode;
-import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.Visibility;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.types.TemplateType;
@@ -144,7 +144,7 @@ public final class GenerateParseInfoVisitor
   private Map<SoyFileNode, String> soyFileToJavaClassNameMap;
 
   /** Registry of all templates in the Soy tree. */
-  private final TemplateRegistry templateRegistry;
+  private final FileSetMetadata fileSetMetadata;
 
   private final SoyFileNodeTransformer soyFileNodeTransformer;
 
@@ -165,9 +165,9 @@ public final class GenerateParseInfoVisitor
    *     "namespace", or "generic".
    */
   public GenerateParseInfoVisitor(
-      String javaPackage, String javaClassNameSource, TemplateRegistry registry) {
+      String javaPackage, String javaClassNameSource, FileSetMetadata registry) {
     this.javaPackage = javaPackage;
-    this.templateRegistry = registry;
+    this.fileSetMetadata = registry;
     switch (javaClassNameSource) {
       case "filename":
         this.javaClassNameSource = JavaClassNameSource.SOY_FILE_NAME;
@@ -185,7 +185,7 @@ public final class GenerateParseInfoVisitor
                 + "\""
                 + " (valid values are \"filename\", \"namespace\", and \"generic\").");
     }
-    soyFileNodeTransformer = new SoyFileNodeTransformer(javaPackage, templateRegistry);
+    soyFileNodeTransformer = new SoyFileNodeTransformer(javaPackage, registry);
   }
 
   @Override
@@ -392,7 +392,7 @@ public final class GenerateParseInfoVisitor
         } else {
           javadocSb.append(", ");
         }
-        javadocSb.append(buildTemplateNameForJavadoc(node, templateRegistry.getMetadata(template)));
+        javadocSb.append(buildTemplateNameForJavadoc(node, fileSetMetadata.getTemplate(template)));
       }
       javadocSb.append('.');
       appendJavadoc(ilb, javadocSb.toString(), false, true);
@@ -477,10 +477,10 @@ public final class GenerateParseInfoVisitor
       }
     }
 
-    TemplateMetadata nodeMetadata = templateRegistry.getMetadata(node);
+    TemplateMetadata nodeMetadata = fileSetMetadata.getTemplate(node);
     // Indirect params.
     IndirectParamsInfo indirectParamsInfo =
-        new IndirectParamsCalculator(templateRegistry).calculateIndirectParams(node);
+        new IndirectParamsCalculator(fileSetMetadata).calculateIndirectParams(node);
 
     @SuppressWarnings("ConstantConditions") // for IntelliJ
     String upperUnderscoreName = convertToUpperUnderscore(node.getLocalTemplateSymbol());
@@ -646,12 +646,11 @@ public final class GenerateParseInfoVisitor
   private static String deprecatedJavaDoc(String content, boolean deprecated, String useInstead) {
     if (deprecated) {
       String instead = "";
-      String link = "";
       if (!Strings.isNullOrEmpty(useInstead)) {
         instead = " Use {@link " + useInstead + "} instead.";
       }
 
-      String dep = "@deprecated" + instead + link;
+      String dep = "@deprecated" + instead;
       return content.isEmpty() ? dep : content + "\n\n" + dep;
     }
     return content;

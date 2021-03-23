@@ -23,12 +23,12 @@ import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.error.SoyErrorKind.StyleAllowance;
 import com.google.template.soy.shared.restricted.SoyPrintDirective;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.HtmlContext;
 import com.google.template.soy.soytree.HtmlOpenTagNode;
 import com.google.template.soy.soytree.HtmlTagNode;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.TemplateNode;
-import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.types.SanitizedType;
 import com.google.template.soy.types.SoyType;
 import com.google.template.soy.types.UnionType;
@@ -59,6 +59,7 @@ public final class ContextualAutoescaper {
 
   private final ErrorReporter errorReporter;
   private final ImmutableList<? extends SoyPrintDirective> printDirectives;
+  private final FileSetMetadata fileSetMetadata;
 
   /**
    * This injected ctor provides a blank constructor that is filled, in normal compiler operation,
@@ -68,9 +69,12 @@ public final class ContextualAutoescaper {
    * @param soyDirectives All SoyPrintDirectives
    */
   public ContextualAutoescaper(
-      ErrorReporter errorReporter, ImmutableList<? extends SoyPrintDirective> soyDirectives) {
+      ErrorReporter errorReporter,
+      ImmutableList<? extends SoyPrintDirective> soyDirectives,
+      FileSetMetadata fileSetMetadata) {
     this.errorReporter = errorReporter;
     this.printDirectives = soyDirectives;
+    this.fileSetMetadata = fileSetMetadata;
   }
 
   /**
@@ -80,14 +84,12 @@ public final class ContextualAutoescaper {
    * <p>The rewriting consists entirely of inserting print directives on print, call and msg nodes.
    *
    * @param sourceFiles The files to rewrite
-   * @param registry The registry to look up information about callees
    */
   public Inferences annotate(ImmutableList<SoyFileNode> sourceFiles) {
     Inferences inferences = new Inferences();
     // Inferences collects all the typing decisions we make and escaping modes we choose.
     for (SoyFileNode file : sourceFiles) {
-      inferences.setTemplateRegistry(
-          file.hasTemplateRegistry() ? file.getTemplateRegistry() : TemplateRegistry.EMPTY);
+      inferences.setTemplateRegistry(fileSetMetadata);
       for (TemplateNode templateNode : file.getTemplates()) {
         try {
           // The author specifies the kind of SanitizedContent to produce, and thus the context in
@@ -109,7 +111,7 @@ public final class ContextualAutoescaper {
 
   public static void annotateAndRewriteHtmlTag(
       HtmlOpenTagNode openTag,
-      TemplateRegistry registry,
+      FileSetMetadata registry,
       IdGenerator idGenerator,
       ErrorReporter errorReporter,
       ImmutableList<? extends SoyPrintDirective> printDirectives) {

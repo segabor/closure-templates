@@ -24,9 +24,10 @@ import com.google.common.collect.ImmutableSetMultimap;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
+import com.google.template.soy.internal.exemptions.NamespaceExemptions;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.TemplateMetadata;
-import com.google.template.soy.soytree.TemplateRegistry;
 import java.util.function.Supplier;
 
 /**
@@ -34,6 +35,7 @@ import java.util.function.Supplier;
  *
  * <p>This is a limited check since conflicts may be in completely separate compilation units.
  */
+@RunAfter(FinalizeTemplateRegistryPass.class)
 final class BanDuplicateNamespacesPass implements CompilerFileSetPass {
   private static final SoyErrorKind DUPLICATE_NAMESPACE =
       SoyErrorKind.of(
@@ -44,10 +46,10 @@ final class BanDuplicateNamespacesPass implements CompilerFileSetPass {
           "Found another files ''{0}'' with the same namespace.  All files should have unique"
               + " namespaces. This will soon become an error.");
   private final ErrorReporter errorReporter;
-  private final Supplier<TemplateRegistry> fileSetTemplateRegistry;
+  private final Supplier<FileSetMetadata> fileSetTemplateRegistry;
 
   BanDuplicateNamespacesPass(
-      ErrorReporter errorReporter, Supplier<TemplateRegistry> fileSetTemplateRegistry) {
+      ErrorReporter errorReporter, Supplier<FileSetMetadata> fileSetTemplateRegistry) {
     this.errorReporter = errorReporter;
     this.fileSetTemplateRegistry = fileSetTemplateRegistry;
   }
@@ -66,10 +68,17 @@ final class BanDuplicateNamespacesPass implements CompilerFileSetPass {
         String filePath = sourceFile.getFilePath().path();
         String otherFiles =
             filePaths.stream().filter(path -> !path.equals(filePath)).collect(joining(", "));
-        errorReporter.report(
-            sourceFile.getNamespaceDeclaration().getSourceLocation(),
-            DUPLICATE_NAMESPACE,
-            otherFiles);
+        if (NamespaceExemptions.isKnownDuplicateNamespace(sourceFile.getNamespace())) {
+          errorReporter.warn(
+              sourceFile.getNamespaceDeclaration().getSourceLocation(),
+              DUPLICATE_NAMESPACE_WARNING,
+              otherFiles);
+        } else {
+          errorReporter.report(
+              sourceFile.getNamespaceDeclaration().getSourceLocation(),
+              DUPLICATE_NAMESPACE,
+              otherFiles);
+        }
       }
     }
     return Result.CONTINUE;

@@ -26,8 +26,8 @@ import com.google.template.soy.jssrc.internal.CanInitOutputVarVisitor;
 import com.google.template.soy.jssrc.internal.JavaScriptValueFactoryImpl;
 import com.google.template.soy.passes.CombineConsecutiveRawTextNodesPass;
 import com.google.template.soy.shared.internal.SoyScopedData;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.SoyFileSetNode;
-import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.types.SoyTypeRegistry;
 import java.util.Collections;
 import java.util.List;
@@ -62,7 +62,7 @@ public class IncrementalDomSrcMain {
    */
   public List<String> genJsSrc(
       SoyFileSetNode soyTree,
-      TemplateRegistry registry,
+      FileSetMetadata registry,
       SoyIncrementalDomSrcOptions options,
       ErrorReporter errorReporter) {
 
@@ -89,18 +89,13 @@ public class IncrementalDomSrcMain {
       // some of the above passes may slice up raw text nodes, recombine them.
       new CombineConsecutiveRawTextNodesPass().run(soyTree);
       return createVisitor(
-              incrementalJSSrcOptions,
-              registry,
-              typeRegistry,
-              inScope.getBidiGlobalDir(),
-              errorReporter)
+              incrementalJSSrcOptions, typeRegistry, inScope.getBidiGlobalDir(), errorReporter)
           .gen(soyTree, registry, errorReporter);
     }
   }
 
   static GenIncrementalDomCodeVisitor createVisitor(
       final SoyJsSrcOptions options,
-      final TemplateRegistry registry,
       SoyTypeRegistry typeRegistry,
       BidiGlobalDir dir,
       ErrorReporter errorReporter) {
@@ -118,7 +113,7 @@ public class IncrementalDomSrcMain {
       @Override
       public IncrementalDomGenCallCodeUtils get() {
         return new IncrementalDomGenCallCodeUtils(
-            registry, delTemplateNamer, isComputableAsJsExprsVisitor, factory);
+            delTemplateNamer, isComputableAsJsExprsVisitor, factory);
       }
     }
     GenCallCodeUtilsSupplier supplier = new GenCallCodeUtilsSupplier();

@@ -25,7 +25,9 @@ import com.google.template.soy.jbcsrc.restricted.TypeInfo;
 import com.google.template.soy.jbcsrc.shared.CompiledTemplate;
 import com.google.template.soy.jbcsrc.shared.Names;
 import com.google.template.soy.jbcsrc.shared.RenderContext;
+import com.google.template.soy.soytree.CallBasicNode;
 import com.google.template.soy.soytree.TemplateMetadata;
+import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.types.TemplateType;
 import java.util.Optional;
 import java.util.stream.Stream;
@@ -44,20 +46,21 @@ abstract class CompiledTemplateMetadata {
    * The {@link Method} signature of the {@link
    * CompiledTemplate#render(SoyRecord,SoyRecord,AdvisingAppendable, RenderContext)} method.
    */
-  static final Method RENDER_METHOD =
-      new Method(
-          "render",
-          Type.getMethodDescriptor(
-              BytecodeUtils.RENDER_RESULT_TYPE,
-              BytecodeUtils.SOY_RECORD_TYPE,
-              BytecodeUtils.SOY_RECORD_TYPE,
-              BytecodeUtils.LOGGING_ADVISING_APPENDABLE_TYPE,
-              BytecodeUtils.RENDER_CONTEXT_TYPE));
+  static final Method createRenderMethod(String methodName) {
+    return new Method(
+        methodName,
+        Type.getMethodDescriptor(
+            BytecodeUtils.RENDER_RESULT_TYPE,
+            BytecodeUtils.SOY_RECORD_TYPE,
+            BytecodeUtils.SOY_RECORD_TYPE,
+            BytecodeUtils.LOGGING_ADVISING_APPENDABLE_TYPE,
+            BytecodeUtils.RENDER_CONTEXT_TYPE));
+  }
 
   /** Generates a method signature for a positional style call to the given template. */
-  private static Method createPositionalRenderMethod(TemplateType templateType) {
+  private static Method createPositionalRenderMethod(String methodName, TemplateType templateType) {
     return new Method(
-        "render",
+        methodName,
         Type.getMethodDescriptor(
             BytecodeUtils.RENDER_RESULT_TYPE,
             Stream.concat(
@@ -71,13 +74,21 @@ abstract class CompiledTemplateMetadata {
   }
 
   /** The {@link Method} signature of the {@code static CompiledTemplate template()} method. */
-  private static final Method TEMPLATE_METHOD =
-      new Method("template", Type.getMethodDescriptor(BytecodeUtils.COMPILED_TEMPLATE_TYPE));
+  private static final Method createTemplateMethod(String methodName) {
+    return new Method(methodName, Type.getMethodDescriptor(BytecodeUtils.COMPILED_TEMPLATE_TYPE));
+  }
 
-  static CompiledTemplateMetadata create(TemplateMetadata metadata) {
-    String className = Names.javaClassNameFromSoyTemplateName(metadata.getTemplateName());
+  static CompiledTemplateMetadata create(TemplateNode node) {
+    return create(node.getTemplateName(), TemplateMetadata.buildTemplateType(node));
+  }
+
+  static CompiledTemplateMetadata create(CallBasicNode callNode) {
+    return create(callNode.getCalleeName(), callNode.getStaticType());
+  }
+
+  private static CompiledTemplateMetadata create(String templateName, TemplateType templateType) {
+    String className = Names.javaClassNameFromSoyTemplateName(templateName);
     TypeInfo type = TypeInfo.createClass(className);
-    TemplateType templateType = metadata.getTemplateType();
     // Decide whether or not to use a positional style call signature.
     // Positional parameters are not possible to do if there are indirect calls since those may
     // require parameters not declared in our signature.
@@ -85,19 +96,26 @@ abstract class CompiledTemplateMetadata {
     // If the template is a Soy element, then we also need the `opt_data` object.
     boolean hasPositionalSignature =
         templateType.getDataAllCallSituations().isEmpty()
+            // Skip positional signatures when there are no parameters.  This is not necessary for
+            // correctness however in this case there is very little benefit in the positional
+            // overload and so we can generate one fewer method by just not generating it.
+            && !templateType.getActualParameters().isEmpty()
             // only basic/element templates are supported for now.
             // deltemplates require the object style to support the relatively weak type checking we
             // perform on them.
             && templateType.getTemplateKind() != TemplateType.TemplateKind.DELTEMPLATE;
-
+    String methodName = Names.renderMethodNameFromSoyTemplateName(templateName);
     return new AutoValue_CompiledTemplateMetadata(
-        MethodRef.createStaticMethod(type, RENDER_METHOD).asNonNullable(),
+        MethodRef.createStaticMethod(type, createRenderMethod(methodName)).asNonNullable(),
         Optional.ofNullable(
             hasPositionalSignature
-                ? MethodRef.createStaticMethod(type, createPositionalRenderMethod(templateType))
+                ? MethodRef.createStaticMethod(
+                        type, createPositionalRenderMethod(methodName, templateType))
                     .asNonNullable()
                 : null),
-        MethodRef.createStaticMethod(type, TEMPLATE_METHOD).asCheap().asNonNullable(),
+        MethodRef.createStaticMethod(type, createTemplateMethod(methodName))
+            .asCheap()
+            .asNonNullable(),
         templateType,
         type);
   }

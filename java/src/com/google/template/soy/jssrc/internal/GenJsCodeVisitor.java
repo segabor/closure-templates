@@ -80,6 +80,7 @@ import com.google.template.soy.soytree.CallNode;
 import com.google.template.soy.soytree.CallParamContentNode;
 import com.google.template.soy.soytree.CallParamNode;
 import com.google.template.soy.soytree.DebuggerNode;
+import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.ForNode;
 import com.google.template.soy.soytree.ForNonemptyNode;
 import com.google.template.soy.soytree.IfCondNode;
@@ -105,7 +106,6 @@ import com.google.template.soy.soytree.TemplateDelegateNode;
 import com.google.template.soy.soytree.TemplateElementNode;
 import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateNode;
-import com.google.template.soy.soytree.TemplateRegistry;
 import com.google.template.soy.soytree.VeLogNode;
 import com.google.template.soy.soytree.Visibility;
 import com.google.template.soy.soytree.defn.TemplateParam;
@@ -177,7 +177,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
   /** The assistant visitor for msgs used for the current template (lazily initialized). */
   @VisibleForTesting GenJsCodeVisitorAssistantForMsgs assistantForMsgs;
 
-  protected TemplateRegistry templateRegistry;
+  protected FileSetMetadata fileSetMetadata;
 
   private final SoyTypeRegistry typeRegistry;
 
@@ -213,8 +213,8 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
   }
 
   public List<String> gen(
-      SoyFileSetNode node, TemplateRegistry registry, ErrorReporter errorReporter) {
-    this.templateRegistry = checkNotNull(registry);
+      SoyFileSetNode node, FileSetMetadata registry, ErrorReporter errorReporter) {
+    this.fileSetMetadata = checkNotNull(registry);
     this.errorReporter = checkNotNull(errorReporter);
     try {
       jsFilesContents = new ArrayList<>();
@@ -224,7 +224,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       visit(node);
       return jsFilesContents;
     } finally {
-      this.templateRegistry = null;
+      this.fileSetMetadata = null;
       this.errorReporter = null;
     }
   }
@@ -254,9 +254,9 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
   /** TODO: tests should use {@link #gen} instead. */
   @VisibleForTesting
-  void visitForTesting(SoyNode node, TemplateRegistry registry, ErrorReporter errorReporter) {
+  void visitForTesting(SoyNode node, FileSetMetadata registry, ErrorReporter errorReporter) {
     this.errorReporter = errorReporter;
-    this.templateRegistry = registry;
+    this.fileSetMetadata = registry;
     visit(node);
   }
 
@@ -673,7 +673,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
   @Override
   protected void visitTemplateNode(TemplateNode node) {
     generatePositionalParamsSignature =
-        GenCallCodeUtils.hasPositionalSignature(templateRegistry.getMetadata(node));
+        GenCallCodeUtils.hasPositionalSignature(TemplateMetadata.buildTemplateType(node));
     String templateName = node.getTemplateName();
     String partialName = node.getLocalTemplateSymbol();
     String alias;
@@ -801,8 +801,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
         node.getParams().stream().collect(toImmutableMap(TemplateParam::name, param -> param));
     // Use the templatemetadata so we generate parameters in the correct order as
     // expected by callers, this is defined by TemplateMetadata.
-    TemplateMetadata metadata = templateRegistry.getMetadata(node);
-    return metadata.getTemplateType().getActualParameters().stream()
+    return TemplateMetadata.buildTemplateType(node).getActualParameters().stream()
         .map(p -> paramsByName.get(p.getName()))
         .collect(toImmutableList());
   }
@@ -845,7 +844,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       // TODO(b/11787791): make the checkTypes suppression more fine grained.
       jsDocBuilder.addParameterizedAnnotation("suppress", "checkTypes");
     } else {
-      if (templateRegistry.getMetadata(node).getTemplateType().getActualParameters().stream()
+      if (TemplateMetadata.buildTemplateType(node).getActualParameters().stream()
           .anyMatch(TemplateType.Parameter::isImplicit)) {
         jsDocBuilder.addParameterizedAnnotation("suppress", "missingProperties");
       }
@@ -1655,7 +1654,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     // Also note that indirect param types may not be inferrable if the target
     // is not in the current compilation file set.
     IndirectParamsInfo ipi =
-        new IndirectParamsCalculator(templateRegistry).calculateIndirectParams(node);
+        new IndirectParamsCalculator(fileSetMetadata).calculateIndirectParams(node);
     // If there are any calls outside of the file set, then we can't know
     // the complete types of any indirect params. In such a case, we can simply
     // omit the indirect params from the function type signature, since record
