@@ -31,6 +31,12 @@ export const patchOuter = incrementaldom.createPatchOuter(patchConfig);
 /** PatchInner using Soy-IDOM semantics. */
 export const patch = patchInner;
 
+/**
+ * Attributes object used only for Soy users. If using a mix of Soy and
+ * non-Soy, isolate usages of attributes using your own attributes object.
+ */
+export const attributes = incrementaldom.createAttributeMap();
+
 interface IdomRendererApi {
   open(nameOrCtor: string, key?: string): void|HTMLElement;
   openSSR(nameOrCtor: string, key?: string, data?: unknown): boolean;
@@ -217,11 +223,11 @@ export class IncrementalDomRenderer implements IdomRendererApi {
   }
 
   applyAttrs() {
-    incrementaldom.applyAttrs();
+    incrementaldom.applyAttrs(attributes);
   }
 
   applyStatics(statics: incrementaldom.Statics) {
-    incrementaldom.applyStatics(statics);
+    incrementaldom.applyStatics(statics, attributes);
   }
 
   /**
@@ -430,7 +436,7 @@ export class FalsinessRenderer implements IdomRendererApi {
     return null;
   }
   verifyLogOnly(logOnly: boolean): boolean {
-    throw new Error('Cannot evaluate VE functions in conditions.');
+    return logOnly;
   }
   evalLoggingFunction(name: string, args: Array<{}>, placeHolder: string):
       string {

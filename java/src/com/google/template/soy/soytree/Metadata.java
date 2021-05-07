@@ -41,6 +41,7 @@ import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.TemplateType;
 import com.google.template.soy.types.TemplateType.TemplateKind;
 import com.google.template.soy.types.UnionType;
+import com.google.template.soy.types.UnknownType;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -438,6 +439,11 @@ public final class Metadata {
           .collect(toImmutableList());
     }
 
+    @Override
+    public SoyFileKind getSoyFileKind() {
+      return kind();
+    }
+
     @Memoized
     @Override
     protected ImmutableMap<String, TemplateMetadata> templateIndex() {
@@ -522,7 +528,11 @@ public final class Metadata {
               .collect(
                   toImmutableMap(
                       c -> c.getVar().name(),
-                      c -> ConstantImpl.of(c.getVar().name(), c.getVar().type()),
+                      c ->
+                          ConstantImpl.of(
+                              c.getVar().name(),
+                              // Type will not be set if type checking is off.
+                              c.getVar().typeOrDefault(UnknownType.getInstance())),
                       (t1, t2) -> t1 /* Will be reported as error elsewhere. */));
 
       ImmutableList.Builder<TemplateMetadata> templates = ImmutableList.builder();
@@ -562,6 +572,11 @@ public final class Metadata {
     @Override
     public String getNamespace() {
       return namespace;
+    }
+
+    @Override
+    public SoyFileKind getSoyFileKind() {
+      return SoyFileKind.SRC;
     }
   }
 
@@ -631,6 +646,11 @@ public final class Metadata {
     @Override
     public String getNamespace() {
       return primary.getNamespace();
+    }
+
+    @Override
+    public SoyFileKind getSoyFileKind() {
+      return primary.getSoyFileKind();
     }
   }
 

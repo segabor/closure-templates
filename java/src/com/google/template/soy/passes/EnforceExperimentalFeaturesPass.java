@@ -22,9 +22,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
-import com.google.template.soy.exprtree.MapLiteralFromListNode;
 import com.google.template.soy.exprtree.OperatorNodes.AssertNonNullOpNode;
-import com.google.template.soy.soytree.ConstNode;
 import com.google.template.soy.soytree.SoyFileNode;
 import com.google.template.soy.soytree.SoyTreeUtils;
 
@@ -42,12 +40,6 @@ final class EnforceExperimentalFeaturesPass implements CompilerFilePass {
       SoyErrorKind.of(
           "Non-null assertion operator not supported, use the ''checkNotNull'' function instead.");
 
-  private static final SoyErrorKind CONSTANT_NOT_GA =
-      SoyErrorKind.of("'{'const'}' is not available for general use.");
-
-  private static final SoyErrorKind LIST_TO_MAP_CONSTRUCTOR_NOT_GA =
-      SoyErrorKind.of("The map($list) syntax is not available for general use.");
-
   private final ImmutableSet<String> features;
   private final ErrorReporter reporter;
 
@@ -61,24 +53,11 @@ final class EnforceExperimentalFeaturesPass implements CompilerFilePass {
     // TOOD(b/22389927): enable the non-null assertion operator once we're ready to use for
     // fixing proto nullability.
     if (!features.contains("enableNonNullAssertionOperator")) {
-      for (AssertNonNullOpNode assertNonNullOpNode :
-          SoyTreeUtils.getAllNodesOfType(file, AssertNonNullOpNode.class)) {
-        reporter.report(assertNonNullOpNode.getSourceLocation(), NON_NULL_ASSERTION_BANNED);
-      }
-    }
-
-    if (!features.contains("enableConstants")) {
-      SoyTreeUtils.allNodesOfType(file, ConstNode.class)
+      SoyTreeUtils.allNodesOfType(file, AssertNonNullOpNode.class)
           .forEach(
-              closeTagNode -> reporter.report(closeTagNode.getSourceLocation(), CONSTANT_NOT_GA));
-    }
-
-    if (!features.contains("enableListToMapConstructor")) {
-      SoyTreeUtils.allNodesOfType(file, MapLiteralFromListNode.class)
-          .forEach(
-              closeTagNode ->
+              assertNonNullOpNode ->
                   reporter.report(
-                      closeTagNode.getSourceLocation(), LIST_TO_MAP_CONSTRUCTOR_NOT_GA));
+                      assertNonNullOpNode.getSourceLocation(), NON_NULL_ASSERTION_BANNED));
     }
   }
 }

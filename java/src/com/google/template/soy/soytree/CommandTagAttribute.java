@@ -119,6 +119,9 @@ public final class CommandTagAttribute {
     checkArgument(
         key.type() == Identifier.Type.SINGLE_IDENT, "expected a single identifier, got: %s", key);
     this.key = checkNotNull(key);
+    checkArgument(
+        quoteStyle == QuoteStyle.SINGLE || quoteStyle == QuoteStyle.DOUBLE,
+        "CommandTagAttribute quote style must be SINGLE or DOUBLE");
     this.quoteStyle = checkNotNull(quoteStyle);
     this.sourceLocation = wholeAttributeLocation;
     this.valueLocation = checkNotNull(valueLocation);
@@ -135,6 +138,9 @@ public final class CommandTagAttribute {
         key.type() == Identifier.Type.SINGLE_IDENT, "expected a single identifier, got: %s", key);
     checkArgument(valueExprList.size() >= 1);
     this.key = checkNotNull(key);
+    checkArgument(
+        quoteStyle == QuoteStyle.SINGLE || quoteStyle == QuoteStyle.DOUBLE,
+        "CommandTagAttribute quote style must be SINGLE or DOUBLE");
     this.quoteStyle = checkNotNull(quoteStyle);
     this.sourceLocation = sourceLocation;
     this.valueLocation =
@@ -358,7 +364,7 @@ public final class CommandTagAttribute {
   public String toString() {
     String valueStr =
         (value != null)
-            ? BaseUtils.escapeToSoyString(value, false, quoteStyle)
+            ? BaseUtils.escapeToWrappedSoyString(value, false, quoteStyle)
             : quoteStyle.getQuoteChar()
                 + SoyTreeUtils.toSourceString(valueExprList)
                 + quoteStyle.getQuoteChar();

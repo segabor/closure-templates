@@ -971,7 +971,7 @@ public final class SoyFileSet {
           ServerCompilationPrimitives primitives = compileForServerRendering();
           try {
             BytecodeCompiler.compileToJar(
-                primitives.soyTree, errorReporter, typeRegistry, jarTarget);
+                primitives.soyTree, errorReporter, typeRegistry, jarTarget, primitives.registry);
             if (srcJarTarget.isPresent()) {
               BytecodeCompiler.writeSrcJar(
                   primitives.soyTree, soyFileSuppliers, srcJarTarget.get());
@@ -1100,7 +1100,7 @@ public final class SoyFileSet {
             ParseResult result = parse();
             throwIfErrorsPresent();
             return new PySrcMain(scopedData.enterable())
-                .genPyFiles(result.fileSet(), pySrcOptions, errorReporter);
+                .genPyFiles(result.fileSet(), result.registry(), pySrcOptions, errorReporter);
           } catch (IOException e) {
             throw new RuntimeException(e);
           }

@@ -80,6 +80,7 @@ java_library(
     srcs = SHARED_RUNTIME_SRCS,
     deps = [
         "//java/src/com/google/template/soy/data",
+        "//java/src/com/google/template/soy/exprtree",
     ],
 )
 

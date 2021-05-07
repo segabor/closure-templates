@@ -22,12 +22,14 @@ import static java.util.stream.Collectors.joining;
 
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.template.soy.base.SourceFilePath;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.basetree.CopyState;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.soytree.defn.ImportedVar;
 import com.google.template.soy.types.SoyType;
 import java.util.List;
+import java.util.function.BiConsumer;
 
 /**
  * Node representing a 'import' statement with a value expression.
@@ -61,6 +63,10 @@ public final class ImportNode extends AbstractSoyNode {
     this.identifiers = ImmutableList.copyOf(defns);
     this.path = path;
     this.importType = ImportType.UNKNOWN;
+
+    for (ImportedVar defn : identifiers) {
+      defn.onParentInit(getSourceFilePath());
+    }
   }
 
   /**
@@ -104,6 +110,10 @@ public final class ImportNode extends AbstractSoyNode {
 
   public String getPath() {
     return path.getValue();
+  }
+
+  public SourceFilePath getSourceFilePath() {
+    return SourceFilePath.create(path.getValue());
   }
 
   /**
@@ -156,5 +166,21 @@ public final class ImportNode extends AbstractSoyNode {
                   .collect(joining(",")));
     }
     return String.format("import %s'%s'", exprs, path.getValue());
+  }
+
+  /**
+   * Visits all {@link ImportedVar} descending from this import node. {@code visitor} is called once
+   * for each var. The second argument to {@code visitor} is the (nullable) type of the parent var,
+   * or the {@link #getModuleType()} for a top level var.
+   */
+  public void visitVars(BiConsumer<ImportedVar, SoyType> visitor) {
+    getIdentifiers().forEach(id -> visitVars(id, getModuleType(), visitor));
+  }
+
+  private static void visitVars(
+      ImportedVar id, SoyType parentType, BiConsumer<ImportedVar, SoyType> visitor) {
+    visitor.accept(id, parentType);
+    id.getNestedTypes()
+        .forEach(nestedType -> visitVars(id.nested(nestedType), id.typeOrDefault(null), visitor));
   }
 }

@@ -45,8 +45,7 @@ import static com.google.template.soy.jssrc.internal.JsRuntime.sanitizedContentO
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.base.Function;
 import com.google.common.collect.ImmutableList;
-import com.google.common.collect.SetMultimap;
-import com.google.common.collect.TreeMultimap;
+import com.google.template.soy.base.SourceFilePath;
 import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.base.internal.SanitizedContentKind;
 import com.google.template.soy.base.internal.UniqueNameGenerator;
@@ -57,7 +56,6 @@ import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.exprtree.Operator;
-import com.google.template.soy.exprtree.TemplateLiteralNode;
 import com.google.template.soy.jssrc.SoyJsSrcOptions;
 import com.google.template.soy.jssrc.dsl.CodeChunk;
 import com.google.template.soy.jssrc.dsl.CodeChunkUtils;
@@ -73,12 +71,12 @@ import com.google.template.soy.passes.IndirectParamsCalculator;
 import com.google.template.soy.passes.IndirectParamsCalculator.IndirectParamsInfo;
 import com.google.template.soy.passes.ShouldEnsureDataIsDefinedVisitor;
 import com.google.template.soy.shared.RangeArgs;
-import com.google.template.soy.shared.internal.FindCalleesNotInFile;
 import com.google.template.soy.soytree.AbstractSoyNodeVisitor;
 import com.google.template.soy.soytree.CallDelegateNode;
 import com.google.template.soy.soytree.CallNode;
 import com.google.template.soy.soytree.CallParamContentNode;
 import com.google.template.soy.soytree.CallParamNode;
+import com.google.template.soy.soytree.ConstNode;
 import com.google.template.soy.soytree.DebuggerNode;
 import com.google.template.soy.soytree.FileSetMetadata;
 import com.google.template.soy.soytree.ForNode;
@@ -86,6 +84,8 @@ import com.google.template.soy.soytree.ForNonemptyNode;
 import com.google.template.soy.soytree.IfCondNode;
 import com.google.template.soy.soytree.IfElseNode;
 import com.google.template.soy.soytree.IfNode;
+import com.google.template.soy.soytree.ImportNode;
+import com.google.template.soy.soytree.ImportNode.ImportType;
 import com.google.template.soy.soytree.KeyNode;
 import com.google.template.soy.soytree.LetContentNode;
 import com.google.template.soy.soytree.LetValueNode;
@@ -108,11 +108,13 @@ import com.google.template.soy.soytree.TemplateMetadata;
 import com.google.template.soy.soytree.TemplateNode;
 import com.google.template.soy.soytree.VeLogNode;
 import com.google.template.soy.soytree.Visibility;
+import com.google.template.soy.soytree.defn.ConstVar;
 import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.soytree.defn.TemplateStateVar;
 import com.google.template.soy.types.AnyType;
 import com.google.template.soy.types.NullType;
 import com.google.template.soy.types.SoyType;
+import com.google.template.soy.types.SoyType.Kind;
 import com.google.template.soy.types.SoyTypeRegistry;
 import com.google.template.soy.types.SoyTypes;
 import com.google.template.soy.types.StringType;
@@ -182,6 +184,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
   private final SoyTypeRegistry typeRegistry;
 
   protected ErrorReporter errorReporter;
+  protected SoyToJsVariableMappings topLevelSymbols;
   protected TranslationContext templateTranslationContext;
 
   protected List<Statement> staticVarDeclarations;
@@ -257,6 +260,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
   void visitForTesting(SoyNode node, FileSetMetadata registry, ErrorReporter errorReporter) {
     this.errorReporter = errorReporter;
     this.fileSetMetadata = registry;
+    this.topLevelSymbols = SoyToJsVariableMappings.newEmpty();
     visit(node);
   }
 
@@ -388,6 +392,13 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
         .append(node.getFilePath().path())
         .append('\n');
 
+    if (node.getConstants().isEmpty() && node.getTemplates().isEmpty()) {
+      // Special support for empty Soy files created with NamespaceDeclaration.EMPTY.
+      jsFilesContents.add(file.toString());
+      jsCodeBuilder = null;
+      return;
+    }
+
     // Output a section containing optionally-parsed compiler directives in comments. Since these
     // are comments, they are not controlled by an option, and will be removed by minifiers that do
     // not understand them.
@@ -411,7 +422,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     jsCodeBuilder = createCodeBuilder();
 
     if (jsSrcOptions.shouldGenerateGoogModules()) {
-      templateAliases = AliasUtils.createTemplateAliases(node);
+      templateAliases = AliasUtils.createTemplateAliases(node, fileSetMetadata);
 
       addCodeToDeclareGoogModule(file, node);
       addCodeToRequireGoogModules(node);
@@ -456,6 +467,20 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
                 .dotAccess(entry.getKey())
                 .asStatement());
       }
+    }
+
+    topLevelSymbols = SoyToJsVariableMappings.newEmpty();
+
+    for (ImportNode importNode : node.getImports()) {
+      visit(importNode);
+    }
+    UniqueNameGenerator nameGenerator = JsSrcNameGenerators.forLocalVariables();
+    CodeChunk.Generator codeGenerator = CodeChunk.Generator.create(nameGenerator);
+    templateTranslationContext =
+        TranslationContext.of(topLevelSymbols, codeGenerator, nameGenerator);
+    for (ConstNode constant : node.getConstants()) {
+      jsCodeBuilder.appendLine().appendLine();
+      visit(constant);
     }
 
     // Add code for each template.
@@ -550,33 +575,20 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
    * @param soyFile The node we're visiting.
    */
   private void addCodeToRequireGoogModules(SoyFileNode soyFile) {
-    // Get all the unique calls in the file.
-    Set<String> calls = new HashSet<>();
-    for (TemplateLiteralNode templateLiteralNode :
-        SoyTreeUtils.getAllNodesOfType(soyFile, TemplateLiteralNode.class)) {
-      calls.add(templateLiteralNode.getResolvedName());
-    }
-
-    // Map all the unique namespaces to the templates in those namespaces.
-    SetMultimap<String, String> namespaceToTemplates = TreeMultimap.create();
-    for (String call : calls) {
-      namespaceToTemplates.put(call.substring(0, call.lastIndexOf('.')), call);
-    }
-
-    for (String namespace : namespaceToTemplates.keySet()) {
-      // Skip the file's own namespace as there is nothing to import/alias.
-      if (namespace.equals(soyFile.getNamespace())) {
-        continue;
-      }
-
-      // Add a require of the module
-      String namespaceAlias = templateAliases.getNamespaceAlias(namespace);
-      String importNamespace = getGoogModuleNamespace(namespace);
-      jsCodeBuilder.append(
-          VariableDeclaration.builder(namespaceAlias)
-              .setRhs(GOOG_REQUIRE.call(stringLiteral(importNamespace)))
-              .build());
-    }
+    soyFile.getImports().stream()
+        .filter(i -> i.getImportType() == ImportType.TEMPLATE)
+        .map(i -> namespaceForPath(i.getSourceFilePath()))
+        .distinct()
+        .sorted()
+        .forEach(
+            calleeNamespace -> {
+              String namespaceAlias = templateAliases.getNamespaceAlias(calleeNamespace);
+              String importNamespace = getGoogModuleNamespace(calleeNamespace);
+              jsCodeBuilder.append(
+                  VariableDeclaration.builder(namespaceAlias)
+                      .setRhs(GOOG_REQUIRE.call(stringLiteral(importNamespace)))
+                      .build());
+            });
   }
 
   private void addJsDocToProvideDelTemplates(JsDoc.Builder header, SoyFileNode soyFile) {
@@ -610,22 +622,13 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
    * @param soyFile The node we're visiting.
    */
   private void addCodeToRequireSoyNamespaces(SoyFileNode soyFile) {
-
-    String prevCalleeNamespace = null;
-    Set<String> calleeNamespaces = new TreeSet<>();
-    for (TemplateLiteralNode templateLiteralNode :
-        FindCalleesNotInFile.findCalleesNotInFile(soyFile)) {
-      String calleeNotInFile = templateLiteralNode.getResolvedName();
-      int lastDotIndex = calleeNotInFile.lastIndexOf('.');
-      calleeNamespaces.add(calleeNotInFile.substring(0, lastDotIndex));
-    }
-
-    for (String calleeNamespace : calleeNamespaces) {
-      if (calleeNamespace.length() > 0 && !calleeNamespace.equals(prevCalleeNamespace)) {
-        jsCodeBuilder.addGoogRequire(GoogRequire.create(calleeNamespace));
-        prevCalleeNamespace = calleeNamespace;
-      }
-    }
+    soyFile.getImports().stream()
+        .filter(i -> i.getImportType() == ImportType.TEMPLATE)
+        .map(i -> namespaceForPath(i.getSourceFilePath()))
+        .distinct()
+        .sorted()
+        .forEach(
+            calleeNamespace -> jsCodeBuilder.addGoogRequire(GoogRequire.create(calleeNamespace)));
   }
 
   /**
@@ -638,6 +641,76 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     return node.getContentKind() == SanitizedContentKind.TEXT
         ? "string"
         : "!" + NodeContentKinds.toJsSanitizedContentCtorName(node.getContentKind());
+  }
+
+  @Override
+  protected void visitImportNode(ImportNode node) {
+    node.visitVars(
+        (var, parentType) -> {
+          if (parentType != null
+              && parentType.getKind() == Kind.TEMPLATE_MODULE
+              && var.type().getKind() != Kind.TEMPLATE_TYPE) {
+            // This is a constant import.
+            String namespace = namespaceForPath(node.getSourceFilePath());
+            if (jsSrcOptions.shouldGenerateGoogModules()) {
+              namespace = templateAliases.getNamespaceAlias(namespace);
+            }
+            topLevelSymbols.put(
+                var.name(),
+                dottedIdNoRequire(namespace + "." + var.getSymbol())
+                    .call(JsRuntime.SOY_INTERNAL_CALL_MARKER));
+          }
+        });
+  }
+
+  @Override
+  protected void visitConstNode(ConstNode node) {
+    SoyFileNode file = node.getNearestAncestor(SoyFileNode.class);
+    ConstVar var = node.getVar();
+
+    ImmutableList.Builder<Statement> declarations = ImmutableList.builder();
+
+    JsDoc jsDoc =
+        addInternalCallerParam(
+                JsDoc.builder()
+                    .addAnnotation(node.isExported() ? "public" : "private")
+                    .addParameterizedAnnotation(
+                        "return", getJsTypeForParamForDeclaration(var.type()).typeExpr()))
+            .build();
+
+    String partialName = var.name();
+    String alias =
+        jsSrcOptions.shouldGenerateGoogModules()
+            ? partialName
+            : file.getNamespace() + "." + partialName;
+
+    Expression aliasExp = dottedIdNoRequire(alias);
+
+    Expression constantGetterFunction =
+        Expression.function(
+            jsDoc,
+            Statement.of(
+                JsRuntime.SOY_ARE_YOU_AN_INTERNAL_CALLER
+                    .call(id(StandardNames.ARE_YOU_AN_INTERNAL_CALLER))
+                    .asStatement(),
+                returnValue(translateExpr(node.getExpr()))));
+
+    if (jsSrcOptions.shouldGenerateGoogModules()) {
+      declarations.add(
+          VariableDeclaration.builder(alias)
+              .setJsDoc(jsDoc)
+              .setRhs(constantGetterFunction)
+              .build());
+      if (node.isExported()) {
+        declarations.add(assign(JsRuntime.EXPORTS.dotAccess(partialName), aliasExp));
+      }
+    } else {
+      declarations.add(Statement.assign(aliasExp, constantGetterFunction, jsDoc));
+    }
+
+    jsCodeBuilder.append(Statement.of(declarations.build()));
+
+    topLevelSymbols.put(var.name(), aliasExp.call(JsRuntime.SOY_INTERNAL_CALL_MARKER));
   }
 
   /**
@@ -691,7 +764,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
     CodeChunk.Generator codeGenerator = CodeChunk.Generator.create(nameGenerator);
     templateTranslationContext =
         TranslationContext.of(
-            SoyToJsVariableMappings.forNewTemplate(), codeGenerator, nameGenerator);
+            SoyToJsVariableMappings.startingWith(topLevelSymbols), codeGenerator, nameGenerator);
     genJsExprsVisitor =
         genJsExprsVisitorFactory.create(templateTranslationContext, templateAliases, errorReporter);
     assistantForMsgs = null;
@@ -806,8 +879,8 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
         .collect(toImmutableList());
   }
 
-  protected final void addInternalCallerParam(JsDoc.Builder jsDocBuilder) {
-    jsDocBuilder.addParam(StandardNames.ARE_YOU_AN_INTERNAL_CALLER, "!Object");
+  protected final JsDoc.Builder addInternalCallerParam(JsDoc.Builder jsDocBuilder) {
+    return jsDocBuilder.addParam(StandardNames.ARE_YOU_AN_INTERNAL_CALLER, "!Object");
   }
 
   protected JsDoc generatePositionalFunctionJsDoc(TemplateNode node) {
@@ -945,7 +1018,7 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
       bodyStatements.add(redeclareIjData());
     } else {
       bodyStatements.add(
-          JsRuntime.SOY_ARE_YOU_AND_INTERNAL_CALLER
+          JsRuntime.SOY_ARE_YOU_AN_INTERNAL_CALLER
               .call(id(StandardNames.ARE_YOU_AN_INTERNAL_CALLER))
               .asStatement());
     }
@@ -1793,5 +1866,9 @@ public class GenJsCodeVisitor extends AbstractSoyNodeVisitor<List<String>> {
 
   protected boolean isIncrementalDom() {
     return false;
+  }
+
+  private String namespaceForPath(SourceFilePath path) {
+    return fileSetMetadata.getNamespaceForPath(path);
   }
 }
