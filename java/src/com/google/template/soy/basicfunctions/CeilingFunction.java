@@ -42,7 +42,6 @@ import com.google.template.soy.shared.restricted.SoyPureFunction;
 
 /**
  * Soy function that takes the ceiling of a number.
- *
  */
 @SoyPureFunction
 @SoyFunctionSignature(

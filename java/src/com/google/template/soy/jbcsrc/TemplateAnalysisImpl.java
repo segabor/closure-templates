@@ -1,5 +1,5 @@
 /*
- * Copyright 2021   Google Inc.
+ * Copyright 2021 Google Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -506,7 +506,6 @@ final class TemplateAnalysisImpl implements TemplateAnalysis {
       // tags should remained ordered according to open and close and the runtime for messages
       // enforces this.  However, this ordering constraint isn't interesting since placeholders
       // derived from html close tags are always trivial and contain no interesting subexpressions.
-      //
       //
       // To model this, we evaluate every placeholder in a dead end branch.  This is very similar to
       // how Lets are defined.

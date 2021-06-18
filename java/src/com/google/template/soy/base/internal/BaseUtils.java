@@ -29,7 +29,6 @@ import java.util.regex.Pattern;
  * Base utilities for Soy code.
  *
  * <p>Important: Do not use outside of Soy code (treat as superpackage-private).
- *
  */
 public final class BaseUtils {
 
@@ -300,7 +299,7 @@ public final class BaseUtils {
     String name = cls.getName();
     for (int i = 0; i < ste.length; i++) {
       if (ste[i].getClassName().equals(name)) {
-        t.setStackTrace(Arrays.copyOf(ste, i));
+        t.setStackTrace(Arrays.copyOf(ste, i + 1));
         return;
       }
     }

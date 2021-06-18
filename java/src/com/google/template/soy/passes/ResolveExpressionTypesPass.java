@@ -39,6 +39,7 @@ import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Table;
 import com.google.template.soy.base.SourceFilePath;
 import com.google.template.soy.base.SourceLocation;
+import com.google.template.soy.base.internal.BaseUtils;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.basicfunctions.ConcatListsFunction;
@@ -75,6 +76,7 @@ import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.FieldAccessNode;
 import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.exprtree.GlobalNode;
+import com.google.template.soy.exprtree.IntegerNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
 import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
@@ -122,7 +124,9 @@ import com.google.template.soy.shared.restricted.SoySourceFunctionMethod;
 import com.google.template.soy.shared.restricted.TypedSoyFunction;
 import com.google.template.soy.soyparse.SoyFileParser;
 import com.google.template.soy.soytree.AbstractSoyNodeVisitor;
+import com.google.template.soy.soytree.CallDelegateNode;
 import com.google.template.soy.soytree.ConstNode;
+import com.google.template.soy.soytree.ExternNode;
 import com.google.template.soy.soytree.FileMetadata;
 import com.google.template.soy.soytree.FileMetadata.Constant;
 import com.google.template.soy.soytree.FileSetMetadata;
@@ -217,6 +221,8 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
       SoyErrorKind.of("Type {0} does not support dot access.");
   private static final SoyErrorKind DOT_ACCESS_NOT_SUPPORTED_CONSIDER_RECORD =
       SoyErrorKind.of("Type {0} does not support dot access (consider record instead of map).");
+  private static final SoyErrorKind AMBIGUOUS_FUNCTION =
+      SoyErrorKind.of("This function call can be assigned to more than one foreign function.");
   private static final SoyErrorKind UNNECESSARY_NULL_SAFE_ACCESS =
       SoyErrorKind.of("This null safe access is unnecessary, it is on a value that is non-null.");
   private static final SoyErrorKind DUPLICATE_KEY_IN_MAP_LITERAL =
@@ -315,6 +321,8 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
   private static final SoyErrorKind TEMPLATE_TYPE_PARAMETERS_CANNOT_USE_INFERRED_TYPES =
       SoyErrorKind.of(
           "Template type parameters cannot be inferred. Instead, explicitly declare the type.");
+  private static final SoyErrorKind CANNOT_USE_INFERRED_TYPES =
+      SoyErrorKind.of("Type cannot be inferred, the param definition requires an explicit type.");
   private static final SoyErrorKind PROTO_EXT_FQN =
       SoyErrorKind.of(
           "Extensions fields in proto init functions must be imported symbols. Fully qualified"
@@ -327,6 +335,14 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
       SoyErrorKind.of("Type calculated type, {0}, is nullable, which is not allowed for const.");
   private static final SoyErrorKind NOT_ALLOWED_IN_CONSTANT_VALUE =
       SoyErrorKind.of("This operation is not allowed inside a const value definition.");
+  private static final SoyErrorKind ILLEGAL_SWITCH_EXPRESSION_TYPE =
+      SoyErrorKind.of("Type ''{0}'' is not allowed in a switch expression.");
+  private static final SoyErrorKind SWITCH_CASE_TYPE_MISMATCH =
+      SoyErrorKind.of("Case type ''{0}'' not assignable to switch type ''{1}''.");
+  private static final SoyErrorKind BAD_DELCALL_VARIANT_TYPE =
+      SoyErrorKind.of("Delcall variant must be of type string, int, or proto enum. Found ''{0}''.");
+  private static final SoyErrorKind INVALID_VARIANT_EXPRESSION =
+      SoyErrorKind.of("Invalid variant literal value ''{0}'' in ''delcall''.");
 
   private final ErrorReporter errorReporter;
 
@@ -348,6 +364,7 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
   private ExprEquivalence exprEquivalence;
   private SoyTypeRegistry typeRegistry;
   private TypeNodeConverter pluginTypeConverter;
+  private List<ExternNode> externs;
   private final PluginResolver.Mode pluginResolutionMode;
   private ImmutableMap<String, ImportedVar> importIndex;
   private ImmutableMap<String, TemplateType> allTemplateTypes;
@@ -392,6 +409,7 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
   private void prepFile(SoyFileNode file) {
     substitutions = null;
     typeRegistry = file.getSoyTypeRegistry();
+    externs = file.getExterns();
     importIndex =
         file.getImports().stream()
             .flatMap(i -> i.getIdentifiers().stream())
@@ -638,12 +656,28 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
       substitutions = savedSubstitutionState;
     }
 
+    private final ImmutableSet<SoyType.Kind> allowedSwitchTypes =
+        ImmutableSet.of(
+            Kind.BOOL, Kind.INT, Kind.FLOAT, Kind.STRING, Kind.PROTO_ENUM, Kind.UNKNOWN, Kind.ANY);
+
     @Override
     protected void visitSwitchNode(SwitchNode node) {
       visitExpressions(node);
 
       TypeSubstitution savedSubstitutionState = substitutions;
       ExprNode switchExpr = node.getExpr().getRoot();
+      SoyType switchExprType = switchExpr.getType();
+      boolean exprTypeError = false;
+      if (switchExprType.getKind() == Kind.NULL
+          || !SoyTypes.isKindOrUnionOfKinds(
+              SoyTypes.removeNull(switchExprType), allowedSwitchTypes)) {
+        errorReporter.report(
+            switchExpr.getSourceLocation(), ILLEGAL_SWITCH_EXPRESSION_TYPE, switchExprType);
+        exprTypeError = true;
+      } else if (SoyTypes.removeNull(switchExprType).getKind() == Kind.PROTO_ENUM) {
+        // Allow int cases in proto switch.
+        switchExprType = UnionType.of(switchExprType, IntType.getInstance());
+      }
       for (SoyNode child : node.getChildren()) {
         if (child instanceof SwitchCaseNode) {
           SwitchCaseNode scn = ((SwitchCaseNode) child);
@@ -654,9 +688,19 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
           List<SoyType> caseTypes = new ArrayList<>();
           boolean nullFound = false;
           for (ExprRootNode expr : scn.getExprList()) {
-            caseTypes.add(expr.getType());
+            SoyType type = expr.getType();
+            caseTypes.add(type);
             if (expr.getRoot().getKind() == ExprNode.Kind.NULL_NODE) {
               nullFound = true;
+            }
+
+            if (!exprTypeError && type.getKind() != Kind.UNKNOWN && type.getKind() != Kind.NULL) {
+              // Type system has problems with nullability and proto values. So we have to allow
+              // "case null" even if we don't think the type is nullable.
+              if (!switchExprType.isAssignableFromLoose(type)) {
+                errorReporter.report(
+                    expr.getSourceLocation(), SWITCH_CASE_TYPE_MISMATCH, type, switchExprType);
+              }
             }
           }
           SoyType caseType = typeRegistry.getOrCreateUnionType(caseTypes);
@@ -698,6 +742,42 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
         node.getIndexVar().setType(IntType.getInstance());
       }
       visitChildren(node);
+    }
+
+    private final ImmutableSet<SoyType.Kind> allowedVariantTypes =
+        ImmutableSet.of(
+            SoyType.Kind.STRING, SoyType.Kind.INT, SoyType.Kind.PROTO_ENUM, SoyType.Kind.UNKNOWN);
+
+    @Override
+    protected void visitCallDelegateNode(CallDelegateNode node) {
+      super.visitCallDelegateNode(node);
+
+      ExprRootNode variant = node.getDelCalleeVariantExpr();
+      if (variant == null) {
+        return;
+      }
+
+      SourceLocation location = variant.getSourceLocation();
+      SoyType variantType = variant.getType();
+      if (variantType.getKind() == SoyType.Kind.NULL
+          || !SoyTypes.isKindOrUnionOfKinds(
+              SoyTypes.tryRemoveNull(variantType), allowedVariantTypes)) {
+        errorReporter.report(location, BAD_DELCALL_VARIANT_TYPE, variantType);
+      }
+
+      // Do some sanity checks on the variant expression.
+      if (variant.getRoot().getKind() == ExprNode.Kind.STRING_NODE) {
+        // If the variant is a fixed string, it evaluates to an identifier.
+        String variantStr = ((StringNode) variant.getRoot()).getValue();
+        if (!BaseUtils.isIdentifier(variantStr)) {
+          errorReporter.report(location, INVALID_VARIANT_EXPRESSION, variantStr);
+        }
+      } else if (variant.getRoot().getKind() == ExprNode.Kind.INTEGER_NODE) {
+        long variantInt = ((IntegerNode) variant.getRoot()).getValue();
+        if (variantInt < 0) {
+          errorReporter.report(location, INVALID_VARIANT_EXPRESSION, variant.toSourceString());
+        }
+      }
     }
 
     @Override
@@ -863,9 +943,6 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
     @Override
     protected void visitPrimitiveNode(PrimitiveNode node) {
       // We don't do anything here because primitive nodes already have type information.
-      if (inferringParam && node.getKind() == ExprNode.Kind.NULL_NODE) {
-        errorReporter.report(node.getSourceLocation(), AMBIGUOUS_INFERRED_TYPE, "a 'null' literal");
-      }
     }
 
     @Override
@@ -1072,8 +1149,11 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
       SoyType newType = getTypeSubstitution(varRef);
       if (newType != null) {
         varRef.setSubstituteType(newType);
-      } else {
-        if (varRef.getType() == null) {
+      } else if (!varRef.hasType()) {
+        if (inferringParam) {
+          errorReporter.report(varRef.getSourceLocation(), CANNOT_USE_INFERRED_TYPES);
+          varRef.setSubstituteType(UnknownType.getInstance());
+        } else {
           // sanity check, default params and state params have complex type initialization logic
           // double check that it worked.
           throw new IllegalStateException(
@@ -1577,6 +1657,35 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
       return resolvedSignature;
     }
 
+    private boolean maybeSetExtern(ExternNode extern, FunctionNode node) {
+      if (node.isResolved()) {
+        errorReporter.report(node.getFunctionNameLocation(), AMBIGUOUS_FUNCTION);
+        return false;
+      }
+      if (!extern.getIdentifier().identifier().equals(node.getStaticFunctionName())
+          || extern.typeNode().parameters().size() != node.numChildren()) {
+        return false;
+      }
+      if (node.getParamsStyle() == ParamsStyle.NAMED) {
+        errorReporter.report(node.getFunctionNameLocation(), INCORRECT_ARG_STYLE);
+        return false;
+      }
+      List<SoyType> externTypes =
+          extern.typeNode().parameters().stream()
+              .map(p -> p.type().getResolvedType())
+              .collect(toImmutableList());
+      for (int i = 0; i < node.numChildren(); ++i) {
+        if (!externTypes.get(i).isAssignableFromLoose(node.getChild(i).getType())
+            && node.getChild(i).getType() != UnknownType.getInstance()) {
+          return false;
+        }
+      }
+      node.setAllowedParamTypes(externTypes);
+      node.setType(extern.typeNode().returnType().getResolvedType());
+      node.setSoyFunction(extern);
+      return true;
+    }
+
     @Override
     protected void visitFunctionNode(FunctionNode node) {
       visitChildren(node);
@@ -1608,6 +1717,11 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
           return;
         }
       }
+      for (ExternNode externNode : externs) {
+        if (maybeSetExtern(externNode, node)) {
+          return;
+        }
+      }
       if (!node.isResolved()) {
         node.setType(UnknownType.getInstance());
         return;
@@ -1625,7 +1739,6 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
       } else if (knownFunction instanceof BuiltinFunction) {
         visitBuiltinFunction((BuiltinFunction) knownFunction, node);
       }
-
 
       // Always attempt to visit for internal soy functions, even if we already had a signature.
       visitInternalSoyFunction(knownFunction, node);
@@ -2108,6 +2221,7 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
           return UnknownType.getInstance();
         case PROTO_MODULE:
         case PROTO_ENUM_TYPE:
+        case FUNCTION:
       }
       throw new AssertionError("unhandled kind: " + baseType.getKind());
     }
@@ -2215,6 +2329,7 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
         case PROTO_MODULE:
         case TEMPLATE_TYPE:
         case TEMPLATE_MODULE:
+        case FUNCTION:
           errorReporter.report(baseLocation, BRACKET_ACCESS_NOT_SUPPORTED, baseType);
           return UnknownType.getInstance();
       }

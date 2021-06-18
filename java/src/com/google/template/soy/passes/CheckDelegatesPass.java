@@ -50,7 +50,6 @@ import javax.annotation.Nullable;
 /**
  * Checks various rules regarding the use of delegates (including delegate packages, delegate
  * templates, and delegate calls).
- *
  */
 @RunAfter(FinalizeTemplateRegistryPass.class)
 final class CheckDelegatesPass implements CompilerFileSetPass {
@@ -225,6 +224,7 @@ final class CheckDelegatesPass implements CompilerFileSetPass {
           // bug where it failed to inspect CallParamContentNode and thus missed a number of call
           // sites...and people depend on it.
           // luckily this particular error doesn't seem very important. it doesn't violate Soy's
+          // invariants, it is just likely to not work with the pinto module system.
           errorReporter.warn(
               node.getSourceLocation(),
               CROSS_PACKAGE_DELCALL,

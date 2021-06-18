@@ -210,7 +210,6 @@ classes must be supplied to `SoySauce` or `Tofu` constructor (or
 JS, the compiler will output a `goog.require('some.js.lib');` and invoke
 `some.js.lib.uniqueId()` for each call to `uniqueId()`.
 
-
 ## More about SoyFunctionSignature...
 
 All types that are understandable by Soy compiler will be supported in the
@@ -239,6 +238,12 @@ overloads that have the same amount of arguments. Second, generic overloads are
 unsupported. It is impossible to say this function will return `T` when the
 input is `list<T>`.
 
+## Note on supported Java types
+
+Java functions called from Soy may use either the unboxed (e.g.: `String`,
+`Object`) or boxed (e.g.: `SoyValue`) types in their signatures, for both
+parameters and return types. Additionally, return types may be a `Future` which
+resolves to a valid unboxed or boxed type.
 
 ## Pure functions {#pure}
 

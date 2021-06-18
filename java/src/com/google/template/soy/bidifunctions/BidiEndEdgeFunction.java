@@ -41,7 +41,6 @@ import com.google.template.soy.shared.restricted.SoyFunctionSignature;
 /**
  * Soy function that gets the name of the end edge ('left' or 'right') for the current global bidi
  * directionality.
- *
  */
 @SoyFunctionSignature(name = "bidiEndEdge", value = @Signature(returnType = "string"))
 final class BidiEndEdgeFunction

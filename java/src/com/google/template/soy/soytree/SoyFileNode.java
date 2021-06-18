@@ -36,7 +36,6 @@ import javax.annotation.Nullable;
  * Node representing a Soy file.
  *
  * <p>Important: Do not use outside of Soy code (treat as superpackage-private).
- *
  */
 public final class SoyFileNode extends AbstractParentSoyNode<SoyNode>
     implements SplitLevelTopNode<SoyNode> {
@@ -45,6 +44,7 @@ public final class SoyFileNode extends AbstractParentSoyNode<SoyNode>
   public static final class CssPath {
     private final String sourcePath;
     private String resolvedPath;
+    private String namespace = null;
 
     CssPath(String sourcePath) {
       this.sourcePath = checkNotNull(sourcePath);
@@ -61,6 +61,14 @@ public final class SoyFileNode extends AbstractParentSoyNode<SoyNode>
 
     public Optional<String> resolvedPath() {
       return Optional.ofNullable(resolvedPath);
+    }
+
+    public void setNamespace(String namespace) {
+      this.namespace = namespace;
+    }
+
+    public String getNamespace() {
+      return namespace;
     }
 
     public void setResolvedPath(String resolvedPath) {
@@ -208,28 +216,27 @@ public final class SoyFileNode extends AbstractParentSoyNode<SoyNode>
     return getSourceLocation().getFilePath();
   }
 
-  public ImmutableList<ConstNode> getConstants() {
-    // No need to look recursively since we know these are all top level.
+  private <T extends SoyNode> ImmutableList<T> getChildrenOfType(Class<T> type) {
     return this.getChildren().stream()
-        .filter(c -> c instanceof ConstNode)
-        .map(c -> (ConstNode) c)
+        .filter(type::isInstance)
+        .map(type::cast)
         .collect(toImmutableList());
+  }
+
+  public ImmutableList<ConstNode> getConstants() {
+    return getChildrenOfType(ConstNode.class);
   }
 
   public ImmutableList<TemplateNode> getTemplates() {
-    // No need to look recursively since we know these are all top level.
-    return this.getChildren().stream()
-        .filter(c -> c instanceof TemplateNode)
-        .map(c -> (TemplateNode) c)
-        .collect(toImmutableList());
+    return getChildrenOfType(TemplateNode.class);
   }
 
   public ImmutableList<ImportNode> getImports() {
-    // No need to look recursively since we know these are all top level.
-    return this.getChildren().stream()
-        .filter(c -> c instanceof ImportNode)
-        .map(c -> (ImportNode) c)
-        .collect(toImmutableList());
+    return getChildrenOfType(ImportNode.class);
+  }
+
+  public ImmutableList<ExternNode> getExterns() {
+    return getChildrenOfType(ExternNode.class);
   }
 
   /** Returns this Soy file's name. */

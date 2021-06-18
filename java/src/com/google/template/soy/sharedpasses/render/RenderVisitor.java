@@ -108,7 +108,6 @@ import javax.annotation.Nullable;
  * <p>Important: Do not use outside of Soy code (treat as superpackage-private).
  *
  * <p>The rendered output will be appended to the Appendable provided to the constructor.
- *
  */
 public class RenderVisitor extends AbstractSoyNodeVisitor<Void> {
 
@@ -545,7 +544,7 @@ public class RenderVisitor extends AbstractSoyNodeVisitor<Void> {
         } else {
           // Variant is either a StringData or a SanitizedContent. Use the value as a string. If
           // the value is not a string, and exception will be thrown.
-          variant = variantData.stringValue();
+          variant = variantData.coerceToString();
         }
       } catch (SoyDataException e) {
         throw RenderException.createWithSource(

@@ -36,7 +36,6 @@ import com.google.template.soy.exprtree.ExprRootNode;
  * <p>The top level definition is the base node interface.
  *
  * <p>Important: Do not use outside of Soy code (treat as superpackage-private).
- *
  */
 public interface SoyNode extends Node {
 
@@ -71,6 +70,7 @@ public interface SoyNode extends Node {
     PRINT_DIRECTIVE_NODE,
 
     CONST_NODE,
+    EXTERN_NODE,
     LET_VALUE_NODE,
     LET_CONTENT_NODE,
 

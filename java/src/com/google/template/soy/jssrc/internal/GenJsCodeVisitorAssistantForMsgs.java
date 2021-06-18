@@ -73,7 +73,6 @@ import javax.annotation.Nullable;
  * Assistant visitor for GenJsCodeVisitor to handle messages.
  *
  * <p>Precondition: MsgNode should not exist in the tree.
- *
  */
 public class GenJsCodeVisitorAssistantForMsgs extends AbstractSoyNodeVisitor<Void> {
 
@@ -644,7 +643,7 @@ public class GenJsCodeVisitorAssistantForMsgs extends AbstractSoyNodeVisitor<Voi
   }
 
   /**
-   * Helper class for building up the input to {@link Expression#objectLiteral}. TODO(brndn):
+   * Helper class for building up the input to {@link Expression#objectLiteral}. TODO(user):
    * consider making this part of the CodeChunk DSL, since all callers seem to do something similar.
    */
   private static final class MapLiteralBuilder {

@@ -1,6 +1,5 @@
 # Expressions
 
-
 Expressions are written within templates to reference template data, variables,
 or compute intermediate values. Soy uses a language-neutral expression syntax.
 This section describes the expression grammar, including how to reference data,
@@ -130,7 +129,6 @@ These expressions create [map](types.md#map) values. For more details about the
 difference between maps and legacy object maps see the [map](types.md#map)
 documentation.
 
-
 ### record {#record}
 
 Record literals are delimited by `record()` and contain a comma-delimited
@@ -140,7 +138,6 @@ identifier. For example,
 *   `record(aaa: 'blah', bbb: 123, ccc: $foo)`
 
 Empty records are not allowed.
-
 
 ## Variables
 
@@ -155,22 +152,6 @@ Parameters and locals are introduced by:
 
 To reference a variable, use a dollar sign `$` followed by the variable name.
 For example: `$foo`
-
-### globals
-
-A global is a reference that looks like a simple dotted identifier sequence.
-
-`foo.bar.Baz`
-
-Globals can be configured with the compiler via the `--compileTimeGlobalsFile`
-flag, proto enum values are also represented as global references.
-
-TIP: You can use the [`{alias ...}`](file-declarations.md#alias) directive to
-abbreviate globals.
-
-It is an error in the compiler to reference a global that doesn't have a
-definition at compile time, however, if you are only compiling for JavaScript
-then legacy code can use [`unknownJsGlobal`](functions.md#unknownJsGlobal).
 
 ## Operators
 
@@ -479,7 +460,10 @@ sequence of key value pairs where the keys correspond to fields in the proto.
 
 For example:
 
-*   `foo.bar.Baz(quux: 3)`
+```soy
+import {Baz} from 'foo/baz.proto';
 
-TIP: You can use the [`{alias ...}`](file-declarations.md#alias) directive to
-abbreviate proto names used in initialization expressions.
+{template bar}
+  {let $b: Baz(quux: 3) /}
+{/template}
+```

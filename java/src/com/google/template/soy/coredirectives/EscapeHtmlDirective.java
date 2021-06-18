@@ -41,7 +41,6 @@ import java.util.Set;
 
 /**
  * A directive that HTML-escapes the output.
- *
  */
 @SoyPurePrintDirective
 public class EscapeHtmlDirective

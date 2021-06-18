@@ -15,8 +15,6 @@
  */
 
 // JavaCC grammar specification for a Soy file.
-//
-// @author Kai Huang
 
 
 // =================================================================================================
@@ -47,6 +45,8 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.template.soy.exprtree.Operator.createOperatorNode;
 
+import com.google.template.soy.types.FunctionType;
+import java.io.IOException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
@@ -59,12 +59,14 @@ import com.google.template.soy.base.SourceLocation.Point;
 import com.google.template.soy.base.internal.BaseUtils;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.base.internal.Identifier;
+import com.google.template.soy.base.internal.SoyFileSupplier;
 import com.google.template.soy.base.internal.QuoteStyle;
 import com.google.template.soy.basetree.Node;
 import com.google.template.soy.error.ErrorReporter.Checkpoint;
 import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.error.SoyErrorKind.StyleAllowance;
+import com.google.template.soy.exprtree.AbstractParentExprNode;
 import com.google.template.soy.exprtree.BooleanNode;
 import com.google.template.soy.exprtree.CallableExprBuilder;
 import com.google.template.soy.exprtree.ExprNode;
@@ -72,11 +74,14 @@ import com.google.template.soy.exprtree.ExprNode.PrimitiveNode;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.FieldAccessNode;
 import com.google.template.soy.exprtree.FloatNode;
+import com.google.template.soy.exprtree.FunctionNode;
+import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.exprtree.IntegerNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
 import com.google.template.soy.exprtree.ListLiteralNode;
 import com.google.template.soy.exprtree.MapLiteralFromListNode;
 import com.google.template.soy.exprtree.MapLiteralNode;
+import com.google.template.soy.exprtree.MethodCallNode;
 import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.NullNode;
 import com.google.template.soy.exprtree.GroupNode;
@@ -84,8 +89,10 @@ import com.google.template.soy.exprtree.Operator;
 import com.google.template.soy.exprtree.RecordLiteralNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.TemplateLiteralNode;
+import com.google.template.soy.exprtree.VarDefn;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.exprtree.VeLiteralNode;
+import com.google.template.soy.soytree.AbstractSoyNode;
 import com.google.template.soy.soytree.AliasDeclaration;
 import com.google.template.soy.soytree.DelPackageDeclaration;
 import com.google.template.soy.soytree.CallBasicNode;
@@ -99,6 +106,7 @@ import com.google.template.soy.soytree.CommandTagAttribute;
 import com.google.template.soy.soytree.Comment;
 import com.google.template.soy.soytree.ConstNode;
 import com.google.template.soy.soytree.DebuggerNode;
+import com.google.template.soy.soytree.ExternNode;
 import com.google.template.soy.soytree.ForIfemptyNode;
 import com.google.template.soy.soytree.ForNode;
 import com.google.template.soy.soytree.ForNonemptyNode;
@@ -106,6 +114,8 @@ import com.google.template.soy.soytree.IfCondNode;
 import com.google.template.soy.soytree.IfElseNode;
 import com.google.template.soy.soytree.IfNode;
 import com.google.template.soy.soytree.ImportNode;
+import com.google.template.soy.soytree.JavaImpl;
+import com.google.template.soy.soytree.JsImpl;
 import com.google.template.soy.soytree.KeyNode;
 import com.google.template.soy.soytree.LetContentNode;
 import com.google.template.soy.soytree.LetNode;
@@ -146,6 +156,7 @@ import com.google.template.soy.soytree.defn.TemplateParam;
 import com.google.template.soy.soytree.defn.TemplateStateVar;
 import com.google.template.soy.types.TemplateType;
 import com.google.template.soy.types.TemplateType.ParameterKind;
+import com.google.template.soy.types.ast.FunctionTypeNode;
 import com.google.template.soy.types.ast.GenericTypeNode;
 import com.google.template.soy.types.ast.NamedTypeNode;
 import com.google.template.soy.types.ast.RecordTypeNode;
@@ -155,6 +166,7 @@ import com.google.template.soy.types.ast.UnionTypeNode;
 import java.io.Reader;
 import java.io.StringReader;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -420,7 +432,6 @@ import javax.annotation.Nullable;
  *       + See above for the definition of a named parameter list.
  *       Examples:   proto()   my.new.Proto(a: 'str', b: $foo)*
  * </pre>
- *
  */
 public class SoyFileParser {
 
@@ -685,6 +696,14 @@ public class SoyFileParser {
     }
   }
 
+  /**
+   * Gets the point just before the upcoming token. Note that the {@link SimpleCharStream}'s
+   * "tokenBegin" refers to the upcoming token that hasn't actually been parsed yet. So for
+   * "foo bar baz", once the parser has executed a line like "token foo = foo()", the current token
+   * would be bar and not foo.
+   *
+   * See the generated char stream class here:
+   */
   @CheckReturnValue
   Point getPointJustBeforeNextToken() {
     return ((SoySimpleCharStream) (token_source.input_stream)).getPointJustBeforeNextToken();
@@ -1092,6 +1111,7 @@ TOKEN_MGR_DECLS: {
   < DELTEMPLATE_OPEN : "{deltemplate" <WS> > { isInTemplate = true; } : IN_CMD_TAG
 | < TEMPLATE_OPEN: "{template" <WS> > { isInTemplate = true; } : IN_CMD_TAG
 | < ELEMENT_OPEN: "{element" <WS> > { isInTemplate = true; } : IN_CMD_TAG
+| < EXTERN_OPEN: "{" ("export ")? "extern" <WS> > { isInTemplate = true; } : IN_CMD_TAG
 }
 
 
@@ -1116,6 +1136,7 @@ TOKEN_MGR_DECLS: {
   < CMD_CLOSE_TEMPLATE           : "{/template}"    > { resetState(); } : DEFAULT
 | < CMD_CLOSE_DELTEMPLATE        : "{/deltemplate}" > { resetState(); } : DEFAULT
 | < CMD_CLOSE_ELEMENT            : "{/element}" > { resetState(); } : DEFAULT
+| < CMD_CLOSE_EXTERN             : "{/extern}"    > { resetState(); } : DEFAULT
 
 | < DECL_BEGIN_PARAM             : "{@param"        > : IN_CMD_TAG
 | < DECL_ATTRIBUTE_STAR          : "{@attribute *}" >
@@ -1138,6 +1159,8 @@ TOKEN_MGR_DECLS: {
 | < CMD_FULL_NBSP                : "{nbsp}"         >
 
 | < CMD_OPEN_LITERAL             : "{literal}"      > : IN_LITERAL_BLOCK
+| < CMD_OPEN_JS_IMPL             : "{jsimpl"        > : IN_CMD_TAG
+| < CMD_OPEN_JAVA_IMPL           : "{javaimpl"      > : IN_CMD_TAG
 
 | < CMD_BEGIN_CALL               : "{call" <WS>     > : EXPR
 | < CMD_BEGIN_DELCALL            : "{delcall" <WS>  > : IN_CMD_TAG
@@ -1430,9 +1453,11 @@ private SoyFileNode NonEmptySoyFile() :
   AliasDeclaration alias;
   ImportNode importNode;
   ConstNode constant;
+  ExternNode extern;
   ImmutableList.Builder<AliasDeclaration> aliases = new ImmutableList.Builder<AliasDeclaration>();
   ImmutableList.Builder<ImportNode> imports = new ImmutableList.Builder<ImportNode>();
   ImmutableList.Builder<ConstNode> constants = new ImmutableList.Builder<ConstNode>();
+  ImmutableList.Builder<ExternNode> externs = new ImmutableList.Builder<ExternNode>();
   TemplateNode template;
   Token eof;
 }
@@ -1466,12 +1491,20 @@ private SoyFileNode NonEmptySoyFile() :
     }
   )*
 
+  (
+    extern = ExternStmt()
+    {
+      if (extern != null) {
+        externs.add(extern);
+      }
+    }
+  )*
+
   {
     headerInfo = new SoyFileHeaderInfo(errorReporter, delpackageDecl, namespace,
         aliases.build(), importSymbols);
     List<TemplateNode> templates = new ArrayList<TemplateNode>();
   }
-
   (
     template = Template(headerInfo)
     {
@@ -1492,8 +1525,60 @@ private SoyFileNode NonEmptySoyFile() :
             namespace, headerInfo, buildComments(token_source));
     sfn.addChildren(imports.build());
     sfn.addChildren(constants.build());
+     sfn.addChildren(externs.build());
     sfn.addChildren(templates);
     return sfn;
+  }
+}
+
+/**
+ * ExternStmt -> {extern ident: type}{/extern}
+ */
+private ExternNode ExternStmt() :
+{
+  Token open, name, openClose, close;
+  Token implOpen, implClose;
+  List<CommandTagAttribute> attributes;
+  JavaImpl javaImpl = null;
+  JsImpl jsImpl = null;
+  FunctionTypeNode type;
+}
+{
+  open = <EXTERN_OPEN>
+  name = <NAME>
+  <CMD_COLON>
+  type = FunctionType()
+  openClose = <CMD_END>
+  (
+      <TOKEN_NOT_WS>
+  |   <TOKEN_WS>
+  |
+    (
+      implOpen = <CMD_OPEN_JS_IMPL>
+      attributes = Attributes()
+      implClose = <CMD_SELF_CLOSE>
+      {
+        SourceLocation srcLoc = createSrcLoc(implOpen, implClose);
+        jsImpl = JsImpl.create(srcLoc, attributes, errorReporter);
+      }
+    )
+  |
+    (
+      implOpen = <CMD_OPEN_JAVA_IMPL>
+      attributes = Attributes()
+      implClose = <CMD_SELF_CLOSE>
+      {
+        SourceLocation srcLoc = createSrcLoc(implOpen, implClose);
+        javaImpl = JavaImpl.create(srcLoc, attributes, errorReporter);
+      }
+    )
+  )*
+  close = <CMD_CLOSE_EXTERN>
+  {
+    boolean exported = open.image.startsWith("{export ");
+    return new ExternNode(nodeIdGen.genId(), createSrcLoc(open, close),
+        Identifier.create(name.image, createSrcLoc(name)), type,
+        createSrcLoc(open, openClose), exported, jsImpl, javaImpl);
   }
 }
 
@@ -4805,6 +4890,70 @@ private TemplateTypeNode.Parameter TemplateParameter() :
   }
 }
 
+/**
+ * FunctionType -> "("  ( TemplateArgument ( "," TemplateArgument )* )? ")" "=>" TypeExpr
+ */
+private FunctionTypeNode FunctionType() :
+{
+  List<FunctionTypeNode.Parameter> parameters = ImmutableList.of();
+  Token open, close, arrow;
+  TypeNode returnType;
+  FunctionTypeNode.Parameter parameter;
+}
+{
+  open = <LPAREN>
+
+  (
+    parameter = FunctionParameter()
+    {
+      parameters = new ArrayList<FunctionTypeNode.Parameter>();
+      parameters.add(parameter);
+    }
+    (
+      <COMMA>
+      parameter = FunctionParameter()
+      {
+        parameters.add(parameter);
+      }
+    )*
+  )?
+
+  close = <RPAREN>
+
+  arrow = <FORWARD_ARROW>
+
+  returnType = NamedType()
+
+  {
+    SourceLocation srcLoc = createSrcLoc(open, close, arrow);
+    return FunctionTypeNode.create(srcLoc, parameters, returnType);
+  }
+}
+
+/**
+ * FunctionParameter -> IDENT ":" TypeExpr
+ */
+private FunctionTypeNode.Parameter FunctionParameter() :
+{
+  Token parameterName;
+  TypeNode parameterType;
+}
+{
+  (
+    parameterName = <IDENT>
+  |
+    parameterName = <ATTR_IDENT>
+  )
+
+  <COLON>
+  parameterType = TypeExpr()
+
+  {
+    String paramName = parameterName.image;
+    return FunctionTypeNode.Parameter.create(
+        createSrcLoc(parameterName), paramName, parameterName.image, parameterType);
+  }
+}
 
 /**
  * RecordType -> "[" ( RecordField ( "," RecordField )* )? "]"

@@ -49,7 +49,6 @@ import com.google.template.soy.shared.restricted.SoyPureFunction;
  * should deprecated the 2 argument overload by adding a new function {@code brokenRound()} and then
  * we can encourage people to migrate to a less broken approach. (or we could just add a pow
  * function and inline it).
- *
  */
 @SoyFunctionSignature(
     name = "round",

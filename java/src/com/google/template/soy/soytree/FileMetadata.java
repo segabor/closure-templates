@@ -17,8 +17,10 @@
 package com.google.template.soy.soytree;
 
 import com.google.template.soy.base.internal.SoyFileKind;
+import com.google.template.soy.types.FunctionType;
 import com.google.template.soy.types.SoyType;
 import java.util.Collection;
+import java.util.List;
 import javax.annotation.Nullable;
 
 /**
@@ -34,6 +36,13 @@ public interface FileMetadata extends PartialFileMetadata {
     SoyType getType();
   }
 
+  /** Java object version of {@link ExternP}. */
+  interface Extern {
+    String getName();
+
+    FunctionType getSignature();
+  }
+
   @Nullable
   TemplateMetadata getTemplate(String name);
 
@@ -44,6 +53,10 @@ public interface FileMetadata extends PartialFileMetadata {
   Constant getConstant(String name);
 
   Collection<? extends Constant> getConstants();
+
+  Collection<? extends Extern> getExterns();
+
+  List<? extends Extern> getExterns(String name);
 
   SoyFileKind getSoyFileKind();
 }

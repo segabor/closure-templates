@@ -1,6 +1,5 @@
 # File Declarations
 
-
 [TOC]
 
 ## namespace {#namespace}
@@ -105,7 +104,6 @@ The syntax for calling imported templates is:
 
 </section>
 
-
 ## alias (DEPRECATED; will be deleted soon) {#alias}
 
 **Warning:** The `alias` command will be deprecated soon. Use
@@ -126,35 +124,9 @@ the identifier you specify. When you `call` a template in an aliased namespace,
 you don't need to type the whole namespace, only the alias plus the template's
 partial name.
 
-For example, if you declare
+This deprecated feature still works for:
 
-```soy
-{alias long.namespace.root.projectx.mymodule.myfeature as myfeature}
-{alias long.namespace.root.projectx.foomodule.utils as fooUtils}
-```
-
-then you can replace the calls
-
-```soy
-{call long.namespace.root.projectx.mymodule.myfeature.myTemplate /}
-{call long.namespace.root.projectx.foomodule.utils.someHelper /}
-```
-
-with
-
-```soy
-{call myfeature.myTemplate /}
-{call fooUtils.someHelper /}
-```
-
-Delegate templates have their own full names (not a partial name prefixed by the
-namespace), so `alias` does not affect delegate calls (`delcall`).
-
-In addition to templates, the `alias` directive also applies to all places where
-named identifiers are used:
-
-*   [Global references](expressions#globals), including proto enum literals
-*   The named types
+*   [Global references](expressions#globals)
 *   The ID parameter to the [`xid()` function](functions#xid)
 
 ## delpackage {#delpackage}

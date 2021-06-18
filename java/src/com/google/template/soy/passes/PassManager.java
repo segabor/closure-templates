@@ -21,9 +21,11 @@ import static java.util.stream.Collectors.joining;
 
 import com.google.common.annotations.VisibleForTesting;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Maps;
 import com.google.common.collect.Sets;
+import com.google.template.soy.base.SourceFilePath;
 import com.google.template.soy.base.internal.IdGenerator;
 import com.google.template.soy.conformance.ValidatedConformanceConfig;
 import com.google.template.soy.css.CssRegistry;
@@ -213,6 +215,7 @@ public final class PassManager {
     private boolean disableAllTypeChecking;
     private boolean desugarHtmlAndStateNodes = true;
     private boolean optimize = true;
+    private ImmutableSet<SourceFilePath> generatedPathsToCheck = ImmutableSet.of();
     private ValidatedConformanceConfig conformanceConfig = ValidatedConformanceConfig.EMPTY;
     private ValidatedLoggingConfig loggingConfig = ValidatedLoggingConfig.EMPTY;
     private boolean insertEscapingDirectives = true;
@@ -315,6 +318,11 @@ public final class PassManager {
       return this;
     }
 
+    public Builder setGeneratedPathsToCheck(ImmutableSet<SourceFilePath> generatedPaths) {
+      this.generatedPathsToCheck = generatedPaths;
+      return this;
+    }
+
     public Builder addHtmlAttributesForDebugging(boolean addHtmlAttributesForDebugging) {
       this.addHtmlAttributesForDebugging = addHtmlAttributesForDebugging;
       return this;
@@ -368,7 +376,9 @@ public final class PassManager {
       // they can examine information about dependencies.
       // TODO(b/158474755): Try to simplify this pass structure structure once we have template
       // imports.
-      PassBuilder passes = new PassBuilder();
+      PassBuilder passes =
+          new PassBuilder()
+              .add(new CheckGeneratedSourcesPass(errorReporter, generatedPathsToCheck));
       if (astRewrites == AstRewrites.ALL) {
         passes
             .add(new ContentSecurityPolicyNonceInjectionPass(errorReporter))
@@ -379,7 +389,6 @@ public final class PassManager {
           .add(
               new ImportsPass(
                   errorReporter,
-                  options,
                   disableAllTypeChecking,
                   new ProtoImportProcessor(registry, errorReporter, disableAllTypeChecking),
                   new TemplateImportProcessor(errorReporter, accumulatedState::registryFromDeps)))
@@ -412,7 +421,7 @@ public final class PassManager {
       // Run before the RewriteGlobalsPass as it removes some globals.
       passes
           .add(new VeRewritePass())
-          .add(new RewriteGlobalsPass(options.getCompileTimeGlobals()))
+          .add(new RewriteGlobalsPass())
           .add(new XidPass(errorReporter))
           .add(new UnknownJsGlobalPass(allowUnknownJsGlobals, errorReporter))
           .add(new ResolveNamesPass(errorReporter))
@@ -421,9 +430,6 @@ public final class PassManager {
         passes.add(new ResolveTemplateFunctionsPass());
       }
       passes.add(new ResolveTemplateNamesPass(errorReporter));
-
-      // Must run after ResolveTemplateNamesPass
-      passes.add(new TemplateCallMetadataPass());
 
       if (!disableAllTypeChecking) {
         // Without type checking proto enums in variant expressions are not resolved.
@@ -463,6 +469,8 @@ public final class PassManager {
             // After ResolveExpressionTypesPass because ResolveExpressionTypesPass verifies usage
             // and types of non-null assertion operators.
             .add(new SimplifyAssertNonNullPass())
+            // Must run after ResolveExpressionTypesPass to use allowedToInvokeAsFunction
+            .add(new TemplateCallMetadataPass(errorReporter))
             .add(new VeLogRewritePass());
         // Needs to run before CheckGlobalsPass to prevent unbound global errors on the getExtension
         // parameters.
@@ -481,7 +489,7 @@ public final class PassManager {
         passes.add(new CheckGlobalsPass(errorReporter));
       }
       passes
-          .add(new ValidateAliasesPass(errorReporter, options, loggingConfig))
+          .add(new ValidateAliasesPass(errorReporter, loggingConfig))
           .add(new KeyCommandPass(errorReporter, disableAllTypeChecking))
           .add(new ValidateSkipNodesPass(errorReporter));
 

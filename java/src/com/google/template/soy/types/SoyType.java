@@ -34,7 +34,6 @@ import com.google.template.soy.soytree.SoyTypeP;
  * <p>All type objects are immutable.
  *
  * <p>Important: Do not use outside of Soy code (treat as superpackage-private).
- *
  */
 public abstract class SoyType {
 
@@ -108,6 +107,7 @@ public abstract class SoyType {
     PROTO,
     PROTO_ENUM,
     TEMPLATE,
+    FUNCTION,
     UNION,
     VE,
     VE_DATA,

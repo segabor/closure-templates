@@ -101,6 +101,7 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.annotation.Nullable;
@@ -167,6 +168,8 @@ public final class SoyFileSet {
     private boolean skipPluginValidation = false;
 
     private boolean optimize = true;
+
+    private Set<SourceFilePath> generatedPathsToCheck = ImmutableSet.of();
 
     private final ImmutableSet.Builder<SoyFunction> soyFunctions = ImmutableSet.builder();
     private final ImmutableSet.Builder<SoyPrintDirective> soyPrintDirectives =
@@ -243,6 +246,7 @@ public final class SoyFileSet {
           pluginRuntimeJars,
           skipPluginValidation,
           optimize,
+          generatedPathsToCheck,
           cssRegistry);
     }
 
@@ -413,69 +417,8 @@ public final class SoyFileSet {
       return this;
     }
 
-    /**
-     * Sets the map from compile-time global name to value.
-     *
-     * <p>The values can be any of the Soy primitive types: null, boolean, integer, float (Java
-     * double), or string.
-     *
-     * @param compileTimeGlobalsMap Map from compile-time global name to value. The values can be
-     *     any of the Soy primitive types: null, boolean, integer, float (Java double), or string.
-     * @return This builder.
-     * @throws IllegalArgumentException If one of the values is not a valid Soy primitive type.
-     */
-    public Builder setCompileTimeGlobals(Map<String, ?> compileTimeGlobalsMap) {
-      getGeneralOptions().setCompileTimeGlobals(compileTimeGlobalsMap);
-      return this;
-    }
-
-    /**
-     * Sets the file containing compile-time globals.
-     *
-     * <p>Each line of the file should have the format
-     *
-     * <pre>
-     *     &lt;global_name&gt; = &lt;primitive_data&gt;
-     * </pre>
-     *
-     * where primitive_data is a valid Soy expression literal for a primitive type (null, boolean,
-     * integer, float, or string). Empty lines and lines beginning with "//" are ignored. The file
-     * should be encoded in UTF-8.
-     *
-     * <p>If you need to generate a file in this format from Java, consider using the utility {@code
-     * SoyUtils.generateCompileTimeGlobalsFile()}.
-     *
-     * @param compileTimeGlobalsFile The file containing compile-time globals.
-     * @return This builder.
-     * @throws IOException If there is an error reading the compile-time globals file.
-     */
-    public Builder setCompileTimeGlobals(File compileTimeGlobalsFile) throws IOException {
-      getGeneralOptions().setCompileTimeGlobals(compileTimeGlobalsFile);
-      return this;
-    }
-
-    /**
-     * Sets the resource file containing compile-time globals.
-     *
-     * <p>Each line of the file should have the format
-     *
-     * <pre>
-     *     &lt;global_name&gt; = &lt;primitive_data&gt;
-     * </pre>
-     *
-     * where primitive_data is a valid Soy expression literal for a primitive type (null, boolean,
-     * integer, float, or string). Empty lines and lines beginning with "//" are ignored. The file
-     * should be encoded in UTF-8.
-     *
-     * <p>If you need to generate a file in this format from Java, consider using the utility {@code
-     * SoyUtils.generateCompileTimeGlobalsFile()}.
-     *
-     * @param compileTimeGlobalsResource The resource containing compile-time globals.
-     * @return This builder.
-     * @throws IOException If there is an error reading the compile-time globals file.
-     */
-    public Builder setCompileTimeGlobals(URL compileTimeGlobalsResource) throws IOException {
-      getGeneralOptions().setCompileTimeGlobals(compileTimeGlobalsResource);
+    public Builder setGeneratedPathsToCheck(Set<SourceFilePath> generatedPaths) {
+      this.generatedPathsToCheck = generatedPaths;
       return this;
     }
 
@@ -590,6 +533,7 @@ public final class SoyFileSet {
   private final boolean skipPluginValidation;
 
   private final boolean optimize;
+  private final ImmutableSet<SourceFilePath> generatedPathsToCheck;
 
   /** For reporting errors during parsing. */
   private ErrorReporter errorReporter;
@@ -613,6 +557,7 @@ public final class SoyFileSet {
       ImmutableList<File> pluginRuntimeJars,
       boolean skipPluginValidation,
       boolean optimize,
+      Set<SourceFilePath> generatedPathsToCheck,
       Optional<CssRegistry> cssRegistry) {
     this.scopedData = apiCallScopeProvider;
     this.typeRegistry = typeRegistry;
@@ -630,6 +575,7 @@ public final class SoyFileSet {
     this.pluginRuntimeJars = pluginRuntimeJars;
     this.skipPluginValidation = skipPluginValidation;
     this.optimize = optimize;
+    this.generatedPathsToCheck = ImmutableSet.copyOf(generatedPathsToCheck);
     this.cssRegistry = cssRegistry;
   }
 
@@ -1226,7 +1172,7 @@ public final class SoyFileSet {
     // 2. it potentially removes metadata from the tree by precalculating expressions. For
     //     example, trivial print nodes are evaluated, which can remove globals from the tree,
     //     but the gencode needs to find these so that their proto types can be used to bootstrap
-    // development mode compilation.
+    //     development mode compilation.
     return parse(
         passManagerBuilder()
             .optimize(false)
@@ -1262,6 +1208,7 @@ public final class SoyFileSet {
     return new PassManager.Builder()
         .setGeneralOptions(generalOptions)
         .optimize(optimize)
+        .setGeneratedPathsToCheck(generatedPathsToCheck)
         .setSoyPrintDirectives(printDirectives)
         .setCssRegistry(cssRegistry)
         .setErrorReporter(errorReporter)

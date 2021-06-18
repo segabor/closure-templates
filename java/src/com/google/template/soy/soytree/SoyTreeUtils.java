@@ -41,6 +41,7 @@ import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.FunctionNode;
 import com.google.template.soy.exprtree.ListComprehensionNode;
 import com.google.template.soy.exprtree.MapLiteralFromListNode;
+import com.google.template.soy.exprtree.VarDefn;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.plugin.restricted.SoySourceFunction;
 import com.google.template.soy.shared.restricted.SoyFunction;
@@ -49,6 +50,7 @@ import com.google.template.soy.soytree.SoyNode.Kind;
 import com.google.template.soy.soytree.SoyNode.ParentSoyNode;
 import com.google.template.soy.types.BoolType;
 import com.google.template.soy.types.UnknownType;
+import com.google.template.soy.types.ast.FunctionTypeNode;
 import com.google.template.soy.types.ast.GenericTypeNode;
 import com.google.template.soy.types.ast.NamedTypeNode;
 import com.google.template.soy.types.ast.RecordTypeNode;
@@ -73,7 +75,6 @@ import java.util.stream.StreamSupport;
  * Shared utilities for the 'soytree' package.
  *
  * <p>Important: Do not use outside of Soy code (treat as superpackage-private).
- *
  */
 public final class SoyTreeUtils {
 
@@ -520,6 +521,14 @@ public final class SoyTreeUtils {
     switch (expr.getKind()) {
       case VAR_REF_NODE:
         VarRefNode refNode = (VarRefNode) expr;
+        VarDefn varDefs = refNode.getDefnDecl();
+        if (varDefs != null
+            && (varDefs.kind() == VarDefn.Kind.CONST
+                || varDefs.kind() == VarDefn.Kind.IMPORT_VAR)) {
+          // This method is called while inferring parameter types, before the type has been set on
+          // refNode.
+          return false;
+        }
         if (refNode.hasType()) {
           switch (refNode.getType().getKind()) {
             case TEMPLATE_TYPE:
@@ -619,6 +628,14 @@ public final class SoyTreeUtils {
 
         @Override
         public ImmutableList<? extends TypeNode> visit(TemplateTypeNode node) {
+          ImmutableList.Builder<TypeNode> types = ImmutableList.builder();
+          types.add(node.returnType());
+          node.parameters().forEach(p -> types.add(p.type()));
+          return types.build();
+        }
+
+        @Override
+        public List<? extends TypeNode> visit(FunctionTypeNode node) {
           ImmutableList.Builder<TypeNode> types = ImmutableList.builder();
           types.add(node.returnType());
           node.parameters().forEach(p -> types.add(p.type()));

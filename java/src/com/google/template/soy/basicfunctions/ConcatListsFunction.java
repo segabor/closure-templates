@@ -46,7 +46,6 @@ import com.google.template.soy.swiftsrc.restricted.SwiftListExpr;
 
 /**
  * Soy function that concatenates two or more lists together.
- *
  */
 @SoyFunctionSignature(
     name = "concatLists",

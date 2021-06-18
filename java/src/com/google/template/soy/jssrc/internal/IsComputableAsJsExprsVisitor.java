@@ -56,7 +56,6 @@ import java.util.Map;
  * <p>Precondition: MsgNode should not exist in the tree.
  *
  * <p>TODO(user): This should no longer be necessary after CodeChunk migration. Rip it all out.
- *
  */
 public class IsComputableAsJsExprsVisitor extends AbstractReturningSoyNodeVisitor<Boolean> {
 
@@ -250,7 +249,7 @@ public class IsComputableAsJsExprsVisitor extends AbstractReturningSoyNodeVisito
 
   /** @return True if there is no point in visiting the child node, since it's always computable. */
   protected boolean canSkipChild(SoyNode child) {
-    // TODO(brndn): This check is probably not worth doing.  Remove.
+    // TODO(user): This check is probably not worth doing.  Remove.
     return child instanceof RawTextNode || child instanceof PrintNode;
   }
 }

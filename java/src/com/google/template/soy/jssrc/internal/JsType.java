@@ -21,6 +21,7 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.template.soy.jssrc.dsl.Expression.stringLiteral;
 import static com.google.template.soy.jssrc.internal.JsRuntime.ARRAY_IS_ARRAY;
+import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_HTML_SAFE_ATTRIBUTE;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_HTML_SAFE_HTML;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_IS_FUNCTION;
 import static com.google.template.soy.jssrc.internal.JsRuntime.GOOG_IS_OBJECT;
@@ -147,9 +148,16 @@ public final class JsType {
       builder()
           .addType("function()")
           .addType("!google3.javascript.template.soy.element_lib_idom.IdomFunction")
+          .addType("!goog.soy.data.SanitizedHtmlAttribute")
           .addRequire(
               GoogRequire.createTypeRequire("google3.javascript.template.soy.element_lib_idom"))
-          .setPredicate(GOOG_IS_FUNCTION)
+          .addRequire(GoogRequire.create("goog.soy.data.SanitizedHtmlAttribute"))
+          .setPredicate(
+              (value, codeGenerator) ->
+                  Optional.of(
+                      GOOG_IS_FUNCTION
+                          .call(value)
+                          .or(value.instanceOf(GOOG_HTML_SAFE_ATTRIBUTE), codeGenerator)))
           .build();
 
   private static final GoogRequire SANITIZED_CONTENT_KIND =
@@ -478,7 +486,7 @@ public final class JsType {
               parameters.isEmpty()
                   ? "null"
                   : "{" + Joiner.on(", ").withKeyValueSeparator(": ").join(parameters) + ",}";
-          String ijType = "?goog.soy.IjData";
+          String ijType = "(goog.soy.IjData|undefined)";
           String returnType = forReturnType.typeExpr();
           if (kind == JsTypeKind.IDOMSRC) {
             builder.addRequire(
@@ -503,6 +511,7 @@ public final class JsType {
       case PROTO_MODULE:
       case TEMPLATE_TYPE:
       case TEMPLATE_MODULE:
+      case FUNCTION:
     }
     throw new AssertionError("unhandled soytype: " + soyType);
   }

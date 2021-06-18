@@ -63,7 +63,6 @@ import javax.annotation.Nullable;
  * Visitor for simplifying expressions based on constant values known at compile time.
  *
  * <p>Package-private helper for {@link SimplifyVisitor}.
- *
  */
 final class SimplifyExprVisitor extends AbstractExprNodeVisitor<Void> {
 
@@ -387,7 +386,7 @@ final class SimplifyExprVisitor extends AbstractExprNodeVisitor<Void> {
   protected void visitFunctionNode(FunctionNode node) {
 
     // Cannot simplify nonplugin functions.
-    // TODO(brndn): we can actually simplify checkNotNull.
+    // TODO(user): we can actually simplify checkNotNull.
     if (node.getSoyFunction() instanceof BuiltinFunction) {
       return;
     }

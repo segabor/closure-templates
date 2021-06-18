@@ -12,7 +12,7 @@ import SanitizedContentKind from 'goog:goog.soy.data.SanitizedContentKind'; // f
 import {Logger} from 'goog:soy.velog';  // from //javascript/template/soy:soyutils_velog
 
 import {IncrementalDomRenderer, patchOuter} from './api_idom';
-import {isTaggedForSkip} from './global';
+import {getGlobalSkipHandler, isTaggedForSkip} from './global';
 
 /** Function that executes Idom instructions */
 export type PatchFunction = (a?: unknown) => void;
@@ -28,18 +28,17 @@ function getSkipHandler(el: HTMLElement) {
   return el.__soy_skip_handler;
 }
 
-
 /** Base class for a Soy element. */
 export abstract class SoyElement<TData extends {}|null, TInterface extends {}>
     implements IDisposable {
   // Node in which this object is stashed.
-  private node: HTMLElement|null = null;
+  node: HTMLElement|null = null;
   private skipHandler:
       ((prev: TInterface, next: TInterface) => boolean)|null = null;
   private patchHandler:
       ((prev: TInterface, next: TInterface) => void)|null = null;
   private syncState = true;
-  private logger: Logger|null = null;
+  private loggerPrivate: Logger|null = null;
   // Marker so that future element accesses can find this Soy element from the
   // DOM
   key: string = '';
@@ -67,7 +66,7 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}>
    * used instead.
    */
   setLogger(logger: Logger|null): this {
-    this.logger = logger;
+    this.loggerPrivate = logger;
     return this;
   }
 
@@ -95,8 +94,8 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}>
    */
   render(renderer = new IncrementalDomRenderer()) {
     assert(this.node);
-    if (this.logger && !renderer.getLogger()) {
-      renderer.setLogger(this.logger);
+    if (this.loggerPrivate && !renderer.getLogger()) {
+      renderer.setLogger(this.loggerPrivate);
     }
     if (this.patchHandler) {
       const patchHandler =
@@ -114,8 +113,8 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}>
     this.skipHandler = null;
     try {
       patchOuter(this.node!, () => {
-        if (this.logger && this.logGraft) {
-          this.logger.logGraft(this.node!, () => {
+        if (this.loggerPrivate && this.logGraft) {
+          this.loggerPrivate.logGraft(this.node!, () => {
             this.renderInternal(renderer, this.data!);
           });
         } else {
@@ -126,8 +125,8 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}>
       this.syncState = origSyncState;
       this.skipHandler = skipHandler;
     }
-    if (this.logger) {
-      this.logger.resetBuilder();
+    if (this.loggerPrivate) {
+      this.loggerPrivate.resetBuilder();
     }
   }
 
@@ -140,7 +139,6 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}>
     /**
      * This is null because it is possible that no DOM has been generated
      * for this Soy element
-     * (see http://go/soy/reference/velog#the-logonly-attribute)
      */
     if (!node) {
       return false;
@@ -154,6 +152,14 @@ export abstract class SoyElement<TData extends {}|null, TInterface extends {}>
     const newNode = new (
         this.constructor as
         {new (a: TData): SoyElement<TData, TInterface>})(data);
+    const globalSkipHandler = getGlobalSkipHandler() as
+        unknown as ((prev: TInterface, next: TInterface) => boolean);
+    if (globalSkipHandler &&
+        globalSkipHandler(
+            this as unknown as TInterface, newNode as unknown as TInterface)) {
+      this.data = newNode.data;
+      return true;
+    }
     if (maybeSkipHandler || this.patchHandler) {
       // Users may configure a skip handler to avoid patching DOM in certain
       // cases.
