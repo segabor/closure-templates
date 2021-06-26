@@ -22,6 +22,7 @@ import static org.junit.Assert.fail;
 
 import com.google.common.collect.ImmutableMap;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.ImmutableTable;
 import com.google.template.soy.data.SoyDataException;
 import com.google.template.soy.data.SoyDict;
 import com.google.template.soy.data.SoyList;
@@ -158,7 +159,8 @@ public class EvalVisitorTest {
                 xidRenamingMap,
                 null,
                 /* debugSoyTemplateInfo= */ false,
-                /* pluginInstances= */ ImmutableMap.of());
+                /* pluginInstances= */ ImmutableMap.of(),
+                ImmutableTable.of());
     return evalVisitor.exec(expr);
   }
 
@@ -486,18 +488,17 @@ public class EvalVisitorTest {
 
   @Test
   public void testEvalFunctions() throws Exception {
-
-    assertEval("isNonnull(null)", false);
-    assertEval("isNonnull(0)", true);
-    assertEval("isNonnull(1)", true);
-    assertEval("isNonnull(false)", true);
-    assertEval("isNonnull(true)", true);
-    assertEval("isNonnull('')", true);
-    assertEval("isNonnull($undefined)", false);
-    assertEval("isNonnull($n)", false);
-    assertEval("isNonnull($boo)", true);
-    assertEval("isNonnull($foo.goo2)", true);
-    assertEval("isNonnull($map0)", true);
+    assertEval("null != null", false);
+    assertEval("0 != null", true);
+    assertEval("1 != null", true);
+    assertEval("false != null", true);
+    assertEval("true != null", true);
+    assertEval("'' != null", true);
+    assertEval("$undefined != null", false);
+    assertEval("$n != null", false);
+    assertEval("$boo != null", true);
+    assertEval("$foo.goo2 != null", true);
+    assertEval("$map0 != null", true);
   }
 
   @Test

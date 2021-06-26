@@ -39,7 +39,10 @@ import com.google.template.soy.error.ErrorReporter;
 import com.google.template.soy.error.SoyErrorKind;
 import com.google.template.soy.error.SoyErrorKind.StyleAllowance;
 import com.google.template.soy.error.SoyErrors;
+import com.google.template.soy.exprtree.ExprNode;
 import com.google.template.soy.exprtree.FunctionNode;
+import com.google.template.soy.exprtree.NullNode;
+import com.google.template.soy.exprtree.OperatorNodes.NotEqualOpNode;
 import com.google.template.soy.exprtree.StringNode;
 import com.google.template.soy.exprtree.VarRefNode;
 import com.google.template.soy.plugin.restricted.SoySourceFunction;
@@ -137,16 +140,35 @@ final class ElementAttributePass implements CompilerFileSetPass {
       new ConcatAttributeValuesFunction();
 
   private final ErrorReporter errorReporter;
-  private final PluginResolver pluginResolver;
   private final Supplier<FileSetMetadata> templateRegistryFromDeps;
 
   ElementAttributePass(
       ErrorReporter errorReporter,
-      PluginResolver pluginResolver,
       Supplier<FileSetMetadata> templateRegistryFromDeps) {
     this.errorReporter = errorReporter;
-    this.pluginResolver = pluginResolver;
     this.templateRegistryFromDeps = templateRegistryFromDeps;
+  }
+
+  private static ExprNode buildNotNull(ExprNode node) {
+    SourceLocation unknown = node.getSourceLocation().clearRange();
+    NotEqualOpNode ne = new NotEqualOpNode(unknown, unknown);
+    ne.addChild(node.copy(new CopyState()));
+    ne.addChild(new NullNode(unknown));
+    ne.setType(BoolType.getInstance());
+    return ne;
+  }
+
+  private static IfNode buildPrintIfNotNull(ExprNode node, Supplier<Integer> id) {
+    SourceLocation unknown = node.getSourceLocation().clearRange();
+    IfNode ifNode = new IfNode(id.get(), unknown);
+    IfCondNode ifCondNode = new IfCondNode(id.get(), unknown, unknown, "if", buildNotNull(node));
+    ifCondNode.getExpr().setType(BoolType.getInstance());
+    ifNode.addChild(ifCondNode);
+    PrintNode printNode =
+        new PrintNode(id.get(), unknown, true, node, ImmutableList.of(), exploding());
+    printNode.getExpr().setType(node.getType());
+    ifCondNode.addChild(printNode);
+    return ifNode;
   }
 
   @Override
@@ -200,7 +222,6 @@ final class ElementAttributePass implements CompilerFileSetPass {
         .forEach(
             t ->
                 SoyTreeUtils.allNodesOfType(t, HtmlAttributeNode.class)
-                    .map(HtmlAttributeNode.class::cast)
                     .filter(HtmlAttributeNode::isSoyAttr)
                     .forEach(
                         attr ->
@@ -216,7 +237,7 @@ final class ElementAttributePass implements CompilerFileSetPass {
   private <T extends Node> void checkAttributeTypes(SoyFileNode file) {
     file.getTemplates().stream()
         .flatMap(t -> t.getHeaderParams().stream())
-        .filter(p -> p instanceof AttrParam)
+        .filter(AttrParam.class::isInstance)
         .map(AttrParam.class::cast)
         .forEach(
             attr -> {
@@ -234,7 +255,7 @@ final class ElementAttributePass implements CompilerFileSetPass {
       Consumer<TemplateNode> delegatingElementsWithAllAttrs) {
     ImmutableMap<String, AttrParam> attrs =
         templateNode.getAllParams().stream()
-            .filter(p -> p instanceof AttrParam)
+            .filter(AttrParam.class::isInstance)
             .map(AttrParam.class::cast)
             .collect(toImmutableMap(AttrParam::getAttrName, Function.identity()));
 
@@ -250,9 +271,6 @@ final class ElementAttributePass implements CompilerFileSetPass {
     HtmlOpenTagNode openTagNode = elmOpen.get();
     String delegateTemplateName = getDelegateCall(templateNode);
     boolean iAmAnElementCallingAnElement = !delegateTemplateName.isEmpty();
-    SoySourceFunction isNonnull =
-        (SoySourceFunction)
-            pluginResolver.lookupSoyFunction("isNonnull", 1, SourceLocation.UNKNOWN);
     ImmutableSet.Builder<String> foundNormalAttr = ImmutableSet.builder();
     SoyTreeUtils.allNodesOfType(openTagNode, HtmlAttributeNode.class)
         .filter(attr -> attr.getStaticKey() != null)
@@ -323,8 +341,8 @@ final class ElementAttributePass implements CompilerFileSetPass {
                 replacementNode = newAttrNode;
               } else if (attrNode.getConcatenationDelimiter() == null && attrNode.hasValue()) {
                 // No concatenation, with a default value. Use if/else to use either the default or
-                // override. Generates: id="{isNonnull($id) ? $id : $idDefault}"
-                IfNode ifNode = SoyTreeUtils.buildPrintIfNotNull(attrExpr, id, isNonnull);
+                // override. Generates: id="{$id != null ? $id : $idDefault}"
+                IfNode ifNode = buildPrintIfNotNull(attrExpr, id);
                 valueNode.addChild(ifNode);
                 IfElseNode ifElseNode = new IfElseNode(id.get(), unknown, unknown);
                 ifNode.addChild(ifElseNode);
@@ -375,7 +393,7 @@ final class ElementAttributePass implements CompilerFileSetPass {
                         unknown,
                         "if",
                         attrNode.getConcatenationDelimiter() == null
-                            ? SoyTreeUtils.buildNotNull(outputValueExpr, isNonnull)
+                            ? buildNotNull(outputValueExpr)
                             : outputValueExpr.copy(new CopyState()));
                 ifCondNode.getExpr().setType(BoolType.getInstance());
                 ifCondNode.addChild(newAttrNode);
@@ -422,12 +440,7 @@ final class ElementAttributePass implements CompilerFileSetPass {
       // put an HTMLAttributeNode inside it so that we can concatenate using a whitespace.
       IfNode ifNode = new IfNode(id.get(), unknown);
       IfCondNode ifCondNode =
-          new IfCondNode(
-              id.get(),
-              unknown,
-              unknown,
-              "if",
-              SoyTreeUtils.buildNotNull(extraAttributesRef, isNonnull));
+          new IfCondNode(id.get(), unknown, unknown, "if", buildNotNull(extraAttributesRef));
       ifCondNode.getExpr().setType(BoolType.getInstance());
       ifNode.addChild(ifCondNode);
       HtmlAttributeNode htmlAttributeNode = new HtmlAttributeNode(id.get(), unknown, null);

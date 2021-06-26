@@ -57,6 +57,7 @@ import com.google.common.base.Joiner;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
+import com.google.common.collect.Sets;
 import com.google.protobuf.Descriptors.Descriptor;
 import com.google.protobuf.Descriptors.FieldDescriptor;
 import com.google.protobuf.Descriptors.FileDescriptor.Syntax;
@@ -73,6 +74,7 @@ import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.FieldAccessNode;
 import com.google.template.soy.exprtree.FloatNode;
 import com.google.template.soy.exprtree.FunctionNode;
+import com.google.template.soy.exprtree.FunctionNode.ExternRef;
 import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.exprtree.IntegerNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
@@ -780,29 +782,45 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
     return operation(node.getOperator(), visitChildren(node));
   }
 
-  private Expression visitEqualNodeHelper(OperatorNode node) {
+  private static final ImmutableSet<SoyType.Kind> CAN_USE_EQUALS =
+      Sets.immutableEnumSet(
+          SoyType.Kind.INT, SoyType.Kind.FLOAT, SoyType.Kind.PROTO_ENUM, Kind.BOOL, Kind.STRING);
+
+  private Expression visitEqualNodeHelper(OperatorNode node, Operator eq) {
+    boolean needsSoyEquals = false;
+    boolean neverSoyEquals = false;
+
     for (ExprNode c : node.getChildren()) {
       SoyType type = c.getType();
-      // A runtime directive needs to be used if operands are anything but booleans and
-      // numbers.
-      if ((!SoyTypes.isNumericPrimitive(type) && type.getKind() != SoyType.Kind.BOOL)
-          || type.getKind() == SoyType.Kind.UNKNOWN
-          || type.getKind() == SoyType.Kind.ANY) {
-        return SOY_EQUALS.call(visitChildren(node));
+      if (type.getKind() == SoyType.Kind.NULL) {
+        // If either operand is null always use ===.
+        neverSoyEquals = true;
+      } else if (!SoyTypes.isKindOrUnionOfKinds(type, CAN_USE_EQUALS)) {
+        // If either operand is not a JS primitive (number, string, bool) then use soy.$$equals.
+        needsSoyEquals = true;
       }
     }
 
-    return operation(Operator.EQUAL, visitChildren(node));
+    Expression rv;
+    if (needsSoyEquals && !neverSoyEquals) {
+      rv = SOY_EQUALS.call(visitChildren(node));
+      if (eq == Operator.NOT_EQUAL) {
+        rv = not(rv);
+      }
+    } else {
+      rv = operation(eq, visitChildren(node));
+    }
+    return rv;
   }
 
   @Override
   protected Expression visitEqualOpNode(EqualOpNode node) {
-    return visitEqualNodeHelper(node);
+    return visitEqualNodeHelper(node, Operator.EQUAL);
   }
 
   @Override
   protected Expression visitNotEqualOpNode(NotEqualOpNode node) {
-    return not(visitEqualNodeHelper(node));
+    return visitEqualNodeHelper(node, Operator.NOT_EQUAL);
   }
 
   @Override
@@ -920,6 +938,9 @@ public class TranslateExprNodeVisitor extends AbstractReturningExprNodeVisitor<E
           (SoyJavaScriptSourceFunction) soyFunction,
           visitChildren(node),
           codeGenerator);
+    } else if (soyFunction instanceof ExternRef) {
+      // TODO(b/191092101): Implement this.
+      return stringLiteral("TODO");
     } else {
       if (!(soyFunction instanceof SoyJsSrcFunction)) {
         errorReporter.report(

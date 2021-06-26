@@ -20,8 +20,8 @@ import com.google.common.collect.ImmutableList;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.internal.Identifier;
 import com.google.template.soy.basetree.CopyState;
-import com.google.template.soy.plugin.restricted.SoySourceFunction;
 import com.google.template.soy.soytree.CommandTagAttribute.CommandTagAttributesHolder;
+import com.google.template.soy.soytree.defn.ExternVar;
 import com.google.template.soy.types.FunctionType;
 import com.google.template.soy.types.ast.FunctionTypeNode;
 import java.util.Optional;
@@ -30,15 +30,14 @@ import java.util.Optional;
  * Node representing a 'extern' statement with js/java implementations. TODO(b/191090743) Handle the
  * {export keyword.
  */
-public final class ExternNode extends AbstractCommandNode
-    implements CommandTagAttributesHolder, SoySourceFunction {
+public final class ExternNode extends AbstractParentCommandNode<ExternImplNode>
+    implements CommandTagAttributesHolder {
 
   private final FunctionTypeNode typeNode;
   private final Identifier name;
   private final SourceLocation openTagLocation;
   private final boolean exported;
-  private final JsImpl jsImpl;
-  private final JavaImpl javaImpl;
+  private final ExternVar var;
   private FunctionType type;
 
   public ExternNode(
@@ -47,16 +46,13 @@ public final class ExternNode extends AbstractCommandNode
       Identifier name,
       FunctionTypeNode typeNode,
       SourceLocation headerLocation,
-      boolean exported,
-      JsImpl jsImpl,
-      JavaImpl javaImpl) {
+      boolean exported) {
     super(id, location, "extern");
     this.name = name;
     this.openTagLocation = headerLocation;
     this.typeNode = typeNode;
     this.exported = exported;
-    this.jsImpl = jsImpl;
-    this.javaImpl = javaImpl;
+    this.var = new ExternVar(name.identifier(), name.location(), null);
   }
 
   /**
@@ -67,11 +63,11 @@ public final class ExternNode extends AbstractCommandNode
   private ExternNode(ExternNode orig, CopyState copyState) {
     super(orig, copyState);
     this.name = orig.name;
-    this.typeNode = orig.typeNode;
+    this.typeNode = orig.typeNode.copy();
     this.openTagLocation = orig.openTagLocation;
     this.exported = orig.exported;
-    this.jsImpl = orig.jsImpl;
-    this.javaImpl = orig.javaImpl;
+    this.var = new ExternVar(orig.var);
+    copyState.updateRefs(orig.var, this.var);
   }
 
   public Identifier getIdentifier() {
@@ -82,12 +78,12 @@ public final class ExternNode extends AbstractCommandNode
     return exported;
   }
 
-  public Optional<JsImpl> getJsImpl() {
-    return Optional.ofNullable(jsImpl);
+  public Optional<JsImplNode> getJsImpl() {
+    return getChildOfType(this, JsImplNode.class);
   }
 
-  public Optional<JavaImpl> getJavaImpl() {
-    return Optional.ofNullable(javaImpl);
+  public Optional<JavaImplNode> getJavaImpl() {
+    return getChildOfType(this, JavaImplNode.class);
   }
 
   public FunctionTypeNode typeNode() {
@@ -121,6 +117,10 @@ public final class ExternNode extends AbstractCommandNode
 
   public void setType(FunctionType type) {
     this.type = type;
+  }
+
+  public ExternVar getVar() {
+    return var;
   }
 
   @Override

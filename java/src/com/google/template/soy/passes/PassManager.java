@@ -396,7 +396,7 @@ public final class PassManager {
               new FileDependencyOrderPass(
                   errorReporter, v -> accumulatedState.topologicallyOrderedFiles = v))
           .add(
-              new ConstantInvariantsEnforcementPass(
+              new ModernFeatureInvariantsEnforcementPass(
                   errorReporter, () -> accumulatedState.topologicallyOrderedFiles != null))
           .add(new RestoreGlobalsPass())
           .add(new RestoreCompilerChecksPass(errorReporter))
@@ -405,7 +405,9 @@ public final class PassManager {
           .add(new ResolveTemplateParamTypesPass(errorReporter, disableAllTypeChecking));
 
       // needs to come before SoyConformancePass
-      passes.add(new ResolvePluginsPass(pluginResolver));
+      passes
+          .add(new ResolvePluginsPass(pluginResolver))
+          .add(new ValidateExternsPass(errorReporter));
 
       // Must come after ResolvePluginsPass.
       if (astRewrites == AstRewrites.ALL) {
@@ -450,9 +452,7 @@ public final class PassManager {
         passes.add(new AddDebugAttributesPass());
       }
       if (astRewrites == AstRewrites.ALL) {
-        passes.add(
-            new ElementAttributePass(
-                errorReporter, pluginResolver, accumulatedState::registryFromDeps));
+        passes.add(new ElementAttributePass(errorReporter, accumulatedState::registryFromDeps));
       }
       if (!disableAllTypeChecking) {
         passes

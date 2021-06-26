@@ -23,6 +23,7 @@ import static com.google.common.collect.ImmutableSortedSet.toImmutableSortedSet;
 import static com.google.template.soy.passes.CheckTemplateCallsPass.ARGUMENT_TYPE_MISMATCH;
 import static com.google.template.soy.types.SoyTypes.SAFE_PROTO_TO_SANITIZED_TYPE;
 import static java.util.Comparator.naturalOrder;
+import static java.util.stream.Collectors.joining;
 import static java.util.stream.Collectors.toList;
 
 import com.google.common.base.Joiner;
@@ -75,6 +76,7 @@ import com.google.template.soy.exprtree.ExprNode.PrimitiveNode;
 import com.google.template.soy.exprtree.ExprRootNode;
 import com.google.template.soy.exprtree.FieldAccessNode;
 import com.google.template.soy.exprtree.FunctionNode;
+import com.google.template.soy.exprtree.FunctionNode.ExternRef;
 import com.google.template.soy.exprtree.GlobalNode;
 import com.google.template.soy.exprtree.IntegerNode;
 import com.google.template.soy.exprtree.ItemAccessNode;
@@ -155,6 +157,8 @@ import com.google.template.soy.soytree.defn.TemplateStateVar;
 import com.google.template.soy.types.AbstractMapType;
 import com.google.template.soy.types.BoolType;
 import com.google.template.soy.types.FloatType;
+import com.google.template.soy.types.FunctionType;
+import com.google.template.soy.types.FunctionType.Parameter;
 import com.google.template.soy.types.IntType;
 import com.google.template.soy.types.LegacyObjectMapType;
 import com.google.template.soy.types.ListType;
@@ -186,6 +190,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -221,8 +226,10 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
       SoyErrorKind.of("Type {0} does not support dot access.");
   private static final SoyErrorKind DOT_ACCESS_NOT_SUPPORTED_CONSIDER_RECORD =
       SoyErrorKind.of("Type {0} does not support dot access (consider record instead of map).");
-  private static final SoyErrorKind AMBIGUOUS_FUNCTION =
-      SoyErrorKind.of("This function call can be assigned to more than one foreign function.");
+  private static final SoyErrorKind NO_SUCH_EXTERN_OVERLOAD_1 =
+      SoyErrorKind.of("Parameter types, {0}, do not satisfy the function signature, {1}.");
+  private static final SoyErrorKind NO_SUCH_EXTERN_OVERLOAD_N =
+      SoyErrorKind.of("Parameter types, {0}, do not satisfy any of the function signatures [{1}].");
   private static final SoyErrorKind UNNECESSARY_NULL_SAFE_ACCESS =
       SoyErrorKind.of("This null safe access is unnecessary, it is on a value that is non-null.");
   private static final SoyErrorKind DUPLICATE_KEY_IN_MAP_LITERAL =
@@ -364,11 +371,12 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
   private ExprEquivalence exprEquivalence;
   private SoyTypeRegistry typeRegistry;
   private TypeNodeConverter pluginTypeConverter;
-  private List<ExternNode> externs;
   private final PluginResolver.Mode pluginResolutionMode;
   private ImmutableMap<String, ImportedVar> importIndex;
   private ImmutableMap<String, TemplateType> allTemplateTypes;
   private ConstantsTypeIndex constantsTypeLookup;
+  private ExternsTypeIndex externsTypeLookup;
+  private SoyFileNode currentFile;
 
   ResolveExpressionTypesPass(
       ErrorReporter errorReporter,
@@ -398,6 +406,7 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
     }
     this.allTemplateTypes = ImmutableMap.copyOf(allTemplateTypesBuilder);
     this.constantsTypeLookup = new ConstantsTypeIndex(templateRegistryFromDeps);
+    this.externsTypeLookup = new ExternsTypeIndex(templateRegistryFromDeps);
 
     for (SoyFileNode sourceFile : sourceFiles) {
       prepFile(sourceFile);
@@ -409,7 +418,7 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
   private void prepFile(SoyFileNode file) {
     substitutions = null;
     typeRegistry = file.getSoyTypeRegistry();
-    externs = file.getExterns();
+    currentFile = file;
     importIndex =
         file.getImports().stream()
             .flatMap(i -> i.getIdentifiers().stream())
@@ -472,12 +481,19 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
             if (!var.hasType()) {
               SoyType newType = UnknownType.getInstance();
               if (parentType != null && parentType.getKind() == Kind.TEMPLATE_MODULE) {
-                // This must be a nested constant import. A nested template would have its type set.
-                SoyType constantType =
-                    constantsTypeLookup.get(
-                        ((TemplateModuleImportType) parentType).getPath(), var.getSymbol());
-                if (constantType != null) {
-                  newType = constantType;
+                TemplateModuleImportType moduleType = (TemplateModuleImportType) parentType;
+                String symbol = var.getSymbol();
+                if (moduleType.getConstantNames().contains(symbol)) {
+                  SoyType constantType = constantsTypeLookup.get(moduleType.getPath(), symbol);
+                  if (constantType != null) {
+                    newType = constantType;
+                  }
+                } else if (moduleType.getExternNames().contains(symbol)) {
+                  List<FunctionType> types = externsTypeLookup.get(moduleType.getPath(), symbol);
+                  if (!types.isEmpty()) {
+                    // Note that type will include just one param signature.
+                    newType = types.get(0);
+                  }
                 }
               }
               var.setType(newType);
@@ -599,6 +615,12 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
       // Store the type of this constant in the index so that imports of this constant in other
       // files (topologically processed) can have their type set in #visitImportNode.
       constantsTypeLookup.put(node);
+    }
+
+    @Override
+    protected void visitExternNode(ExternNode node) {
+      node.getVar().setType(node.getType());
+      externsTypeLookup.put(node);
     }
 
     @Override
@@ -1657,32 +1679,38 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
       return resolvedSignature;
     }
 
-    private boolean maybeSetExtern(ExternNode extern, FunctionNode node) {
-      if (node.isResolved()) {
-        errorReporter.report(node.getFunctionNameLocation(), AMBIGUOUS_FUNCTION);
+    private boolean maybeSetExtern(FunctionNode node, List<ExternRef> externTypes) {
+      Optional<ExternRef> matching =
+          externTypes.stream()
+              .filter(t -> paramsMatchFunctionType(node.getParams(), t.signature()))
+              .findFirst();
+      if (matching.isPresent()) {
+        ExternRef ref = matching.get();
+        node.setAllowedParamTypes(
+            ref.signature().getParameters().stream().map(Parameter::getType).collect(toList()));
+        node.setType(ref.signature().getReturnType());
+        node.setSoyFunction(ref);
+        return true;
+      }
+      return false;
+    }
+
+    private boolean paramsMatchFunctionType(
+        List<ExprNode> providedParams, FunctionType functionType) {
+      ImmutableList<Parameter> functParams = functionType.getParameters();
+      if (functParams.size() != providedParams.size()) {
         return false;
       }
-      if (!extern.getIdentifier().identifier().equals(node.getStaticFunctionName())
-          || extern.typeNode().parameters().size() != node.numChildren()) {
-        return false;
-      }
-      if (node.getParamsStyle() == ParamsStyle.NAMED) {
-        errorReporter.report(node.getFunctionNameLocation(), INCORRECT_ARG_STYLE);
-        return false;
-      }
-      List<SoyType> externTypes =
-          extern.typeNode().parameters().stream()
-              .map(p -> p.type().getResolvedType())
-              .collect(toImmutableList());
-      for (int i = 0; i < node.numChildren(); ++i) {
-        if (!externTypes.get(i).isAssignableFromLoose(node.getChild(i).getType())
-            && node.getChild(i).getType() != UnknownType.getInstance()) {
+
+      for (int i = 0; i < providedParams.size(); ++i) {
+        SoyType providedType = providedParams.get(i).getType();
+        SoyType paramType = functParams.get(i).getType();
+        if (!paramType.isAssignableFromLoose(providedType)
+            && providedType != UnknownType.getInstance()) {
           return false;
         }
       }
-      node.setAllowedParamTypes(externTypes);
-      node.setType(extern.typeNode().returnType().getResolvedType());
-      node.setSoyFunction(extern);
+
       return true;
     }
 
@@ -1700,7 +1728,7 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
           return;
         }
         visit(node.getNameExpr());
-        if (node.getNameExpr().getType() instanceof TemplateImportType) {
+        if (node.getNameExpr().getType().getKind() == Kind.TEMPLATE_TYPE) {
           node.setType(
               SanitizedType.getTypeForContentKind(
                   ((TemplateImportType) node.getNameExpr().getType())
@@ -1708,21 +1736,55 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
                       .getContentKind()
                       .getSanitizedContentKind()));
           return;
-        } else if (node.getNameExpr().getType() instanceof TemplateType) {
+        } else if (node.getNameExpr().getType().getKind() == Kind.TEMPLATE) {
           node.setType(
               SanitizedType.getTypeForContentKind(
                   ((TemplateType) node.getNameExpr().getType())
                       .getContentKind()
                       .getSanitizedContentKind()));
           return;
+        } else if (node.getNameExpr().getType().getKind() == Kind.FUNCTION) {
+          if (node.getParamsStyle() == ParamsStyle.NAMED) {
+            errorReporter.report(node.getFunctionNameLocation(), INCORRECT_ARG_STYLE);
+            node.setSoyFunction(FunctionNode.UNRESOLVED);
+          } else {
+            String functionName = ((VarRefNode) node.getNameExpr()).getName();
+            SourceFilePath filePath = currentFile.getFilePath();
+            VarDefn defn = ((VarRefNode) node.getNameExpr()).getDefnDecl();
+            if (defn.kind() == VarDefn.Kind.IMPORT_VAR) {
+              filePath = ((ImportedVar) defn).getSourceFilePath();
+              functionName = ((ImportedVar) defn).getSymbol();
+            }
+            List<ExternRef> externTypes = externsTypeLookup.getRefs(filePath, functionName);
+            if (maybeSetExtern(node, externTypes)) {
+              return;
+            } else if (!externTypes.isEmpty()) {
+              String providedParamTypes =
+                  "'"
+                      + node.getParams().stream()
+                          .map(e -> e.getType().toString())
+                          .collect(joining(", "))
+                      + "'";
+              String allowedTypes =
+                  externTypes.stream()
+                      .map(
+                          t ->
+                              t.signature().getParameters().stream()
+                                  .map(p -> p.getType().toString())
+                                  .collect(joining(", ")))
+                      .collect(joining("', '", "'", "'"));
+
+              errorReporter.report(
+                  node.getSourceLocation(),
+                  externTypes.size() == 1 ? NO_SUCH_EXTERN_OVERLOAD_1 : NO_SUCH_EXTERN_OVERLOAD_N,
+                  providedParamTypes,
+                  allowedTypes);
+              node.setSoyFunction(FunctionNode.UNRESOLVED);
+            }
+          }
         }
       }
-      for (ExternNode externNode : externs) {
-        if (maybeSetExtern(externNode, node)) {
-          return;
-        }
-      }
-      if (!node.isResolved()) {
+      if (!node.isResolved() || node.getSoyFunction() == FunctionNode.UNRESOLVED) {
         node.setType(UnknownType.getInstance());
         return;
       }
@@ -2806,20 +2868,6 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
 
     @Override
     protected void visitFunctionNode(FunctionNode node) {
-      // Handle 'isNull(<expr>)' and 'isNonnull(<expr>)'.
-      if (node.numChildren() != 1) {
-        return;
-      } else if ("isNonnull".equals(node.getFunctionName())) {
-        ExprEquivalence.Wrapper wrappedExpr = exprEquivalence.wrap(node.getChild(0));
-        positiveTypeConstraints.put(
-            wrappedExpr, SoyTypes.tryRemoveNull(wrappedExpr.get().getType()));
-        negativeTypeConstraints.put(wrappedExpr, NullType.getInstance());
-      } else if ("isNull".equals(node.getFunctionName())) {
-        ExprEquivalence.Wrapper wrappedExpr = exprEquivalence.wrap(node.getChild(0));
-        positiveTypeConstraints.put(wrappedExpr, NullType.getInstance());
-        negativeTypeConstraints.put(
-            wrappedExpr, SoyTypes.tryRemoveNull(wrappedExpr.get().getType()));
-      }
     }
 
     @Override
@@ -3043,6 +3091,45 @@ public final class ResolveExpressionTypesPass implements CompilerFileSetPass.Top
     void put(ConstNode node) {
       SoyFileNode file = node.getNearestAncestor(SoyFileNode.class);
       sources.put(file.getFilePath(), node.getVar().name(), node);
+    }
+  }
+
+  private static class ExternsTypeIndex {
+    private final Supplier<FileSetMetadata> deps;
+    private final Table<SourceFilePath, String, List<ExternNode>> sources = HashBasedTable.create();
+
+    public ExternsTypeIndex(Supplier<FileSetMetadata> deps) {
+      this.deps = deps;
+    }
+
+    List<ExternRef> getRefs(SourceFilePath path, String name) {
+      return get(path, name).stream().map(type -> ExternRef.of(path, name, type)).collect(toList());
+    }
+
+    List<FunctionType> get(SourceFilePath path, String name) {
+      List<ExternNode> fromSources = sources.get(path, name);
+      if (fromSources != null) {
+        return fromSources.stream().map(ExternNode::getType).collect(toList());
+      }
+      FileMetadata fromDeps = deps.get().getFile(path);
+      if (fromDeps != null) {
+        List<? extends FileMetadata.Extern> e = fromDeps.getExterns(name);
+        return e.stream().map(FileMetadata.Extern::getSignature).collect(toList());
+      }
+      return ImmutableList.of();
+    }
+
+    void put(ExternNode node) {
+      SourceFilePath path = node.getNearestAncestor(SoyFileNode.class).getFilePath();
+      String name = node.getVar().name();
+      List<ExternNode> nodes = sources.get(path, name);
+      if (nodes != null) {
+        nodes.add(node);
+      } else {
+        nodes = new ArrayList<>();
+        nodes.add(node);
+        sources.put(path, name, nodes);
+      }
     }
   }
 }

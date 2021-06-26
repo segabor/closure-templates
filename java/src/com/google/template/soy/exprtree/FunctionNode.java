@@ -20,8 +20,10 @@ import static com.google.common.base.Preconditions.checkNotNull;
 import static com.google.common.base.Preconditions.checkState;
 
 import com.google.auto.value.AutoOneOf;
+import com.google.auto.value.AutoValue;
 import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableList;
+import com.google.template.soy.base.SourceFilePath;
 import com.google.template.soy.base.SourceLocation;
 import com.google.template.soy.base.SourceLocation.Point;
 import com.google.template.soy.base.internal.Identifier;
@@ -31,6 +33,7 @@ import com.google.template.soy.shared.internal.BuiltinFunction;
 import com.google.template.soy.shared.restricted.SoyFunction;
 import com.google.template.soy.shared.restricted.SoyFunctions;
 import com.google.template.soy.shared.restricted.SoyPureFunction;
+import com.google.template.soy.types.FunctionType;
 import com.google.template.soy.types.SoyType;
 import java.util.List;
 import java.util.Optional;
@@ -43,6 +46,22 @@ import javax.annotation.Nullable;
  */
 public final class FunctionNode extends AbstractParentExprNode implements ExprNode.CallableExpr {
 
+  public static final SoySourceFunction UNRESOLVED = new SoySourceFunction() {};
+
+  /** All the information a runtime needs to execute a call to an extern. */
+  @AutoValue
+  public abstract static class ExternRef {
+    public static ExternRef of(SourceFilePath path, String name, FunctionType signature) {
+      return new AutoValue_FunctionNode_ExternRef(path, name, signature);
+    }
+
+    public abstract SourceFilePath path();
+
+    public abstract String name();
+
+    public abstract FunctionType signature();
+  }
+
   /**
    * Either a {@link SoyFunction} or a {@link SoySourceFunction}. TODO(b/19252021): use
    * SoySourceFunction everywhere.
@@ -51,7 +70,8 @@ public final class FunctionNode extends AbstractParentExprNode implements ExprNo
   public abstract static class FunctionRef {
     enum Type {
       SOY_FUNCTION,
-      SOY_SOURCE_FUNCTION
+      SOY_SOURCE_FUNCTION,
+      EXTERN
     }
 
     public static FunctionRef of(Object soyFunction) {
@@ -59,6 +79,8 @@ public final class FunctionNode extends AbstractParentExprNode implements ExprNo
         return of((SoyFunction) soyFunction);
       } else if (soyFunction instanceof SoySourceFunction) {
         return of((SoySourceFunction) soyFunction);
+      } else if (soyFunction instanceof ExternRef) {
+        return of((ExternRef) soyFunction);
       } else {
         throw new ClassCastException(String.valueOf(soyFunction));
       }
@@ -72,14 +94,28 @@ public final class FunctionNode extends AbstractParentExprNode implements ExprNo
       return AutoOneOf_FunctionNode_FunctionRef.soySourceFunction(soySourceFunction);
     }
 
+    public static FunctionRef of(ExternRef functionType) {
+      return AutoOneOf_FunctionNode_FunctionRef.extern(functionType);
+    }
+
     abstract Type type();
 
     abstract SoyFunction soyFunction();
 
     abstract SoySourceFunction soySourceFunction();
 
+    abstract ExternRef extern();
+
     public Object either() {
-      return type() == Type.SOY_FUNCTION ? soyFunction() : soySourceFunction();
+      switch (type()) {
+        case SOY_FUNCTION:
+          return soyFunction();
+        case SOY_SOURCE_FUNCTION:
+          return soySourceFunction();
+        case EXTERN:
+          return extern();
+      }
+      throw new AssertionError();
     }
   }
 
@@ -211,7 +247,7 @@ public final class FunctionNode extends AbstractParentExprNode implements ExprNo
 
   /** Returns the location of the function name. */
   public SourceLocation getFunctionNameLocation() {
-    return name.location();
+    return name != null ? name.location() : nameExpr.getSourceLocation();
   }
 
   public boolean isResolved() {
@@ -311,6 +347,12 @@ public final class FunctionNode extends AbstractParentExprNode implements ExprNo
    * <p>See {@link SoyPureFunction} for the definition of a pure function.
    */
   public boolean isPure() {
+    if (!isResolved()) {
+      return false;
+    }
+    if (state.function.type() == FunctionRef.Type.EXTERN) {
+      return false;
+    }
     return SoyFunctions.isPure(state.function.either());
   }
 
